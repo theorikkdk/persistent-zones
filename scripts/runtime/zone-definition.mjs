@@ -202,13 +202,24 @@ function normalizeTargeting(targetingDefinition) {
 }
 
 function normalizeTriggers(triggerDefinition, dc) {
+  const startTurnDefinition = pickFirstDefined(
+    triggerDefinition.onStartTurn,
+    triggerDefinition.onTurnStart
+  );
+  const endTurnDefinition = pickFirstDefined(
+    triggerDefinition.onEndTurn,
+    triggerDefinition.onTurnEnd
+  );
+
   return {
-    onEnter: normalizeOnEnter(triggerDefinition.onEnter, dc)
+    onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc),
+    onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc),
+    onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc)
   };
 }
 
-function normalizeOnEnter(onEnterDefinition, dc) {
-  const definition = isPlainObject(onEnterDefinition) ? onEnterDefinition : {};
+function normalizeTriggerConfig(triggerLikeDefinition, dc) {
+  const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
 
@@ -256,34 +267,18 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   }
 
   const onEnter = normalizedDefinition.triggers.onEnter;
-  if (onEnter.enabled && onEnter.damage.enabled) {
-    if (!onEnter.damage.formula && onEnter.damage.amount === null) {
-      reasons.push("onEnter damage requires a formula or amount.");
-    }
-  }
+  const onStartTurn = normalizedDefinition.triggers.onStartTurn;
+  const onEndTurn = normalizedDefinition.triggers.onEndTurn;
 
-  if (onEnter.enabled && onEnter.save.enabled) {
-    if (!onEnter.save.ability) {
-      reasons.push("onEnter save requires an ability.");
-    }
-    if (onEnter.save.dc === null) {
-      reasons.push("onEnter save requires a DC.");
-    }
-  }
+  validateTriggerConfig("onEnter", onEnter, reasons);
+  validateTriggerConfig("onStartTurn", onStartTurn, reasons);
+  validateTriggerConfig("onEndTurn", onEndTurn, reasons);
 
   return reasons;
 }
 
 function collectCurrentLimits(definition) {
   const limits = [];
-
-  if (safeGet(definition, ["triggers", "onTurnStart"]) !== undefined) {
-    limits.push("Turn start logic is not executed in this MVP step.");
-  }
-
-  if (safeGet(definition, ["triggers", "onTurnEnd"]) !== undefined) {
-    limits.push("Turn end logic is not executed in this MVP step.");
-  }
 
   if (safeGet(definition, ["movement"]) !== undefined) {
     limits.push("Movement-through-zone logic is not executed in this MVP step.");
@@ -306,4 +301,30 @@ function collectCurrentLimits(definition) {
   }
 
   return limits;
+}
+
+function validateTriggerConfig(triggerName, triggerConfig, reasons) {
+  if (!triggerConfig?.enabled) {
+    return;
+  }
+
+  if (!triggerConfig.damage.enabled && !triggerConfig.save.enabled) {
+    reasons.push(`${triggerName} requires damage or save to be enabled.`);
+    return;
+  }
+
+  if (triggerConfig.damage.enabled) {
+    if (!triggerConfig.damage.formula && triggerConfig.damage.amount === null) {
+      reasons.push(`${triggerName} damage requires a formula or amount.`);
+    }
+  }
+
+  if (triggerConfig.save.enabled) {
+    if (!triggerConfig.save.ability) {
+      reasons.push(`${triggerName} save requires an ability.`);
+    }
+    if (triggerConfig.save.dc === null) {
+      reasons.push(`${triggerName} save requires a DC.`);
+    }
+  }
 }

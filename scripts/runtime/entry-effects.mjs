@@ -5,73 +5,98 @@ export async function applyOnEnterEffect({
   tokenDocument,
   normalizedDefinition
 }) {
+  return applyConfiguredTriggerEffect({
+    regionDocument,
+    tokenDocument,
+    triggerConfig: normalizedDefinition?.triggers?.onEnter ?? {},
+    timing: "onEnter"
+  });
+}
+
+export async function applyConfiguredTriggerEffect({
+  regionDocument,
+  tokenDocument,
+  triggerConfig,
+  timing = "custom"
+}) {
   const actor = tokenDocument?.actor ?? null;
-  const onEnter = normalizedDefinition?.triggers?.onEnter ?? {};
+  const normalizedTiming = String(timing || "custom");
+  const configuredTrigger = triggerConfig ?? {};
 
   if (!actor) {
     return buildSkippedResult("Token has no Actor.");
   }
 
-  if (!onEnter.enabled) {
-    return buildSkippedResult("onEnter is not enabled.");
+  if (!configuredTrigger.enabled) {
+    return buildSkippedResult(`${normalizedTiming} is not enabled.`);
   }
 
-  if (!onEnter.damage.enabled) {
-    return buildSkippedResult("onEnter damage is not enabled.");
+  if (!configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
+    return buildSkippedResult(`${normalizedTiming} has no enabled save or damage.`);
   }
 
   try {
-    const saveResult = onEnter.save.enabled
-      ? await resolveSaveResult(actor, onEnter.save, regionDocument, tokenDocument)
+    const saveResult = configuredTrigger.save?.enabled
+      ? await resolveSaveResult(actor, configuredTrigger.save, regionDocument, tokenDocument, normalizedTiming)
       : null;
-    const damageResult = await resolveDamageResult(
-      onEnter.damage,
-      saveResult,
-      regionDocument,
-      tokenDocument
-    );
-    const appliedDamage = damageResult.appliedDamage;
+    const damageResult = configuredTrigger.damage?.enabled
+      ? await resolveDamageResult(
+        configuredTrigger.damage,
+        saveResult,
+        regionDocument,
+        tokenDocument,
+        normalizedTiming
+      )
+      : buildNoDamageResult(configuredTrigger.damage);
+    const appliedDamage = coerceNumber(damageResult?.appliedDamage, 0);
 
     if (appliedDamage > 0) {
       await applyDamageToActor(actor, appliedDamage);
     }
 
-    debug("Applied onEnter effect.", {
+    debug(`Applied ${normalizedTiming} effect.`, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
       actorUuid: actor.uuid,
+      timing: normalizedTiming,
       save: saveResult,
       damage: damageResult,
       appliedDamage
     });
 
     return {
-      applied: true,
+      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
       skipped: false,
+      timing: normalizedTiming,
       save: saveResult,
       damage: damageResult,
       appliedDamage
     };
   } catch (caughtError) {
-    error("Failed to apply onEnter effect.", caughtError, {
+    error("Failed to apply configured trigger effect.", caughtError, {
       regionId: regionDocument?.id ?? null,
-      tokenId: tokenDocument?.id ?? null
+      tokenId: tokenDocument?.id ?? null,
+      timing: normalizedTiming
     });
 
-    return buildSkippedResult("Effect application failed.", { error: caughtError?.message ?? "unknown" });
+    return buildSkippedResult("Effect application failed.", {
+      timing: normalizedTiming,
+      error: caughtError?.message ?? "unknown"
+    });
   }
 }
 
-async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument) {
+async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument, timing = "custom") {
   const ability = String(saveConfig.ability ?? "").toLowerCase();
   const dc = coerceNumber(saveConfig.dc, null);
   let roll = null;
+  const timingLabel = String(timing || "custom");
 
   if (typeof actor.rollAbilitySave === "function") {
     roll = await actor.rollAbilitySave(ability, {
       chatMessage: true,
       fastForward: true,
-      flavor: `${regionDocument?.name ?? "Persistent Zone"}: onEnter save`
+      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save`
     });
   } else {
     const bonus = getManualSaveBonus(actor, ability);
@@ -79,7 +104,7 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
     await roll.evaluate();
     await roll.toMessage({
       speaker: ChatMessage.getSpeaker({ actor, token: tokenDocument }),
-      flavor: `${regionDocument?.name ?? "Persistent Zone"}: onEnter save (${ability.toUpperCase()})`
+      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save (${ability.toUpperCase()})`
     });
   }
 
@@ -94,10 +119,11 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
     onSuccess: String(saveConfig.onSuccess ?? "half").toLowerCase()
   };
 
-  debug("Calculated onEnter save.", {
+  debug(`Calculated ${timingLabel} save.`, {
     regionId: regionDocument?.id ?? null,
     tokenId: tokenDocument?.id ?? null,
     actorUuid: actor?.uuid ?? null,
+    timing: timingLabel,
     ability: result.ability,
     dc: result.dc,
     total: result.total,
@@ -107,7 +133,8 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
   return result;
 }
 
-async function resolveDamageResult(damageConfig, saveResult, regionDocument, tokenDocument) {
+async function resolveDamageResult(damageConfig, saveResult, regionDocument, tokenDocument, timing = "custom") {
+  const timingLabel = String(timing || "custom");
   const roll =
     damageConfig.formula
       ? new Roll(String(damageConfig.formula))
@@ -122,7 +149,7 @@ async function resolveDamageResult(damageConfig, saveResult, regionDocument, tok
 
   if (roll) {
     await roll.toMessage({
-      flavor: `Persistent Zones onEnter damage (${damageConfig.type ?? "untyped"})`
+      flavor: `Persistent Zones ${timingLabel} damage (${damageConfig.type ?? "untyped"})`
     });
   }
 
@@ -133,9 +160,10 @@ async function resolveDamageResult(damageConfig, saveResult, regionDocument, tok
     appliedDamage
   };
 
-  debug("Calculated onEnter damage.", {
+  debug(`Calculated ${timingLabel} damage.`, {
     regionId: regionDocument?.id ?? null,
     tokenId: tokenDocument?.id ?? null,
+    timing: timingLabel,
     type: result.type,
     formula: result.formula,
     rolledDamage: result.rolledDamage,
@@ -197,5 +225,14 @@ function buildSkippedResult(reason, extra = {}) {
     skipped: true,
     reason,
     ...extra
+  };
+}
+
+function buildNoDamageResult(damageConfig = {}) {
+  return {
+    type: damageConfig?.type ?? "force",
+    formula: damageConfig?.formula ?? null,
+    rolledDamage: 0,
+    appliedDamage: 0
   };
 }

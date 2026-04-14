@@ -6,6 +6,10 @@ import {
 } from "./runtime/concentration-cleanup.mjs";
 import { registerEntryRuntimeHooks } from "./runtime/entry-runtime.mjs";
 import { registerRegionFactoryHooks } from "./runtime/region-factory.mjs";
+import {
+  primeTurnRuntimeState,
+  registerTurnRuntimeHooks
+} from "./runtime/turn-runtime.mjs";
 import { debug, isPrimaryGM } from "./runtime/utils.mjs";
 
 let apiInstance = null;
@@ -27,6 +31,7 @@ function onInit() {
   registerRegionFactoryHooks();
   registerConcentrationCleanupHooks();
   registerEntryRuntimeHooks();
+  registerTurnRuntimeHooks();
 
   debug("Module initialized.");
 }
@@ -39,5 +44,6 @@ async function onReady() {
   }
 
   debug("GM debug helpers available on game.persistentZones.debug.");
+  primeTurnRuntimeState();
   await cleanupSceneRegions(canvas?.scene ?? null, { reason: "ready" });
 }

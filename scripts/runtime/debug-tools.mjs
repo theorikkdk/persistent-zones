@@ -34,6 +34,9 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "turn-damage-save":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createTurnDamageSaveTestDefinition());
     case "entry-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createEntryDamageSaveTestDefinition());
@@ -275,6 +278,63 @@ function createEntryDamageSaveTestDefinition() {
         save: {
           enabled: true,
           ability: "dex",
+          dc: 13,
+          onSuccess: "half"
+        }
+      }
+    }
+  };
+}
+
+function createTurnDamageSaveTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "turn-damage-save"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Turn Damage Save",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: true,
+        damage: {
+          enabled: true,
+          formula: "2d6",
+          type: "radiant"
+        },
+        save: {
+          enabled: true,
+          ability: "con",
+          dc: 13,
+          onSuccess: "half"
+        }
+      },
+      onEndTurn: {
+        enabled: true,
+        damage: {
+          enabled: true,
+          formula: "1d6",
+          type: "radiant"
+        },
+        save: {
+          enabled: true,
+          ability: "con",
           dc: 13,
           onSuccess: "half"
         }
