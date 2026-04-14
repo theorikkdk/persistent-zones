@@ -17,6 +17,10 @@ import {
   pickFirstDefined,
   safeGet
 } from "./utils.mjs";
+import {
+  resolveLinkedLightConfig,
+  resolveLinkedWallConfig
+} from "./linked-presets.mjs";
 
 export function getZoneDefinitionFromItem(item) {
   if (!item) {
@@ -309,42 +313,33 @@ function normalizeTerrain({
 }
 
 function normalizeLinkedWalls(linkedWallsDefinition) {
-  const definition = isPlainObject(linkedWallsDefinition) ? linkedWallsDefinition : {};
+  const hasExplicitConfig = isPlainObject(linkedWallsDefinition) && Object.keys(linkedWallsDefinition).length > 0;
+  const finalConfig = resolveLinkedWallConfig(linkedWallsDefinition);
 
-  return {
-    enabled: coerceBoolean(
-      pickFirstDefined(definition.enabled, definition.active, false),
-      false
-    ),
-    mode: normalizeLinkedWallMode(pickFirstDefined(definition.mode, definition.wallMode, "move")),
-    segments: Math.min(
-      Math.max(Math.round(coerceNumber(definition.segments, 24)), 8),
-      64
-    )
-  };
+  if (hasExplicitConfig || finalConfig.enabled || finalConfig.resolvedPreset) {
+    debug("Resolved final linked wall config.", {
+      finalConfig
+    });
+  }
+
+  return finalConfig;
 }
 
 function normalizeLinkedLight(linkedLightDefinition, {
   templateDistance = null
 } = {}) {
-  const definition = isPlainObject(linkedLightDefinition) ? linkedLightDefinition : {};
+  const hasExplicitConfig = isPlainObject(linkedLightDefinition) && Object.keys(linkedLightDefinition).length > 0;
+  const finalConfig = resolveLinkedLightConfig(linkedLightDefinition, {
+    templateDistance
+  });
 
-  return {
-    enabled: coerceBoolean(
-      pickFirstDefined(definition.enabled, definition.active, false),
-      false
-    ),
-    bright: coerceNumber(definition.bright, null),
-    dim: coerceNumber(definition.dim, null),
-    radius: coerceNumber(definition.radius, coerceNumber(templateDistance, null)),
-    color: pickFirstDefined(definition.color, "#fff4b0"),
-    alpha: coerceNumber(definition.alpha, 0.15),
-    luminosity: coerceNumber(definition.luminosity, 0.5),
-    angle: coerceNumber(definition.angle, 360),
-    walls: coerceBoolean(definition.walls, false) ?? false,
-    vision: coerceBoolean(definition.vision, false) ?? false,
-    hidden: coerceBoolean(definition.hidden, false) ?? false
-  };
+  if (hasExplicitConfig || finalConfig.enabled || finalConfig.resolvedPreset) {
+    debug("Resolved final linked light config.", {
+      finalConfig
+    });
+  }
+
+  return finalConfig;
 }
 
 function normalizeTriggers(triggerDefinition, dc) {
@@ -534,9 +529,4 @@ function normalizeNumberArray(values) {
   return values
     .map((value) => coerceNumber(value, null))
     .filter((value) => value !== null);
-}
-
-function normalizeLinkedWallMode(value) {
-  const normalized = String(value ?? "move").toLowerCase();
-  return ["move", "sight", "both"].includes(normalized) ? normalized : "move";
 }

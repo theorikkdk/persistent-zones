@@ -9,6 +9,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - It owns its runtime data contract.
 - Compatible modules should write zone data to `flags["persistent-zones"].definition` on the source `Item`.
 - Runtime metadata is stored on created `Region` documents in `flags["persistent-zones"].runtime`.
+- Linked walls and linked lights can be configured either directly or through reusable `preset` keys on `linkedWalls` and `linkedLight`, with explicit fields overriding preset defaults.
 
 ## Current MVP
 
@@ -26,6 +27,10 @@ FoundryVTT module dedicated to persistent zones runtime.
 - For entry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "entry-damage-save")`.
 - For turn testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "turn-damage-save")`.
 - For linked light testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light")`.
+- For linked moonlight testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light-moonlight")`.
+- For linked fire light testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light-fire")`.
 - For linked walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls")`.
+- For linked solid walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-solid")`.
+- For linked terrain walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-terrain")`.
 - Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
 - Create or move the template in Foundry to verify that the Region, linked light, and linked walls stay synchronized, then delete the template to confirm cleanup.

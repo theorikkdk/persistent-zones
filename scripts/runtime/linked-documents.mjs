@@ -328,16 +328,17 @@ function buildLinkedWallData({
     return [];
   }
 
-  const wallMode = normalizeLinkedWallMode(linkedWalls?.mode ?? linkedWalls?.wallMode);
-  const isSight = wallMode === "sight" || wallMode === "both";
-  const isMove = wallMode === "move" || wallMode === "both";
+  const move = resolveWallMovementValue(linkedWalls?.move, linkedWalls?.mode ?? linkedWalls?.wallMode);
+  const sight = resolveWallSenseValue(linkedWalls?.sight, linkedWalls?.mode ?? linkedWalls?.wallMode);
+  const light = resolveWallSenseValue(linkedWalls?.light, linkedWalls?.mode ?? linkedWalls?.wallMode);
+  const sound = resolveWallSenseValue(linkedWalls?.sound, "none");
 
   return segments.map((c) => ({
     c,
-    move: isMove ? 20 : 0,
-    sight: isSight ? 20 : 0,
-    light: isSight ? 20 : 0,
-    sound: 0,
+    move,
+    sight,
+    light,
+    sound,
     dir: 0,
     door: 0,
     ds: 0,
@@ -375,6 +376,8 @@ function buildLinkedLightData({
     dim = Math.max(bright, 0);
   }
 
+  const animation = normalizeLinkedLightAnimation(linkedLight?.animation);
+
   return {
     x: center.x,
     y: center.y,
@@ -395,7 +398,7 @@ function buildLinkedLightData({
       shadows: 0,
       color: linkedLight?.color ?? DEFAULT_LINKED_LIGHT_COLOR,
       darkness: { min: 0, max: 1 },
-      animation: { type: null, speed: 1, intensity: 1 }
+      animation
     },
     flags: buildLinkedDocumentFlags({
       kind: "light",
@@ -687,4 +690,86 @@ function normalizeLinkedWallMode(value) {
 function normalizeLinkedWallSegments(value) {
   const numericValue = Math.round(coerceNumber(value, DEFAULT_LINKED_WALL_SEGMENTS));
   return Math.min(Math.max(numericValue, 8), 64);
+}
+
+function resolveWallMovementValue(value, modeFallback = "move") {
+  const fallbackChannel = deriveWallChannelFallback(modeFallback).move;
+  const normalized = normalizeWallMovementChannel(value ?? fallbackChannel);
+
+  switch (normalized) {
+    case "limited":
+      debug("Normalized invalid linked wall movement value at document build time.", {
+        requestedValue: value,
+        normalizedValue: "normal"
+      });
+      return CONST?.WALL_MOVEMENT_TYPES?.NORMAL ?? 20;
+    case "normal":
+      return CONST?.WALL_MOVEMENT_TYPES?.NORMAL ?? 20;
+    case "none":
+    default:
+      return CONST?.WALL_MOVEMENT_TYPES?.NONE ?? 0;
+  }
+}
+
+function resolveWallSenseValue(value, modeFallback = "none") {
+  const fallbackChannel = deriveWallChannelFallback(modeFallback).sight;
+  const normalized = normalizeWallSenseChannel(value ?? fallbackChannel);
+
+  switch (normalized) {
+    case "limited":
+      return CONST?.WALL_SENSE_TYPES?.LIMITED ?? 10;
+    case "proximity":
+      return CONST?.WALL_SENSE_TYPES?.PROXIMITY ?? CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+    case "distance":
+      return CONST?.WALL_SENSE_TYPES?.DISTANCE ?? CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+    case "normal":
+      return CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+    case "none":
+    default:
+      return CONST?.WALL_SENSE_TYPES?.NONE ?? 0;
+  }
+}
+
+function deriveWallChannelFallback(modeFallback) {
+  switch (normalizeLinkedWallMode(modeFallback)) {
+    case "both":
+      return {
+        move: "normal",
+        sight: "normal"
+      };
+    case "sight":
+      return {
+        move: "none",
+        sight: "normal"
+      };
+    case "move":
+    default:
+      return {
+        move: "normal",
+        sight: "none"
+      };
+  }
+}
+
+function normalizeWallMovementChannel(value) {
+  const normalized = String(value ?? "none").trim().toLowerCase();
+  return ["none", "normal", "limited"].includes(normalized) ? normalized : "none";
+}
+
+function normalizeWallSenseChannel(value) {
+  const normalized = String(value ?? "none").trim().toLowerCase();
+  return ["none", "normal", "limited", "proximity", "distance"].includes(normalized)
+    ? normalized
+    : "none";
+}
+
+function normalizeLinkedLightAnimation(value) {
+  const animation = value && typeof value === "object" ? value : {};
+
+  return {
+    type: animation.type ?? null,
+    speed: coerceNumber(animation.speed, 1),
+    intensity: coerceNumber(animation.intensity, 1),
+    reverse: coerceBoolean(animation.reverse, false) ?? false
+  };
 }

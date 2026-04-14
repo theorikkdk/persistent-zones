@@ -36,12 +36,24 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "linked-light-fire":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedLightTestDefinition("fire"));
+    case "linked-light-moonlight":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedLightTestDefinition("moonlight"));
+    case "linked-walls-solid":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedWallsTestDefinition("solid"));
+    case "linked-walls-terrain":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedWallsTestDefinition("terrain"));
     case "linked-light":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
-      return duplicateData(createLinkedLightTestDefinition());
+      return duplicateData(createLinkedLightTestDefinition("glow"));
     case "linked-walls":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
-      return duplicateData(createLinkedWallsTestDefinition());
+      return duplicateData(createLinkedWallsTestDefinition("solid"));
     case "exit-forced-only":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createMovementFilteredTestDefinition({
@@ -640,16 +652,16 @@ function createDifficultTerrainTestDefinition() {
   };
 }
 
-function createLinkedLightTestDefinition() {
+function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: "linked-light"
+      preset: `linked-light-${String(linkedLightPreset || "glow").toLowerCase()}`
     },
     enabled: true,
-    label: "Persistent Zone Debug Linked Light",
+    label: `Persistent Zone Debug Linked Light ${toTitleCase(linkedLightPreset)}`,
     shapeMode: "template",
     template: {
       type: "circle"
@@ -663,11 +675,7 @@ function createLinkedLightTestDefinition() {
     },
     linkedLight: {
       enabled: true,
-      bright: 10,
-      dim: 20,
-      color: "#fff4b0",
-      alpha: 0.15,
-      luminosity: 0.5
+      preset: linkedLightPreset
     },
     triggers: {
       onEnter: {
@@ -689,16 +697,16 @@ function createLinkedLightTestDefinition() {
   };
 }
 
-function createLinkedWallsTestDefinition() {
+function createLinkedWallsTestDefinition(linkedWallPreset = "solid") {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: "linked-walls"
+      preset: `linked-walls-${String(linkedWallPreset || "solid").toLowerCase()}`
     },
     enabled: true,
-    label: "Persistent Zone Debug Linked Walls",
+    label: `Persistent Zone Debug Linked Walls ${toTitleCase(linkedWallPreset)}`,
     shapeMode: "template",
     template: {
       type: "circle"
@@ -712,8 +720,7 @@ function createLinkedWallsTestDefinition() {
     },
     linkedWalls: {
       enabled: true,
-      mode: "move",
-      segments: 24
+      preset: linkedWallPreset
     },
     triggers: {
       onEnter: {
@@ -733,4 +740,12 @@ function createLinkedWallsTestDefinition() {
       }
     }
   };
+}
+
+function toTitleCase(value) {
+  return String(value ?? "")
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
