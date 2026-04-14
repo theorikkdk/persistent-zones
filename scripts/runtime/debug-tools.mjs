@@ -8,6 +8,7 @@ import {
   duplicateData,
   fromUuidSafe
 } from "./utils.mjs";
+import { markNextMovementMode } from "./entry-runtime.mjs";
 import {
   collectTemplateSourceDebugSnapshot,
   resolveTemplateSourceContext
@@ -23,7 +24,8 @@ export function createPersistentZonesDebugApi() {
     applyTestDefinitionToItem,
     clearTestDefinitionFromItem,
     inspectItemDefinition,
-    inspectTemplateSource
+    inspectTemplateSource,
+    markNextMovement
   });
 }
 
@@ -34,6 +36,45 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "exit-forced-only":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMovementFilteredTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Exit Forced Only",
+        triggerKey: "onExit",
+        movementMode: "forced",
+        damageType: "cold"
+      }));
+    case "exit-voluntary-only":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMovementFilteredTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Exit Voluntary Only",
+        triggerKey: "onExit",
+        movementMode: "voluntary",
+        damageType: "cold"
+      }));
+    case "entry-forced-only":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMovementFilteredTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Entry Forced Only",
+        triggerKey: "onEnter",
+        movementMode: "forced",
+        damageType: "fire"
+      }));
+    case "entry-voluntary-only":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMovementFilteredTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Entry Voluntary Only",
+        triggerKey: "onEnter",
+        movementMode: "voluntary",
+        damageType: "fire"
+      }));
+    case "exit-damage-save":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createExitDamageSaveTestDefinition());
     case "turn-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createTurnDamageSaveTestDefinition());
@@ -162,6 +203,23 @@ export async function inspectTemplateSource(templateOrUuid) {
   };
 }
 
+export async function markNextMovement(tokenOrUuid, movementMode = "forced") {
+  if (!assertDebugGM("markNextMovement")) {
+    return null;
+  }
+
+  const tokenDocument = await resolveTokenDocument(tokenOrUuid);
+  if (!tokenDocument) {
+    debug("Could not resolve Token for persistent-zones movement mark.", {
+      tokenOrUuid,
+      movementMode
+    });
+    return null;
+  }
+
+  return markNextMovementMode(tokenDocument, movementMode);
+}
+
 function assertDebugGM(actionName) {
   if (game.user?.isGM) {
     return true;
@@ -215,6 +273,31 @@ async function resolveTemplateDocument(templateOrUuid) {
   }
 
   return canvas?.scene?.templates?.get?.(templateOrUuid) ?? null;
+}
+
+async function resolveTokenDocument(tokenOrUuid) {
+  if (!tokenOrUuid) {
+    return null;
+  }
+
+  if (tokenOrUuid.documentName === "Token") {
+    return tokenOrUuid;
+  }
+
+  if (tokenOrUuid.document?.documentName === "Token") {
+    return tokenOrUuid.document;
+  }
+
+  if (typeof tokenOrUuid !== "string") {
+    return null;
+  }
+
+  const resolved = await fromUuidSafe(tokenOrUuid);
+  if (resolved?.documentName === "Token") {
+    return resolved;
+  }
+
+  return canvas?.scene?.tokens?.get?.(tokenOrUuid) ?? null;
 }
 
 function createBasicTestDefinition() {
@@ -335,6 +418,102 @@ function createTurnDamageSaveTestDefinition() {
         save: {
           enabled: true,
           ability: "con",
+          dc: 13,
+          onSuccess: "half"
+        }
+      }
+    }
+  };
+}
+
+function createExitDamageSaveTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "exit-damage-save"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Exit Damage Save",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: true,
+        damage: {
+          enabled: true,
+          formula: "2d6",
+          type: "cold"
+        },
+        save: {
+          enabled: true,
+          ability: "dex",
+          dc: 13,
+          onSuccess: "half"
+        }
+      }
+    }
+  };
+}
+
+function createMovementFilteredTestDefinition({
+  preset,
+  label,
+  triggerKey,
+  movementMode,
+  damageType
+}) {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset
+    },
+    enabled: true,
+    label,
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      [triggerKey]: {
+        enabled: true,
+        movementMode,
+        damage: {
+          enabled: true,
+          formula: "2d6",
+          type: damageType
+        },
+        save: {
+          enabled: true,
+          ability: "dex",
           dc: 13,
           onSuccess: "half"
         }

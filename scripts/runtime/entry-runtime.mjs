@@ -1,5 +1,5 @@
 import { ENTRY_DEDUP_TTL_MS } from "../constants.mjs";
-import { applyOnEnterEffect } from "./entry-effects.mjs";
+import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import {
   coerceNumber,
   debug,
@@ -13,7 +13,9 @@ import {
 const lastKnownTokenStates = new Map();
 const regionInsideStates = new Map();
 const recentEnterEvents = new Map();
+const recentExitEvents = new Map();
 const recentMoveTokenEvents = new Map();
+const queuedMovementModes = new Map();
 
 let hooksRegistered = false;
 
@@ -33,6 +35,33 @@ export function registerEntryRuntimeHooks() {
   }
 
   hooksRegistered = true;
+}
+
+export function markNextMovementMode(tokenDocument, movementMode = "forced") {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid) {
+    debug("Could not queue movement mode because the token is invalid.", {
+      tokenId: tokenDocument?.id ?? null,
+      movementMode
+    });
+    return null;
+  }
+
+  const normalizedMode = normalizeMovementMode(movementMode);
+  queuedMovementModes.set(tokenUuid, normalizedMode);
+
+  debug("Queued next movement mode for token.", {
+    tokenId: tokenDocument?.id ?? null,
+    tokenUuid,
+    movementMode: normalizedMode
+  });
+
+  return {
+    tokenId: tokenDocument?.id ?? null,
+    tokenUuid,
+    movementMode: normalizedMode,
+    queued: true
+  };
 }
 
 function onCanvasReady() {
@@ -56,11 +85,18 @@ async function onMoveToken(tokenDocument, movement) {
   if (!movementPath) {
     return;
   }
+  const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
+    moveSource: movementPath.moveSource,
+    consume: true
+  });
 
   markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
 
   await evaluateTokenEntry(tokenDocument, {
     moveSource: movementPath.moveSource,
+    movementMode: movementResolution.resolvedMovementMode,
+    movementModeRaw: movementResolution.rawMovementMode,
+    movementMarkConsumed: movementResolution.consumed,
     fromState: movementPath.fromState,
     toState: movementPath.toState,
     pathStates: movementPath.pathStates
@@ -85,9 +121,16 @@ async function onUpdateToken(tokenDocument, changed) {
   }
 
   const beforeState = lastKnownTokenStates.get(tokenDocument.uuid) ?? null;
+  const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
+    moveSource: "updateToken-fallback",
+    consume: false
+  });
 
   await evaluateTokenEntry(tokenDocument, {
     moveSource: "updateToken-fallback",
+    movementMode: movementResolution.resolvedMovementMode,
+    movementModeRaw: movementResolution.rawMovementMode,
+    movementMarkConsumed: movementResolution.consumed,
     fromState: beforeState,
     toState: afterState,
     pathStates: compactStatePath([beforeState, afterState])
@@ -105,6 +148,9 @@ async function onCreateToken(tokenDocument) {
 
   await evaluateTokenEntry(tokenDocument, {
     moveSource: "createToken",
+    movementMode: "any",
+    movementModeRaw: null,
+    movementMarkConsumed: false,
     fromState: null,
     toState: afterState,
     pathStates: [afterState]
@@ -116,11 +162,15 @@ async function onCreateToken(tokenDocument) {
 function onDeleteToken(tokenDocument) {
   lastKnownTokenStates.delete(tokenDocument.uuid);
   recentMoveTokenEvents.delete(tokenDocument.uuid);
+  queuedMovementModes.delete(tokenDocument.uuid);
   clearInsideStateCacheForToken(tokenDocument);
 }
 
 async function evaluateTokenEntry(tokenDocument, {
   moveSource,
+  movementMode,
+  movementModeRaw,
+  movementMarkConsumed = false,
   fromState,
   toState,
   pathStates = []
@@ -158,6 +208,7 @@ async function evaluateTokenEntry(tokenDocument, {
     const runtime = getRegionRuntimeFlags(regionDocument);
     const normalizedDefinition = runtime?.normalizedDefinition ?? null;
     const onEnter = normalizedDefinition?.triggers?.onEnter ?? {};
+    const onExit = normalizedDefinition?.triggers?.onExit ?? {};
 
     const insideStateKey = buildInsideStateKey(tokenDocument, regionDocument);
     const cachedFromInside = regionInsideStates.get(insideStateKey) ?? null;
@@ -171,12 +222,22 @@ async function evaluateTokenEntry(tokenDocument, {
     // Inspired by the older Encounter+ Importer approach:
     // keep an inside-cache per token/region, but prefer Foundry v13 moveToken origin/destination
     // plus sampled movement segments instead of relying on document end-state only.
-    const crossedBoundary = moveSource === "createToken"
-      ? toInside
-      : detectBoundaryCrossing(tokenDocument, regionDocument, pathStates, fromInside);
+    const movementAnalysis = moveSource === "createToken"
+      ? {
+        crossedBoundary: toInside,
+        sawEntry: toInside,
+        sawExit: false
+      }
+      : analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside);
+    const crossedBoundary = movementAnalysis.crossedBoundary;
     const enterDetected = moveSource === "createToken"
       ? toInside
-      : !fromInside && crossedBoundary;
+      : !fromInside && movementAnalysis.sawEntry;
+    const exitDetected = moveSource === "createToken"
+      ? false
+      : fromInside && !toInside && movementAnalysis.sawExit;
+    const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
+    const exitMovementModeMatched = movementModeMatches(movementMode, onExit.movementMode);
 
     if (toInside) {
       regionInsideStates.set(insideStateKey, true);
@@ -184,19 +245,7 @@ async function evaluateTokenEntry(tokenDocument, {
       regionInsideStates.delete(insideStateKey);
     }
 
-    debug("Checked token against managed Region.", {
-      tokenId: tokenDocument.id,
-      regionId: regionDocument.id,
-      moveSource,
-      fromX: fromState?.position?.x ?? null,
-      fromY: fromState?.position?.y ?? null,
-      toX: toState?.position?.x ?? null,
-      toY: toState?.position?.y ?? null,
-      fromInside,
-      toInside,
-      crossedBoundary,
-      enterDetected
-    });
+    let effectApplied = false;
 
     if (!normalizedDefinition?.enabled) {
       debug("Skipped managed Region effect because the normalized definition is disabled.", {
@@ -206,52 +255,136 @@ async function evaluateTokenEntry(tokenDocument, {
       continue;
     }
 
-    if (!onEnter.enabled) {
-      debug("Skipped managed Region effect because onEnter is disabled.", {
+    if (!enterDetected && !exitDetected) {
+      debug("Skipped managed Region effect because no movement trigger was detected.", {
         tokenId: tokenDocument.id,
         regionId: regionDocument.id
       });
-      continue;
     }
 
-    const filterResult = shouldAffectToken(tokenDocument, runtime, normalizedDefinition);
-    if (!filterResult.allowed) {
-      debug("Skipped managed Region effect because token filtering rejected the target.", {
-        tokenId: tokenDocument.id,
-        regionId: regionDocument.id,
-        reason: filterResult.reason
-      });
-      continue;
+    if (enterDetected || exitDetected) {
+      const filterResult = shouldAffectToken(tokenDocument, runtime, normalizedDefinition);
+      if (!filterResult.allowed) {
+        debug("Skipped managed Region effect because token filtering rejected the target.", {
+          tokenId: tokenDocument.id,
+          regionId: regionDocument.id,
+          reason: filterResult.reason
+        });
+      } else {
+        if (enterDetected) {
+          if (!onEnter.enabled) {
+            debug("Skipped managed Region effect because onEnter is disabled.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id
+            });
+          } else if (!movementModeMatches(movementMode, onEnter.movementMode)) {
+            debug("Skipped managed Region effect because movement mode did not match.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              trigger: "onEnter",
+              moveSource,
+              movementMode,
+              requiredMovementMode: onEnter.movementMode ?? "any",
+              movementModeMatched: false
+            });
+          } else if (isDuplicateMovementTrigger("enter", regionDocument, tokenDocument, moveSource, toState?.center)) {
+            debug("Skipped managed Region effect because the entry was deduplicated.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id
+            });
+          } else {
+            const application = await applyConfiguredTriggerEffect({
+              regionDocument,
+              tokenDocument,
+              triggerConfig: onEnter,
+              timing: "onEnter"
+            });
+
+            effectApplied = effectApplied || Boolean(application.applied && !application.skipped);
+
+            debug("Managed Region onEnter effect completed.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              moveSource,
+              movementMode,
+              requiredMovementMode: onEnter.movementMode ?? "any",
+              movementModeMatched: true,
+              applied: application.applied,
+              skipped: application.skipped ?? false,
+              reason: application.reason ?? null
+            });
+          }
+        }
+
+        if (exitDetected) {
+          if (!onExit.enabled) {
+            debug("Skipped managed Region effect because onExit is disabled.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id
+            });
+          } else if (!movementModeMatches(movementMode, onExit.movementMode)) {
+            debug("Skipped managed Region effect because movement mode did not match.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              trigger: "onExit",
+              moveSource,
+              movementMode,
+              requiredMovementMode: onExit.movementMode ?? "any",
+              movementModeMatched: false
+            });
+          } else if (isDuplicateMovementTrigger("exit", regionDocument, tokenDocument, moveSource, toState?.center)) {
+            debug("Skipped managed Region effect because the exit was deduplicated.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id
+            });
+          } else {
+            const application = await applyConfiguredTriggerEffect({
+              regionDocument,
+              tokenDocument,
+              triggerConfig: onExit,
+              timing: "onExit"
+            });
+
+            effectApplied = effectApplied || Boolean(application.applied && !application.skipped);
+
+            debug("Managed Region onExit effect completed.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              moveSource,
+              movementMode,
+              requiredMovementMode: onExit.movementMode ?? "any",
+              movementModeMatched: true,
+              applied: application.applied,
+              skipped: application.skipped ?? false,
+              reason: application.reason ?? null
+            });
+          }
+        }
+      }
     }
 
-    if (!enterDetected) {
-      debug("Skipped managed Region effect because no entry was detected.", {
-        tokenId: tokenDocument.id,
-        regionId: regionDocument.id
-      });
-      continue;
-    }
-
-    if (isDuplicateEnter(regionDocument, tokenDocument, moveSource, toState?.center)) {
-      debug("Skipped managed Region effect because the entry was deduplicated.", {
-        tokenId: tokenDocument.id,
-        regionId: regionDocument.id
-      });
-      continue;
-    }
-
-    const application = await applyOnEnterEffect({
-      regionDocument,
-      tokenDocument,
-      normalizedDefinition
-    });
-
-    debug("Managed Region onEnter effect completed.", {
+    debug("Checked token against managed Region.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
-      applied: application.applied,
-      skipped: application.skipped ?? false,
-      reason: application.reason ?? null
+      moveSource,
+      movementModeRaw,
+      movementMode,
+      movementMarkConsumed,
+      enterRequiredMovementMode: onEnter.movementMode ?? "any",
+      enterMovementModeMatched,
+      exitRequiredMovementMode: onExit.movementMode ?? "any",
+      exitMovementModeMatched,
+      fromX: fromState?.position?.x ?? null,
+      fromY: fromState?.position?.y ?? null,
+      toX: toState?.position?.x ?? null,
+      toY: toState?.position?.y ?? null,
+      fromInside,
+      toInside,
+      crossedBoundary,
+      enterDetected,
+      exitDetected,
+      effectApplied,
+      skipped: !effectApplied && (enterDetected || exitDetected)
     });
   }
 }
@@ -290,29 +423,31 @@ function shouldAffectToken(tokenDocument, runtime, normalizedDefinition) {
   return { allowed: true, reason: "Targeting mode all." };
 }
 
-function isDuplicateEnter(regionDocument, tokenDocument, moveSource, afterCenter) {
-  cleanupExpiredDedupEntries();
+function isDuplicateMovementTrigger(kind, regionDocument, tokenDocument, moveSource, afterCenter) {
+  const store = kind === "exit" ? recentExitEvents : recentEnterEvents;
+  cleanupExpiredDedupEntries(store);
 
   const centerKey = `${Math.round(afterCenter?.x ?? 0)}:${Math.round(afterCenter?.y ?? 0)}`;
   const key = [
+    kind,
     regionDocument?.uuid ?? regionDocument?.id ?? "region",
     tokenDocument?.uuid ?? tokenDocument?.id ?? "token",
     moveSource,
     centerKey
   ].join("|");
 
-  const lastSeen = recentEnterEvents.get(key) ?? 0;
+  const lastSeen = store.get(key) ?? 0;
   const now = Date.now();
-  recentEnterEvents.set(key, now);
+  store.set(key, now);
 
   return now - lastSeen < ENTRY_DEDUP_TTL_MS;
 }
 
-function cleanupExpiredDedupEntries() {
+function cleanupExpiredDedupEntries(store) {
   const cutoff = Date.now() - ENTRY_DEDUP_TTL_MS;
-  for (const [key, timestamp] of recentEnterEvents.entries()) {
+  for (const [key, timestamp] of store.entries()) {
     if (timestamp < cutoff) {
-      recentEnterEvents.delete(key);
+      store.delete(key);
     }
   }
 }
@@ -327,7 +462,10 @@ function hasPositionChange(changed) {
 function refreshTrackedTokenStates(scene) {
   lastKnownTokenStates.clear();
   regionInsideStates.clear();
+  recentEnterEvents.clear();
+  recentExitEvents.clear();
   recentMoveTokenEvents.clear();
+  queuedMovementModes.clear();
 
   const tokenDocuments =
     scene?.tokens?.contents ??
@@ -462,28 +600,45 @@ function compactStatePath(states) {
   return result;
 }
 
-function detectBoundaryCrossing(tokenDocument, regionDocument, pathStates, fromInside) {
+function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside) {
   const states = compactStatePath(pathStates);
   if (!states.length) {
-    return false;
+    return {
+      crossedBoundary: false,
+      sawEntry: false,
+      sawExit: false
+    };
   }
 
   let previousInside = Boolean(fromInside);
+  let crossedBoundary = false;
+  let sawEntry = false;
+  let sawExit = false;
 
   for (let index = 1; index < states.length; index += 1) {
     const segmentSamples = sampleSegmentStates(states[index - 1], states[index]);
 
     for (const sampleState of segmentSamples) {
       const sampleInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, sampleState);
-      if (!previousInside && sampleInside) {
-        return true;
+      if (previousInside !== sampleInside) {
+        crossedBoundary = true;
+        if (!previousInside && sampleInside) {
+          sawEntry = true;
+        }
+        if (previousInside && !sampleInside) {
+          sawExit = true;
+        }
       }
 
       previousInside = sampleInside;
     }
   }
 
-  return false;
+  return {
+    crossedBoundary,
+    sawEntry,
+    sawExit
+  };
 }
 
 function sampleSegmentStates(fromState, toState) {
@@ -571,4 +726,68 @@ function clearInsideStateCacheForToken(tokenDocument) {
       regionInsideStates.delete(key);
     }
   }
+}
+
+function resolveMovementModeForEvaluation(tokenDocument, {
+  moveSource,
+  consume = false
+} = {}) {
+  const rawMovementMode = consume
+    ? consumeQueuedMovementMode(tokenDocument)
+    : peekQueuedMovementMode(tokenDocument);
+  const resolvedMovementMode = normalizeMovementMode(rawMovementMode ?? "voluntary");
+  const consumed = Boolean(consume && rawMovementMode);
+
+  debug("Resolved token movement mode for Region evaluation.", {
+    tokenId: tokenDocument?.id ?? null,
+    moveSource,
+    movementModeRaw: rawMovementMode,
+    movementMode: resolvedMovementMode,
+    movementMarkConsumed: consumed
+  });
+
+  return {
+    rawMovementMode,
+    resolvedMovementMode,
+    consumed
+  };
+}
+
+function consumeQueuedMovementMode(tokenDocument) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid) {
+    return null;
+  }
+
+  const movementMode = queuedMovementModes.get(tokenUuid) ?? null;
+  if (movementMode) {
+    queuedMovementModes.delete(tokenUuid);
+  }
+
+  return movementMode;
+}
+
+function peekQueuedMovementMode(tokenDocument) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid) {
+    return null;
+  }
+
+  return queuedMovementModes.get(tokenUuid) ?? null;
+}
+
+function movementModeMatches(actualMovementMode, requiredMovementMode) {
+  const actual = normalizeMovementMode(actualMovementMode);
+  const required = normalizeMovementMode(requiredMovementMode ?? "any");
+
+  if (required === "any") {
+    return true;
+  }
+
+  return actual === required;
+}
+
+function normalizeMovementMode(movementMode) {
+  const normalized = String(movementMode ?? "any").toLowerCase();
+  return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
 }

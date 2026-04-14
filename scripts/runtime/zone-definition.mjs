@@ -213,6 +213,7 @@ function normalizeTriggers(triggerDefinition, dc) {
 
   return {
     onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc),
+    onExit: normalizeTriggerConfig(triggerDefinition.onExit, dc),
     onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc),
     onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc)
   };
@@ -227,6 +228,9 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
     enabled: coerceBoolean(
       pickFirstDefined(definition.enabled, definition.active, false),
       false
+    ),
+    movementMode: normalizeMovementMode(
+      pickFirstDefined(definition.movementMode, "any")
     ),
     damage: {
       enabled: coerceBoolean(
@@ -267,10 +271,12 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   }
 
   const onEnter = normalizedDefinition.triggers.onEnter;
+  const onExit = normalizedDefinition.triggers.onExit;
   const onStartTurn = normalizedDefinition.triggers.onStartTurn;
   const onEndTurn = normalizedDefinition.triggers.onEndTurn;
 
   validateTriggerConfig("onEnter", onEnter, reasons);
+  validateTriggerConfig("onExit", onExit, reasons);
   validateTriggerConfig("onStartTurn", onStartTurn, reasons);
   validateTriggerConfig("onEndTurn", onEndTurn, reasons);
 
@@ -327,4 +333,9 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons) {
       reasons.push(`${triggerName} save requires a DC.`);
     }
   }
+}
+
+function normalizeMovementMode(value) {
+  const normalized = String(value ?? "any").toLowerCase();
+  return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
 }
