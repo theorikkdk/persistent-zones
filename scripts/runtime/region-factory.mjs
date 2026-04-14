@@ -1,4 +1,9 @@
-import { DEFAULT_REGION_COLOR } from "../constants.mjs";
+import {
+  DEFAULT_REGION_COLOR,
+  MODULE_ID,
+  NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
+  STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
+} from "../constants.mjs";
 import {
   buildManagedRegionFlags,
   coerceNumber,
@@ -137,7 +142,8 @@ export async function createRegionFromTemplate(
     debug("Created managed Region from MeasuredTemplate.", {
       templateId: templateDocument.id,
       regionId: createdRegion.id,
-      itemUuid: sourceContext.item.uuid
+      itemUuid: sourceContext.item.uuid,
+      nativeBehaviorCount: createdRegion.behaviors?.size ?? createdRegion.behaviors?.contents?.length ?? regionData.behaviors?.length ?? 0
     });
   }
 
@@ -162,6 +168,10 @@ function buildRegionCreateData({
   sourceContext,
   shapes
 }) {
+  const behaviors = buildNativeRegionBehaviors({
+    normalizedDefinition,
+    sourceContext
+  });
   const runtimeFlags = {
     templateId: templateDocument.id ?? null,
     templateUuid: templateDocument.uuid ?? null,
@@ -178,8 +188,60 @@ function buildRegionCreateData({
     color: DEFAULT_REGION_COLOR,
     elevation: coerceNumber(templateDocument.elevation, 0),
     shapes,
+    behaviors,
     flags: buildManagedRegionFlags(runtimeFlags)
   };
+}
+
+function buildNativeRegionBehaviors({
+  normalizedDefinition,
+  sourceContext
+}) {
+  const terrain = normalizedDefinition?.terrain ?? {};
+  if (!terrain.difficult) {
+    debug("No native Region movement-cost behavior requested by normalized definition.", {
+      label: normalizedDefinition?.label ?? null,
+      terrain
+    });
+    return [];
+  }
+
+  const multiplier = coerceNumber(terrain.multiplier, STANDARD_DIFFICULT_TERRAIN_MULTIPLIER);
+  const behaviorType = terrain.behaviorType ?? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE;
+  if (!CONFIG?.RegionBehavior?.dataModels?.[behaviorType]) {
+    debug("Skipped native Region behavior because the behavior type is unavailable.", {
+      label: normalizedDefinition?.label ?? null,
+      behaviorType
+    });
+    return [];
+  }
+
+  const behaviorData = {
+    name: buildTerrainBehaviorName(normalizedDefinition, sourceContext),
+    type: behaviorType,
+    system: {
+      magical: Boolean(terrain.system?.magical),
+      types: Array.from(terrain.system?.types ?? []),
+      ignoredDispositions: Array.from(terrain.system?.ignoredDispositions ?? [])
+    },
+    flags: {
+      [MODULE_ID]: {
+        nativeBehavior: {
+          kind: "difficult-terrain",
+          multiplier
+        }
+      }
+    }
+  };
+
+  debug("Prepared native Region behavior for movement cost.", {
+    label: normalizedDefinition?.label ?? null,
+    behaviorType,
+    multiplier,
+    system: behaviorData.system
+  });
+
+  return [behaviorData];
 }
 
 async function buildRegionShapesFromTemplate(templateDocument) {
@@ -443,6 +505,11 @@ function buildRegionName(normalizedDefinition, sourceContext) {
   const casterName = sourceContext.caster?.name ?? sourceContext.actor?.name ?? null;
 
   return casterName ? `${itemName}(${casterName})` : itemName;
+}
+
+function buildTerrainBehaviorName(normalizedDefinition, sourceContext) {
+  const regionName = buildRegionName(normalizedDefinition, sourceContext);
+  return `${regionName} Difficult Terrain`;
 }
 
 function getFoundryRectShape(templateDocument) {

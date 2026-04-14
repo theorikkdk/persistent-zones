@@ -89,6 +89,9 @@ export function buildTestDefinition(preset = "basic") {
         label: "Persistent Zone Debug Move Damage",
         movementMode: "any"
       }));
+    case "difficult-terrain":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createDifficultTerrainTestDefinition());
     case "turn-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createTurnDamageSaveTestDefinition());
@@ -580,6 +583,52 @@ function createMoveDamageTestDefinition({
         save: {
           enabled: false
         }
+      }
+    }
+  };
+}
+
+function createDifficultTerrainTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "difficult-terrain"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Difficult Terrain",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    terrain: {
+      difficult: true,
+      magical: false,
+      types: []
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
       }
     }
   };

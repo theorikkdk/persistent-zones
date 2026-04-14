@@ -3,12 +3,15 @@ import {
   DEFAULT_ZONE_LABEL,
   DEFINITION_FLAG_KEY,
   MODULE_ID,
+  NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
   NORMALIZED_DEFINITION_VERSION,
+  STANDARD_DIFFICULT_TERRAIN_MULTIPLIER,
   SUPPORTED_TEMPLATE_TYPES
 } from "../constants.mjs";
 import {
   coerceBoolean,
   coerceNumber,
+  debug,
   duplicateData,
   isPlainObject,
   pickFirstDefined,
@@ -44,6 +47,8 @@ export function normalizeZoneDefinition(
     ? definition.concentration
     : {};
   const triggerDefinition = isPlainObject(definition.triggers) ? definition.triggers : {};
+  const terrainDefinition = isPlainObject(definition.terrain) ? definition.terrain : {};
+  const movementCostDefinition = isPlainObject(definition.movementCost) ? definition.movementCost : {};
 
   const templateType = String(
     pickFirstDefined(
@@ -159,6 +164,11 @@ export function normalizeZoneDefinition(
       )
     },
     concentration,
+    terrain: normalizeTerrain({
+      terrainDefinition,
+      movementCostDefinition,
+      definition
+    }),
     targeting: normalizeTargeting(definition.targeting),
     triggers: normalizeTriggers(triggerDefinition, dc),
     limits: collectCurrentLimits(definition),
@@ -174,6 +184,19 @@ export function normalizeZoneDefinition(
   });
   normalizedDefinition.validation.isValid =
     normalizedDefinition.validation.reasons.length === 0;
+
+  if (
+    definition.difficultTerrain !== undefined ||
+    definition.terrain !== undefined ||
+    definition.movementCost !== undefined ||
+    normalizedDefinition.terrain.difficult
+  ) {
+    debug("Normalized zone terrain configuration.", {
+      itemUuid: normalizedDefinition.itemUuid ?? null,
+      label: normalizedDefinition.label,
+      terrain: normalizedDefinition.terrain
+    });
+  }
 
   return normalizedDefinition;
 }
@@ -198,6 +221,65 @@ function normalizeTargeting(targetingDefinition) {
   return {
     mode: String(pickFirstDefined(definition.mode, "all")).toLowerCase(),
     includeSelf: coerceBoolean(pickFirstDefined(definition.includeSelf, true), true)
+  };
+}
+
+function normalizeTerrain({
+  terrainDefinition,
+  movementCostDefinition,
+  definition
+}) {
+  const difficult = coerceBoolean(
+    pickFirstDefined(
+      terrainDefinition.difficult,
+      terrainDefinition.enabled,
+      movementCostDefinition.enabled,
+      definition.difficultTerrain,
+      false
+    ),
+    false
+  );
+
+  const multiplier = difficult
+    ? coerceNumber(
+      pickFirstDefined(
+        terrainDefinition.multiplier,
+        movementCostDefinition.multiplier,
+        movementCostDefinition.costMultiplier,
+        STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
+      ),
+      STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
+    )
+    : null;
+
+  return {
+    difficult,
+    multiplier,
+    behaviorType: difficult ? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE : null,
+    system: {
+      magical: coerceBoolean(
+        pickFirstDefined(
+          terrainDefinition.magical,
+          movementCostDefinition.magical,
+          false
+        ),
+        false
+      ),
+      types: normalizeStringArray(
+        pickFirstDefined(
+          terrainDefinition.types,
+          movementCostDefinition.types,
+          []
+        )
+      ),
+      ignoredDispositions: normalizeNumberArray(
+        pickFirstDefined(
+          terrainDefinition.ignoredDispositions,
+          movementCostDefinition.ignoredDispositions,
+          []
+        )
+      )
+    }
   };
 }
 
@@ -309,8 +391,12 @@ function collectCurrentLimits(definition) {
     limits.push("Forced movement is not executed in this MVP step.");
   }
 
-  if (safeGet(definition, ["difficultTerrain"]) !== undefined) {
-    limits.push("Difficult terrain is not executed in this MVP step.");
+  if (
+    safeGet(definition, ["terrain", "multiplier"]) !== undefined ||
+    safeGet(definition, ["movementCost", "multiplier"]) !== undefined ||
+    safeGet(definition, ["movementCost", "costMultiplier"]) !== undefined
+  ) {
+    limits.push("Custom movement cost multipliers are not yet supported; standard difficult terrain is used when enabled.");
   }
 
   if (safeGet(definition, ["linkedWalls"]) !== undefined) {
@@ -361,4 +447,24 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
 function normalizeMovementMode(value) {
   const normalized = String(value ?? "any").toLowerCase();
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
+}
+
+function normalizeStringArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function normalizeNumberArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => coerceNumber(value, null))
+    .filter((value) => value !== null);
 }
