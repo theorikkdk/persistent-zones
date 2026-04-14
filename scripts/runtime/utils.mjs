@@ -152,6 +152,22 @@ export function distanceToPixels(distance, scene = null) {
   return numericDistance * (gridSize / gridDistance);
 }
 
+export function pixelsToDistance(pixels, scene = null) {
+  const numericPixels = coerceNumber(pixels, 0);
+  const activeScene = scene ?? canvas?.scene ?? null;
+  const gridSize = coerceNumber(activeScene?.grid?.size, canvas?.dimensions?.size ?? 100);
+  const gridDistance = coerceNumber(
+    activeScene?.grid?.distance,
+    canvas?.dimensions?.distance ?? 5
+  );
+
+  if (!gridSize) {
+    return numericPixels;
+  }
+
+  return numericPixels * (gridDistance / gridSize);
+}
+
 export function translateFlatPoints(points, deltaX = 0, deltaY = 0) {
   const sourcePoints = Array.from(points ?? []);
   const translatedPoints = [];

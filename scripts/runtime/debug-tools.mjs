@@ -75,6 +75,20 @@ export function buildTestDefinition(preset = "basic") {
     case "exit-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createExitDamageSaveTestDefinition());
+    case "move-damage-forced-only":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMoveDamageTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Move Damage Forced Only",
+        movementMode: "forced"
+      }));
+    case "move-damage":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMoveDamageTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Move Damage",
+        movementMode: "any"
+      }));
     case "turn-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createTurnDamageSaveTestDefinition());
@@ -516,6 +530,55 @@ function createMovementFilteredTestDefinition({
           ability: "dex",
           dc: 13,
           onSuccess: "half"
+        }
+      }
+    }
+  };
+}
+
+function createMoveDamageTestDefinition({
+  preset,
+  label,
+  movementMode
+}) {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset
+    },
+    enabled: true,
+    label,
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: true,
+        movementMode,
+        distanceStep: 5,
+        damage: {
+          enabled: true,
+          formula: "1d4",
+          type: "acid"
+        },
+        save: {
+          enabled: false
         }
       }
     }

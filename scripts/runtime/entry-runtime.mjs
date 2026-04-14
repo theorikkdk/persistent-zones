@@ -7,6 +7,7 @@ import {
   getRegionRuntimeFlags,
   getTokenCenter,
   isPrimaryGM,
+  pixelsToDistance,
   testTokenInsideManagedRegion
 } from "./utils.mjs";
 
@@ -14,6 +15,7 @@ const lastKnownTokenStates = new Map();
 const regionInsideStates = new Map();
 const recentEnterEvents = new Map();
 const recentExitEvents = new Map();
+const recentOnMoveEvents = new Map();
 const recentMoveTokenEvents = new Map();
 const queuedMovementModes = new Map();
 
@@ -161,6 +163,9 @@ async function onCreateToken(tokenDocument) {
 
 function onDeleteToken(tokenDocument) {
   lastKnownTokenStates.delete(tokenDocument.uuid);
+  clearRecentDedupEntriesForToken(recentEnterEvents, tokenDocument);
+  clearRecentDedupEntriesForToken(recentExitEvents, tokenDocument);
+  clearRecentDedupEntriesForToken(recentOnMoveEvents, tokenDocument);
   recentMoveTokenEvents.delete(tokenDocument.uuid);
   queuedMovementModes.delete(tokenDocument.uuid);
   clearInsideStateCacheForToken(tokenDocument);
@@ -209,6 +214,7 @@ async function evaluateTokenEntry(tokenDocument, {
     const normalizedDefinition = runtime?.normalizedDefinition ?? null;
     const onEnter = normalizedDefinition?.triggers?.onEnter ?? {};
     const onExit = normalizedDefinition?.triggers?.onExit ?? {};
+    const onMove = normalizedDefinition?.triggers?.onMove ?? {};
 
     const insideStateKey = buildInsideStateKey(tokenDocument, regionDocument);
     const cachedFromInside = regionInsideStates.get(insideStateKey) ?? null;
@@ -226,7 +232,9 @@ async function evaluateTokenEntry(tokenDocument, {
       ? {
         crossedBoundary: toInside,
         sawEntry: toInside,
-        sawExit: false
+        sawExit: false,
+        pathLengthPixels: 0,
+        insideDistancePixels: 0
       }
       : analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside);
     const crossedBoundary = movementAnalysis.crossedBoundary;
@@ -236,8 +244,13 @@ async function evaluateTokenEntry(tokenDocument, {
     const exitDetected = moveSource === "createToken"
       ? false
       : fromInside && !toInside && movementAnalysis.sawExit;
+    const pathLength = pixelsToDistance(movementAnalysis.pathLengthPixels, scene);
+    const insideDistance = pixelsToDistance(movementAnalysis.insideDistancePixels, scene);
+    const stepDistance = coerceNumber(onMove.distanceStep, null);
+    const moveTriggerCount = calculateMoveTriggerCount(insideDistance, stepDistance);
     const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
     const exitMovementModeMatched = movementModeMatches(movementMode, onExit.movementMode);
+    const moveMovementModeMatched = movementModeMatches(movementMode, onMove.movementMode);
 
     if (toInside) {
       regionInsideStates.set(insideStateKey, true);
@@ -255,14 +268,19 @@ async function evaluateTokenEntry(tokenDocument, {
       continue;
     }
 
-    if (!enterDetected && !exitDetected) {
+    if (!enterDetected && !exitDetected && moveTriggerCount <= 0) {
       debug("Skipped managed Region effect because no movement trigger was detected.", {
         tokenId: tokenDocument.id,
-        regionId: regionDocument.id
+        regionId: regionDocument.id,
+        moveSource,
+        pathLength: roundDistanceValue(pathLength),
+        insideDistance: roundDistanceValue(insideDistance),
+        stepDistance: roundDistanceValue(stepDistance),
+        triggerCount: moveTriggerCount
       });
     }
 
-    if (enterDetected || exitDetected) {
+    if (enterDetected || exitDetected || moveTriggerCount > 0) {
       const filterResult = shouldAffectToken(tokenDocument, runtime, normalizedDefinition);
       if (!filterResult.allowed) {
         debug("Skipped managed Region effect because token filtering rejected the target.", {
@@ -312,6 +330,83 @@ async function evaluateTokenEntry(tokenDocument, {
               applied: application.applied,
               skipped: application.skipped ?? false,
               reason: application.reason ?? null
+            });
+          }
+        }
+
+        if (moveTriggerCount > 0) {
+          if (!onMove.enabled) {
+            debug("Skipped managed Region effect because onMove is disabled.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              moveSource,
+              pathLength: roundDistanceValue(pathLength),
+              insideDistance: roundDistanceValue(insideDistance),
+              stepDistance: roundDistanceValue(stepDistance),
+              triggerCount: moveTriggerCount
+            });
+          } else if (!moveMovementModeMatched) {
+            debug("Skipped managed Region effect because movement mode did not match.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              trigger: "onMove",
+              moveSource,
+              movementMode,
+              requiredMovementMode: onMove.movementMode ?? "any",
+              movementModeMatched: false,
+              pathLength: roundDistanceValue(pathLength),
+              insideDistance: roundDistanceValue(insideDistance),
+              stepDistance: roundDistanceValue(stepDistance),
+              triggerCount: moveTriggerCount
+            });
+          } else if (isDuplicateOnMoveTrigger(
+            regionDocument,
+            tokenDocument,
+            moveSource,
+            fromState,
+            toState,
+            moveTriggerCount,
+            insideDistance
+          )) {
+            debug("Skipped managed Region effect because the onMove trigger was deduplicated.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              moveSource,
+              pathLength: roundDistanceValue(pathLength),
+              insideDistance: roundDistanceValue(insideDistance),
+              stepDistance: roundDistanceValue(stepDistance),
+              triggerCount: moveTriggerCount
+            });
+          } else {
+            let appliedCount = 0;
+
+            for (let index = 0; index < moveTriggerCount; index += 1) {
+              const application = await applyConfiguredTriggerEffect({
+                regionDocument,
+                tokenDocument,
+                triggerConfig: onMove,
+                timing: "onMove"
+              });
+
+              if (application.applied && !application.skipped) {
+                appliedCount += 1;
+                effectApplied = true;
+              }
+            }
+
+            debug("Managed Region onMove effect completed.", {
+              tokenId: tokenDocument.id,
+              regionId: regionDocument.id,
+              moveSource,
+              movementMode,
+              requiredMovementMode: onMove.movementMode ?? "any",
+              movementModeMatched: true,
+              pathLength: roundDistanceValue(pathLength),
+              insideDistance: roundDistanceValue(insideDistance),
+              stepDistance: roundDistanceValue(stepDistance),
+              triggerCount: moveTriggerCount,
+              appliedCount,
+              effectApplied: appliedCount > 0
             });
           }
         }
@@ -374,6 +469,8 @@ async function evaluateTokenEntry(tokenDocument, {
       enterMovementModeMatched,
       exitRequiredMovementMode: onExit.movementMode ?? "any",
       exitMovementModeMatched,
+      moveRequiredMovementMode: onMove.movementMode ?? "any",
+      moveMovementModeMatched,
       fromX: fromState?.position?.x ?? null,
       fromY: fromState?.position?.y ?? null,
       toX: toState?.position?.x ?? null,
@@ -381,10 +478,14 @@ async function evaluateTokenEntry(tokenDocument, {
       fromInside,
       toInside,
       crossedBoundary,
+      pathLength: roundDistanceValue(pathLength),
+      insideDistance: roundDistanceValue(insideDistance),
+      stepDistance: roundDistanceValue(stepDistance),
+      triggerCount: moveTriggerCount,
       enterDetected,
       exitDetected,
       effectApplied,
-      skipped: !effectApplied && (enterDetected || exitDetected)
+      skipped: !effectApplied && (enterDetected || exitDetected || moveTriggerCount > 0)
     });
   }
 }
@@ -464,6 +565,7 @@ function refreshTrackedTokenStates(scene) {
   regionInsideStates.clear();
   recentEnterEvents.clear();
   recentExitEvents.clear();
+  recentOnMoveEvents.clear();
   recentMoveTokenEvents.clear();
   queuedMovementModes.clear();
 
@@ -606,7 +708,9 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     return {
       crossedBoundary: false,
       sawEntry: false,
-      sawExit: false
+      sawExit: false,
+      pathLengthPixels: 0,
+      insideDistancePixels: 0
     };
   }
 
@@ -614,12 +718,19 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let crossedBoundary = false;
   let sawEntry = false;
   let sawExit = false;
+  let pathLengthPixels = 0;
+  let insideDistancePixels = 0;
 
   for (let index = 1; index < states.length; index += 1) {
     const segmentSamples = sampleSegmentStates(states[index - 1], states[index]);
+    let previousState = states[index - 1];
 
     for (const sampleState of segmentSamples) {
       const sampleInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, sampleState);
+      const segmentDistancePixels = measureStateDistance(previousState, sampleState);
+      pathLengthPixels += segmentDistancePixels;
+      insideDistancePixels += segmentDistancePixels * estimateInsideDistanceFactor(previousInside, sampleInside);
+
       if (previousInside !== sampleInside) {
         crossedBoundary = true;
         if (!previousInside && sampleInside) {
@@ -631,13 +742,16 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       }
 
       previousInside = sampleInside;
+      previousState = sampleState;
     }
   }
 
   return {
     crossedBoundary,
     sawEntry,
-    sawExit
+    sawExit,
+    pathLengthPixels,
+    insideDistancePixels
   };
 }
 
@@ -728,6 +842,46 @@ function clearInsideStateCacheForToken(tokenDocument) {
   }
 }
 
+function clearRecentDedupEntriesForToken(store, tokenDocument) {
+  const tokenKey = tokenDocument?.uuid ?? tokenDocument?.id ?? null;
+  if (!tokenKey) {
+    return;
+  }
+
+  const infix = `|${tokenKey}|`;
+  for (const key of store.keys()) {
+    if (key.includes(infix)) {
+      store.delete(key);
+    }
+  }
+}
+
+function isDuplicateOnMoveTrigger(regionDocument, tokenDocument, moveSource, fromState, toState, triggerCount, insideDistance) {
+  cleanupExpiredDedupEntries(recentOnMoveEvents);
+
+  const tokenKey = tokenDocument?.uuid ?? tokenDocument?.id ?? "token";
+  const regionKey = regionDocument?.uuid ?? regionDocument?.id ?? "region";
+  const fromKey = buildPointKey(fromState?.center);
+  const toKey = buildPointKey(toState?.center);
+  const distanceKey = roundDistanceValue(insideDistance, 2);
+  const key = [
+    "move",
+    regionKey,
+    tokenKey,
+    moveSource,
+    fromKey,
+    toKey,
+    triggerCount,
+    distanceKey
+  ].join("|");
+
+  const lastSeen = recentOnMoveEvents.get(key) ?? 0;
+  const now = Date.now();
+  recentOnMoveEvents.set(key, now);
+
+  return now - lastSeen < ENTRY_DEDUP_TTL_MS;
+}
+
 function resolveMovementModeForEvaluation(tokenDocument, {
   moveSource,
   consume = false
@@ -790,4 +944,52 @@ function movementModeMatches(actualMovementMode, requiredMovementMode) {
 function normalizeMovementMode(movementMode) {
   const normalized = String(movementMode ?? "any").toLowerCase();
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
+}
+
+function calculateMoveTriggerCount(insideDistance, stepDistance) {
+  if (stepDistance === null || stepDistance <= 0 || insideDistance <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((insideDistance + 0.0001) / stepDistance));
+}
+
+function measureStateDistance(fromState, toState) {
+  const fromPoint = fromState?.center ?? fromState?.position ?? null;
+  const toPoint = toState?.center ?? toState?.position ?? null;
+
+  if (!fromPoint || !toPoint) {
+    return 0;
+  }
+
+  return Math.hypot(
+    coerceNumber(toPoint.x, 0) - coerceNumber(fromPoint.x, 0),
+    coerceNumber(toPoint.y, 0) - coerceNumber(fromPoint.y, 0)
+  );
+}
+
+function estimateInsideDistanceFactor(fromInside, toInside) {
+  if (fromInside && toInside) {
+    return 1;
+  }
+
+  if (fromInside !== toInside) {
+    return 0.5;
+  }
+
+  return 0;
+}
+
+function buildPointKey(point) {
+  return `${Math.round(coerceNumber(point?.x, 0))}:${Math.round(coerceNumber(point?.y, 0))}`;
+}
+
+function roundDistanceValue(value, precision = 2) {
+  const numericValue = coerceNumber(value, null);
+  if (numericValue === null) {
+    return null;
+  }
+
+  const factor = 10 ** precision;
+  return Math.round(numericValue * factor) / factor;
 }

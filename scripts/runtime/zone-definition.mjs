@@ -210,10 +210,15 @@ function normalizeTriggers(triggerDefinition, dc) {
     triggerDefinition.onEndTurn,
     triggerDefinition.onTurnEnd
   );
+  const moveDefinition = pickFirstDefined(
+    triggerDefinition.onMove,
+    triggerDefinition.onMovement
+  );
 
   return {
     onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc),
     onExit: normalizeTriggerConfig(triggerDefinition.onExit, dc),
+    onMove: normalizeTriggerConfig(moveDefinition, dc),
     onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc),
     onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc)
   };
@@ -231,6 +236,14 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
     ),
     movementMode: normalizeMovementMode(
       pickFirstDefined(definition.movementMode, "any")
+    ),
+    distanceStep: coerceNumber(
+      pickFirstDefined(
+        definition.distanceStep,
+        definition.stepDistance,
+        definition.distanceEvery
+      ),
+      null
     ),
     damage: {
       enabled: coerceBoolean(
@@ -272,11 +285,13 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
 
   const onEnter = normalizedDefinition.triggers.onEnter;
   const onExit = normalizedDefinition.triggers.onExit;
+  const onMove = normalizedDefinition.triggers.onMove;
   const onStartTurn = normalizedDefinition.triggers.onStartTurn;
   const onEndTurn = normalizedDefinition.triggers.onEndTurn;
 
   validateTriggerConfig("onEnter", onEnter, reasons);
   validateTriggerConfig("onExit", onExit, reasons);
+  validateTriggerConfig("onMove", onMove, reasons, { requireDistanceStep: true });
   validateTriggerConfig("onStartTurn", onStartTurn, reasons);
   validateTriggerConfig("onEndTurn", onEndTurn, reasons);
 
@@ -309,9 +324,17 @@ function collectCurrentLimits(definition) {
   return limits;
 }
 
-function validateTriggerConfig(triggerName, triggerConfig, reasons) {
+function validateTriggerConfig(triggerName, triggerConfig, reasons, {
+  requireDistanceStep = false
+} = {}) {
   if (!triggerConfig?.enabled) {
     return;
+  }
+
+  if (requireDistanceStep) {
+    if (triggerConfig.distanceStep === null || triggerConfig.distanceStep <= 0) {
+      reasons.push(`${triggerName} requires a positive distanceStep.`);
+    }
   }
 
   if (!triggerConfig.damage.enabled && !triggerConfig.save.enabled) {
