@@ -1,0 +1,51 @@
+{
+  "id": "persistent-zones",
+  "title": "Persistent Zones",
+  "description": "Runtime management for persistent zones created from Encounter+ Importer data.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Persistent Zones Contributors"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "4",
+          "verified": "4"
+        }
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.mjs"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "fr",
+      "name": "French",
+      "path": "lang/fr.json"
+    }
+  ],
+  "styles": [],
+  "packs": [],
+  "socket": false,
+  "manifest": "",
+  "download": "",
+  "url": "",
+  "license": "MIT",
+  "readme": "README.md",
+  "media": []
+}

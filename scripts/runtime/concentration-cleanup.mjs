@@ -1,0 +1,285 @@
+import {
+  debug,
+  error,
+  findManagedRegions,
+  fromUuidSafe,
+  getRegionRuntimeFlags,
+  isPrimaryGM,
+  pickFirstDefined
+} from "./utils.mjs";
+
+let hooksRegistered = false;
+
+export function registerConcentrationCleanupHooks() {
+  if (hooksRegistered) {
+    return;
+  }
+
+  Hooks.on("canvasReady", onCanvasReady);
+  Hooks.on("deleteMeasuredTemplate", onDeleteMeasuredTemplate);
+  Hooks.on("deleteItem", onDeleteItem);
+  Hooks.on("deleteActiveEffect", onActiveEffectLifecycleChange);
+  Hooks.on("updateActiveEffect", onActiveEffectLifecycleChange);
+
+  hooksRegistered = true;
+}
+
+export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
+  if (!scene) {
+    return [];
+  }
+
+  const regionsToDelete = [];
+  const managedRegions = findManagedRegions(scene);
+
+  for (const region of managedRegions) {
+    const validation = await validateManagedRegion(region);
+    if (!validation.isValid) {
+      debug("Scheduling Region cleanup.", {
+        regionId: region.id,
+        sceneId: scene.id,
+        reason,
+        detail: validation.reason
+      });
+      regionsToDelete.push(region.id);
+    }
+  }
+
+  if (!regionsToDelete.length) {
+    return [];
+  }
+
+  return scene.deleteEmbeddedDocuments("Region", regionsToDelete);
+}
+
+export async function cleanupWorldRegions({ reason = "manual" } = {}) {
+  const deleted = [];
+
+  for (const scene of game.scenes.contents) {
+    const deletedInScene = await cleanupSceneRegions(scene, { reason });
+    deleted.push(...deletedInScene);
+  }
+
+  return deleted;
+}
+
+async function onCanvasReady(scene) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  try {
+    await cleanupSceneRegions(scene ?? canvas?.scene ?? null, {
+      reason: "canvas-ready"
+    });
+  } catch (caughtError) {
+    error("Failed to cleanup Regions on canvasReady.", caughtError);
+  }
+}
+
+async function onDeleteMeasuredTemplate(templateDocument) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  try {
+    await cleanupSceneRegions(templateDocument?.parent ?? null, {
+      reason: "template-deleted"
+    });
+  } catch (caughtError) {
+    error("Failed to cleanup Regions after template deletion.", caughtError, {
+      templateId: templateDocument?.id ?? null
+    });
+  }
+}
+
+async function onDeleteItem(item) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  try {
+    await cleanupWorldRegions({ reason: "item-deleted" });
+  } catch (caughtError) {
+    error("Failed to cleanup Regions after item deletion.", caughtError, {
+      itemUuid: item?.uuid ?? null
+    });
+  }
+}
+
+async function onActiveEffectLifecycleChange(activeEffect) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  try {
+    await cleanupWorldRegions({
+      reason: `active-effect-${activeEffect?.id ?? "unknown"}`
+    });
+  } catch (caughtError) {
+    error("Failed to cleanup Regions after ActiveEffect change.", caughtError, {
+      effectId: activeEffect?.id ?? null
+    });
+  }
+}
+
+async function validateManagedRegion(regionDocument) {
+  const runtime = getRegionRuntimeFlags(regionDocument);
+  if (!runtime) {
+    return { isValid: true };
+  }
+
+  // If the source template or source item disappeared, the Region is stale.
+  const linkedTemplate = await fromUuidSafe(runtime.templateUuid);
+  if (!linkedTemplate) {
+    return {
+      isValid: false,
+      reason: "The linked MeasuredTemplate no longer exists."
+    };
+  }
+
+  const linkedItem = await fromUuidSafe(runtime.itemUuid);
+  if (!linkedItem) {
+    return {
+      isValid: false,
+      reason: "The linked Item no longer exists."
+    };
+  }
+
+  const normalizedDefinition = runtime.normalizedDefinition ?? {};
+  if (!requiresConcentrationValidation(normalizedDefinition)) {
+    return { isValid: true };
+  }
+
+  return validateConcentrationState({
+    linkedItem,
+    normalizedDefinition,
+    runtime
+  });
+}
+
+function requiresConcentrationValidation(normalizedDefinition) {
+  const concentration = normalizedDefinition?.concentration ?? {};
+
+  return Boolean(
+    concentration.required === true ||
+      concentration.effectUuid ||
+      concentration.effectId ||
+      concentration.actorUuid
+  );
+}
+
+async function validateConcentrationState({
+  linkedItem,
+  normalizedDefinition,
+  runtime
+}) {
+  const concentration = normalizedDefinition.concentration ?? {};
+
+  if (concentration.effectUuid) {
+    const effectByUuid = await fromUuidSafe(concentration.effectUuid);
+    if (isUsableConcentrationEffect(effectByUuid, concentration, linkedItem)) {
+      return { isValid: true };
+    }
+
+    return {
+      isValid: false,
+      reason: "The linked concentration effect is missing or inactive."
+    };
+  }
+
+  const actor = await resolveConcentrationActor({
+    concentration,
+    runtime,
+    linkedItem
+  });
+
+  if (!actor) {
+    return concentration.required === true
+      ? {
+          isValid: false,
+          reason: "No actor could be resolved to validate concentration."
+        }
+      : { isValid: true };
+  }
+
+  const activeEffects = Array.from(actor.effects ?? []);
+  const matchingEffect = activeEffects.find((effect) =>
+    isUsableConcentrationEffect(effect, concentration, linkedItem)
+  );
+
+  if (matchingEffect) {
+    return { isValid: true };
+  }
+
+  return concentration.required === true
+    ? {
+        isValid: false,
+        reason: "The required concentration effect is no longer active."
+      }
+    : { isValid: true };
+}
+
+async function resolveConcentrationActor({ concentration, runtime, linkedItem }) {
+  const actorUuid = pickFirstDefined(
+    concentration.actorUuid,
+    runtime.casterUuid,
+    runtime.actorUuid,
+    linkedItem.actor?.uuid
+  );
+
+  if (actorUuid) {
+    const resolved = await fromUuidSafe(actorUuid);
+    if (resolved?.documentName === "Actor") {
+      return resolved;
+    }
+
+    if (resolved?.actor) {
+      return resolved.actor;
+    }
+  }
+
+  return linkedItem.actor ?? null;
+}
+
+function isUsableConcentrationEffect(activeEffect, concentration, linkedItem) {
+  if (!activeEffect || activeEffect.disabled) {
+    return false;
+  }
+
+  // Prefer explicit UUID or id matches, then fall back to concentration status + origin.
+  if (concentration.effectId && activeEffect.id === concentration.effectId) {
+    return true;
+  }
+
+  if (concentration.effectUuid && activeEffect.uuid === concentration.effectUuid) {
+    return true;
+  }
+
+  const statuses =
+    activeEffect.statuses instanceof Set
+      ? Array.from(activeEffect.statuses)
+      : Array.isArray(activeEffect.statuses)
+        ? activeEffect.statuses
+        : [];
+
+  const normalizedStatuses = statuses.map((status) => String(status).toLowerCase());
+  const statusId = String(concentration.statusId ?? "concentrating").toLowerCase();
+  const hasConcentrationStatus =
+    normalizedStatuses.includes(statusId) ||
+    normalizedStatuses.includes("concentrating") ||
+    normalizedStatuses.includes("concentration");
+
+  if (!hasConcentrationStatus) {
+    return false;
+  }
+
+  const origin = activeEffect.origin ?? "";
+  const expectedOrigin = concentration.originUuid ?? linkedItem?.uuid ?? "";
+
+  if (!expectedOrigin) {
+    return true;
+  }
+
+  return origin === expectedOrigin || origin.startsWith(expectedOrigin);
+}

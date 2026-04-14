@@ -1,0 +1,7 @@
+{
+  "PERSISTENT_ZONES": {
+    "ModuleTitle": "Persistent Zones",
+    "ModuleDescription": "Gestion runtime des zones persistantes creees depuis Encounter+ Importer.",
+    "ZoneSuffix": "Zone Persistante"
+  }
+}
