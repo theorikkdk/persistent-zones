@@ -2,6 +2,7 @@ import {
   DEFAULT_REGION_COLOR,
   MODULE_ID,
   NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
+  RUNTIME_FLAG_KEY,
   STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
 } from "../constants.mjs";
 import {
@@ -11,6 +12,7 @@ import {
   distanceToPixels,
   error,
   findManagedRegions,
+  fromUuidSafe,
   getRegionRuntimeFlags,
   getTemplateType,
   isPrimaryGM,
@@ -25,6 +27,7 @@ import {
 } from "./zone-definition.mjs";
 
 let hooksRegistered = false;
+const pendingTemplateSync = new Set();
 
 export function registerRegionFactoryHooks() {
   if (hooksRegistered) {
@@ -32,6 +35,7 @@ export function registerRegionFactoryHooks() {
   }
 
   Hooks.on("createMeasuredTemplate", onCreateMeasuredTemplate);
+  Hooks.on("updateMeasuredTemplate", onUpdateMeasuredTemplate);
   hooksRegistered = true;
 }
 
@@ -46,6 +50,44 @@ async function onCreateMeasuredTemplate(templateDocument, options, userId) {
     error("Failed to create Region from MeasuredTemplate.", caughtError, {
       templateId: templateDocument?.id ?? null
     });
+  }
+}
+
+async function onUpdateMeasuredTemplate(templateDocument, changed, options, userId) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  const updateKeys = collectRelevantTemplateUpdateKeys(changed);
+  if (!updateKeys.length) {
+    return;
+  }
+
+  const syncKey = buildTemplateSyncKey(templateDocument);
+  if (pendingTemplateSync.has(syncKey)) {
+    debug("Skipped template sync because a sync is already pending.", {
+      templateId: templateDocument?.id ?? null,
+      updateKeys
+    });
+    return;
+  }
+
+  pendingTemplateSync.add(syncKey);
+
+  try {
+    await syncRegionToTemplate(templateDocument, {
+      changed,
+      options,
+      updateKeys,
+      userId
+    });
+  } catch (caughtError) {
+    error("Failed to sync Region from updated MeasuredTemplate.", caughtError, {
+      templateId: templateDocument?.id ?? null,
+      updateKeys
+    });
+  } finally {
+    pendingTemplateSync.delete(syncKey);
   }
 }
 
@@ -150,6 +192,78 @@ export async function createRegionFromTemplate(
   return createdRegion;
 }
 
+async function syncRegionToTemplate(templateDocument, {
+  changed = {},
+  updateKeys = [],
+  userId = null
+} = {}) {
+  const scene = templateDocument?.parent ?? null;
+  if (!scene) {
+    debug("Skipped template sync because the template has no parent Scene.", {
+      templateId: templateDocument?.id ?? null,
+      updateKeys,
+      strategy: "update-region",
+      syncApplied: false
+    });
+    return null;
+  }
+
+  const existingRegion = findManagedRegionForTemplate(scene, templateDocument);
+  if (!existingRegion) {
+    const createdRegion = await createRegionFromTemplate(templateDocument, { userId });
+    debug("Synced managed Region from updated MeasuredTemplate.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: createdRegion?.id ?? null,
+      updateKeys,
+      strategy: "create-region",
+      syncApplied: Boolean(createdRegion)
+    });
+    return createdRegion;
+  }
+
+  const syncPayload = await buildRegionSyncPayload(templateDocument, existingRegion);
+  if (!syncPayload) {
+    debug("Skipped template sync because Region sync payload could not be built.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: existingRegion.id,
+      updateKeys,
+      strategy: "update-region",
+      syncApplied: false
+    });
+    return existingRegion;
+  }
+
+  try {
+    await existingRegion.update(syncPayload.updateData);
+    debug("Synced managed Region from updated MeasuredTemplate.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: existingRegion.id,
+      updateKeys,
+      strategy: "update-region",
+      syncApplied: true
+    });
+    return existingRegion;
+  } catch (caughtError) {
+    debug("Direct Region update failed during template sync; attempting recreate fallback.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: existingRegion.id,
+      updateKeys,
+      strategy: "recreate-region",
+      reason: caughtError?.message ?? "unknown"
+    });
+
+    const recreatedRegion = await recreateManagedRegionFromTemplate(templateDocument, existingRegion, syncPayload.regionData);
+    debug("Synced managed Region from updated MeasuredTemplate.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: recreatedRegion?.id ?? null,
+      updateKeys,
+      strategy: "recreate-region",
+      syncApplied: Boolean(recreatedRegion)
+    });
+    return recreatedRegion;
+  }
+}
+
 export function findManagedRegionForTemplate(scene, templateDocument) {
   const templateId = templateDocument?.id ?? null;
   const templateUuid = templateDocument?.uuid ?? null;
@@ -191,6 +305,97 @@ function buildRegionCreateData({
     behaviors,
     flags: buildManagedRegionFlags(runtimeFlags)
   };
+}
+
+async function buildRegionSyncPayload(templateDocument, regionDocument) {
+  const sourceContext = await resolveRegionSourceContext(templateDocument, regionDocument);
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  let normalizedDefinition = runtime.normalizedDefinition ?? null;
+
+  if (sourceContext.item) {
+    const zoneDefinition = getZoneDefinitionFromItem(sourceContext.item);
+    if (zoneDefinition) {
+      normalizedDefinition = normalizeZoneDefinition(zoneDefinition, {
+        item: sourceContext.item,
+        actor: sourceContext.actor,
+        caster: sourceContext.caster,
+        templateDocument
+      });
+    }
+  }
+
+  if (!normalizedDefinition?.validation?.isValid) {
+    debug("Skipped Region sync because the normalized definition is invalid.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      reasons: normalizedDefinition?.validation?.reasons ?? []
+    });
+    return null;
+  }
+
+  const shapes = await buildRegionShapesFromTemplate(templateDocument);
+  if (!shapes.length) {
+    debug("Skipped Region sync because no supported Region shape could be produced.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      templateType: getTemplateType(templateDocument)
+    });
+    return null;
+  }
+
+  const regionData = buildRegionCreateData({
+    templateDocument,
+    normalizedDefinition,
+    sourceContext,
+    shapes
+  });
+
+  return {
+    regionData,
+    updateData: buildRegionUpdateData(regionData)
+  };
+}
+
+function buildRegionUpdateData(regionData) {
+  return {
+    name: regionData.name,
+    elevation: regionData.elevation,
+    shapes: regionData.shapes,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]: regionData.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY] ?? null
+  };
+}
+
+async function recreateManagedRegionFromTemplate(templateDocument, regionDocument, regionData) {
+  const scene = templateDocument?.parent ?? regionDocument?.parent ?? null;
+  if (!scene || !regionData) {
+    return null;
+  }
+
+  if (scene?.regions?.get?.(regionDocument?.id)) {
+    await scene.deleteEmbeddedDocuments("Region", [regionDocument.id]);
+  }
+
+  const createdRegions = await scene.createEmbeddedDocuments("Region", [regionData]);
+  return createdRegions?.[0] ?? null;
+}
+
+async function resolveRegionSourceContext(templateDocument, regionDocument) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const resolvedContext = await resolveTemplateSourceContext(templateDocument);
+  const itemByRuntime = await resolveDocumentFromRuntimeUuid(runtime.itemUuid, "Item");
+  const actorByRuntime = await resolveDocumentFromRuntimeUuid(runtime.actorUuid, "Actor");
+  const casterByRuntime = await resolveDocumentFromRuntimeUuid(runtime.casterUuid, "Actor");
+
+  return {
+    item: itemByRuntime ?? resolvedContext.item ?? null,
+    actor: actorByRuntime ?? resolvedContext.actor ?? itemByRuntime?.actor ?? null,
+    caster: casterByRuntime ?? resolvedContext.caster ?? actorByRuntime ?? itemByRuntime?.actor ?? null
+  };
+}
+
+async function resolveDocumentFromRuntimeUuid(uuid, documentName) {
+  const resolved = await fromUuidSafe(uuid);
+  return resolved?.documentName === documentName ? resolved : null;
 }
 
 function buildNativeRegionBehaviors({
@@ -510,6 +715,45 @@ function buildRegionName(normalizedDefinition, sourceContext) {
 function buildTerrainBehaviorName(normalizedDefinition, sourceContext) {
   const regionName = buildRegionName(normalizedDefinition, sourceContext);
   return `${regionName} Difficult Terrain`;
+}
+
+function collectRelevantTemplateUpdateKeys(changed) {
+  const flattened = flattenObject(changed);
+  const relevantPrefixes = ["x", "y", "distance", "direction", "angle", "width", "t", "elevation"];
+
+  return Object.keys(flattened).filter((key) =>
+    relevantPrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`))
+  );
+}
+
+function buildTemplateSyncKey(templateDocument) {
+  return `${templateDocument?.parent?.id ?? "scene"}::${templateDocument?.id ?? "template"}`;
+}
+
+function flattenObject(value, prefix = "", result = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (prefix) {
+      result[prefix] = value;
+    }
+    return result;
+  }
+
+  const entries = Object.entries(value);
+  if (!entries.length && prefix) {
+    result[prefix] = value;
+    return result;
+  }
+
+  for (const [key, nestedValue] of entries) {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    if (nestedValue && typeof nestedValue === "object" && !Array.isArray(nestedValue)) {
+      flattenObject(nestedValue, nextPrefix, result);
+    } else {
+      result[nextPrefix] = nestedValue;
+    }
+  }
+
+  return result;
 }
 
 function getFoundryRectShape(templateDocument) {
