@@ -20,6 +20,10 @@ import {
   trimClosingPolygonPoint,
   wait
 } from "./utils.mjs";
+import {
+  cleanupLinkedDocumentsForRegion,
+  syncLinkedDocumentsForRegion
+} from "./linked-documents.mjs";
 import { resolveTemplateSourceContext } from "./template-source-context.mjs";
 import {
   getZoneDefinitionFromItem,
@@ -36,6 +40,7 @@ export function registerRegionFactoryHooks() {
 
   Hooks.on("createMeasuredTemplate", onCreateMeasuredTemplate);
   Hooks.on("updateMeasuredTemplate", onUpdateMeasuredTemplate);
+  Hooks.on("deleteRegion", onDeleteRegion);
   hooksRegistered = true;
 }
 
@@ -181,6 +186,14 @@ export async function createRegionFromTemplate(
   const createdRegion = createdRegions?.[0] ?? null;
 
   if (createdRegion) {
+    await syncLinkedDocumentsSafely({
+      templateDocument,
+      regionDocument: createdRegion,
+      normalizedDefinition,
+      shapes,
+      stage: "create-region"
+    });
+
     debug("Created managed Region from MeasuredTemplate.", {
       templateId: templateDocument.id,
       regionId: createdRegion.id,
@@ -235,6 +248,14 @@ async function syncRegionToTemplate(templateDocument, {
 
   try {
     await existingRegion.update(syncPayload.updateData);
+    await syncLinkedDocumentsSafely({
+      templateDocument,
+      regionDocument: existingRegion,
+      normalizedDefinition: syncPayload.regionData.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]?.normalizedDefinition ?? null,
+      shapes: syncPayload.regionData.shapes,
+      stage: "update-region"
+    });
+
     debug("Synced managed Region from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionId: existingRegion.id,
@@ -276,11 +297,34 @@ export function findManagedRegionForTemplate(scene, templateDocument) {
   );
 }
 
+async function onDeleteRegion(regionDocument) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+
+  if (!getRegionRuntimeFlags(regionDocument)) {
+    return;
+  }
+
+  try {
+    await cleanupLinkedDocumentsForRegion(regionDocument, {
+      reason: "region-deleted",
+      skipRuntimeUpdate: true
+    });
+  } catch (caughtError) {
+    error("Failed to cleanup linked documents after Region deletion.", caughtError, {
+      regionId: regionDocument?.id ?? null,
+      templateId: getRegionRuntimeFlags(regionDocument)?.templateId ?? null
+    });
+  }
+}
+
 function buildRegionCreateData({
   templateDocument,
   normalizedDefinition,
   sourceContext,
-  shapes
+  shapes,
+  existingRuntime = null
 }) {
   const behaviors = buildNativeRegionBehaviors({
     normalizedDefinition,
@@ -294,6 +338,7 @@ function buildRegionCreateData({
     casterUuid: normalizedDefinition.casterUuid ?? sourceContext.caster?.uuid ?? null,
     dc: normalizedDefinition.dc ?? null,
     castLevel: normalizedDefinition.castLevel ?? null,
+    linkedDocuments: duplicateLinkedDocuments(existingRuntime?.linkedDocuments),
     normalizedDefinition
   };
 
@@ -347,7 +392,8 @@ async function buildRegionSyncPayload(templateDocument, regionDocument) {
     templateDocument,
     normalizedDefinition,
     sourceContext,
-    shapes
+    shapes,
+    existingRuntime: runtime
   });
 
   return {
@@ -372,11 +418,27 @@ async function recreateManagedRegionFromTemplate(templateDocument, regionDocumen
   }
 
   if (scene?.regions?.get?.(regionDocument?.id)) {
+    await cleanupLinkedDocumentsForRegion(regionDocument, {
+      reason: "region-recreate",
+      skipRuntimeUpdate: true
+    });
     await scene.deleteEmbeddedDocuments("Region", [regionDocument.id]);
   }
 
   const createdRegions = await scene.createEmbeddedDocuments("Region", [regionData]);
-  return createdRegions?.[0] ?? null;
+  const recreatedRegion = createdRegions?.[0] ?? null;
+
+  if (recreatedRegion) {
+    await syncLinkedDocumentsSafely({
+      templateDocument,
+      regionDocument: recreatedRegion,
+      normalizedDefinition: regionData.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]?.normalizedDefinition ?? null,
+      shapes: regionData.shapes,
+      stage: "recreate-region"
+    });
+  }
+
+  return recreatedRegion;
 }
 
 async function resolveRegionSourceContext(templateDocument, regionDocument) {
@@ -715,6 +777,45 @@ function buildRegionName(normalizedDefinition, sourceContext) {
 function buildTerrainBehaviorName(normalizedDefinition, sourceContext) {
   const regionName = buildRegionName(normalizedDefinition, sourceContext);
   return `${regionName} Difficult Terrain`;
+}
+
+async function syncLinkedDocumentsSafely({
+  templateDocument,
+  regionDocument,
+  normalizedDefinition = null,
+  shapes = null,
+  stage = "sync-region"
+} = {}) {
+  try {
+    return await syncLinkedDocumentsForRegion({
+      templateDocument,
+      regionDocument,
+      normalizedDefinition,
+      shapes
+    });
+  } catch (caughtError) {
+    error("Failed to sync linked documents for managed Region.", caughtError, {
+      templateId: templateDocument?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      stage
+    });
+    return {
+      wallIds: [],
+      lightIds: [],
+      syncApplied: false
+    };
+  }
+}
+
+function duplicateLinkedDocuments(linkedDocuments) {
+  const wallIds = Array.isArray(linkedDocuments?.wallIds)
+    ? Array.from(new Set(linkedDocuments.wallIds.filter(Boolean)))
+    : [];
+  const lightIds = Array.isArray(linkedDocuments?.lightIds)
+    ? Array.from(new Set(linkedDocuments.lightIds.filter(Boolean)))
+    : [];
+
+  return { wallIds, lightIds };
 }
 
 function collectRelevantTemplateUpdateKeys(changed) {

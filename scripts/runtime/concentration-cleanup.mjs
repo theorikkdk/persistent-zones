@@ -7,6 +7,7 @@ import {
   isPrimaryGM,
   pickFirstDefined
 } from "./utils.mjs";
+import { cleanupLinkedDocumentsForRegion } from "./linked-documents.mjs";
 
 let hooksRegistered = false;
 const pendingRegionCleanup = new Set();
@@ -71,6 +72,24 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
   }
 
   try {
+    for (const regionId of existingRegionIds) {
+      const regionDocument = scene?.regions?.get?.(regionId) ?? null;
+      if (regionDocument) {
+        try {
+          await cleanupLinkedDocumentsForRegion(regionDocument, {
+            reason,
+            skipRuntimeUpdate: true
+          });
+        } catch (caughtError) {
+          error("Failed to cleanup linked documents before Region deletion.", caughtError, {
+            regionId,
+            sceneId: scene.id,
+            reason
+          });
+        }
+      }
+    }
+
     return await scene.deleteEmbeddedDocuments("Region", existingRegionIds);
   } catch (caughtError) {
     const message = String(caughtError?.message ?? "");

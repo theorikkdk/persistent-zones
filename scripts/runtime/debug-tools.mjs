@@ -36,6 +36,12 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "linked-light":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedLightTestDefinition());
+    case "linked-walls":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedWallsTestDefinition());
     case "exit-forced-only":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createMovementFilteredTestDefinition({
@@ -613,6 +619,101 @@ function createDifficultTerrainTestDefinition() {
       difficult: true,
       magical: false,
       types: []
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    }
+  };
+}
+
+function createLinkedLightTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "linked-light"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Linked Light",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    linkedLight: {
+      enabled: true,
+      bright: 10,
+      dim: 20,
+      color: "#fff4b0",
+      alpha: 0.15,
+      luminosity: 0.5
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    }
+  };
+}
+
+function createLinkedWallsTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "linked-walls"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Linked Walls",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    linkedWalls: {
+      enabled: true,
+      mode: "move",
+      segments: 24
     },
     triggers: {
       onEnter: {

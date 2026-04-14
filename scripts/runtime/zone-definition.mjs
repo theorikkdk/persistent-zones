@@ -49,6 +49,12 @@ export function normalizeZoneDefinition(
   const triggerDefinition = isPlainObject(definition.triggers) ? definition.triggers : {};
   const terrainDefinition = isPlainObject(definition.terrain) ? definition.terrain : {};
   const movementCostDefinition = isPlainObject(definition.movementCost) ? definition.movementCost : {};
+  const linkedWallsDefinition = isPlainObject(definition.linkedWalls) ? definition.linkedWalls : {};
+  const linkedLightDefinition = isPlainObject(definition.linkedLight)
+    ? definition.linkedLight
+    : isPlainObject(definition.linkedLights)
+      ? definition.linkedLights
+      : {};
 
   const templateType = String(
     pickFirstDefined(
@@ -169,6 +175,10 @@ export function normalizeZoneDefinition(
       movementCostDefinition,
       definition
     }),
+    linkedWalls: normalizeLinkedWalls(linkedWallsDefinition),
+    linkedLight: normalizeLinkedLight(linkedLightDefinition, {
+      templateDistance: pickFirstDefined(templateDefinition.distance, definition.distance, templateDocument?.distance)
+    }),
     targeting: normalizeTargeting(definition.targeting),
     triggers: normalizeTriggers(triggerDefinition, dc),
     limits: collectCurrentLimits(definition),
@@ -195,6 +205,21 @@ export function normalizeZoneDefinition(
       itemUuid: normalizedDefinition.itemUuid ?? null,
       label: normalizedDefinition.label,
       terrain: normalizedDefinition.terrain
+    });
+  }
+
+  if (
+    definition.linkedWalls !== undefined ||
+    definition.linkedLight !== undefined ||
+    definition.linkedLights !== undefined ||
+    normalizedDefinition.linkedWalls.enabled ||
+    normalizedDefinition.linkedLight.enabled
+  ) {
+    debug("Normalized linked document configuration.", {
+      itemUuid: normalizedDefinition.itemUuid ?? null,
+      label: normalizedDefinition.label,
+      linkedWalls: normalizedDefinition.linkedWalls,
+      linkedLight: normalizedDefinition.linkedLight
     });
   }
 
@@ -280,6 +305,45 @@ function normalizeTerrain({
         )
       )
     }
+  };
+}
+
+function normalizeLinkedWalls(linkedWallsDefinition) {
+  const definition = isPlainObject(linkedWallsDefinition) ? linkedWallsDefinition : {};
+
+  return {
+    enabled: coerceBoolean(
+      pickFirstDefined(definition.enabled, definition.active, false),
+      false
+    ),
+    mode: normalizeLinkedWallMode(pickFirstDefined(definition.mode, definition.wallMode, "move")),
+    segments: Math.min(
+      Math.max(Math.round(coerceNumber(definition.segments, 24)), 8),
+      64
+    )
+  };
+}
+
+function normalizeLinkedLight(linkedLightDefinition, {
+  templateDistance = null
+} = {}) {
+  const definition = isPlainObject(linkedLightDefinition) ? linkedLightDefinition : {};
+
+  return {
+    enabled: coerceBoolean(
+      pickFirstDefined(definition.enabled, definition.active, false),
+      false
+    ),
+    bright: coerceNumber(definition.bright, null),
+    dim: coerceNumber(definition.dim, null),
+    radius: coerceNumber(definition.radius, coerceNumber(templateDistance, null)),
+    color: pickFirstDefined(definition.color, "#fff4b0"),
+    alpha: coerceNumber(definition.alpha, 0.15),
+    luminosity: coerceNumber(definition.luminosity, 0.5),
+    angle: coerceNumber(definition.angle, 360),
+    walls: coerceBoolean(definition.walls, false) ?? false,
+    vision: coerceBoolean(definition.vision, false) ?? false,
+    hidden: coerceBoolean(definition.hidden, false) ?? false
   };
 }
 
@@ -400,11 +464,14 @@ function collectCurrentLimits(definition) {
   }
 
   if (safeGet(definition, ["linkedWalls"]) !== undefined) {
-    limits.push("Linked walls are not created in this MVP step.");
+    limits.push("Linked walls are limited to compatible circle, rectangle, and polygon region shapes in this MVP.");
   }
 
-  if (safeGet(definition, ["linkedLights"]) !== undefined) {
-    limits.push("Linked lights are not created in this MVP step.");
+  if (
+    safeGet(definition, ["linkedLight"]) !== undefined ||
+    safeGet(definition, ["linkedLights"]) !== undefined
+  ) {
+    limits.push("Linked light uses a single native AmbientLight with simple position and bright/dim settings in this MVP.");
   }
 
   return limits;
@@ -467,4 +534,9 @@ function normalizeNumberArray(values) {
   return values
     .map((value) => coerceNumber(value, null))
     .filter((value) => value !== null);
+}
+
+function normalizeLinkedWallMode(value) {
+  const normalized = String(value ?? "move").toLowerCase();
+  return ["move", "sight", "both"].includes(normalized) ? normalized : "move";
 }
