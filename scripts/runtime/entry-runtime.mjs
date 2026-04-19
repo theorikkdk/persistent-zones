@@ -20,6 +20,8 @@ const recentExitEvents = new Map();
 const recentOnMoveEvents = new Map();
 const recentMoveTokenEvents = new Map();
 const queuedMovementModes = new Map();
+const pendingEnterStops = new Map();
+const appliedEnterStops = new Map();
 const internalStopDestinations = new Map();
 const handledMovementInterruptions = new Map();
 const pendingPreUpdateGridStops = new Map();
@@ -27,6 +29,7 @@ const pendingPreUpdateGridStops = new Map();
 let hooksRegistered = false;
 const INTERNAL_STOP_TTL_MS = 3000;
 const MOVEMENT_SEQUENCE_TTL_MS = 5000;
+const MANAGED_REGION_ENTER_STOP_TTL_MS = 5000;
 const MOVEMENT_STOP_SETTLE_TIMEOUT_MS = 100;
 const PENDING_PREUPDATE_GRID_STOP_TTL_MS = 3000;
 
@@ -321,6 +324,10 @@ async function onMoveToken(tokenDocument, movement) {
       usedRollbackFallback: evaluation.usedRollbackFallback ?? false
     });
   }
+
+  cleanupManagedRegionOnEnterStopPlansForSequence(tokenDocument, movementSequenceId, {
+    reason: "sequence-complete"
+  });
 }
 
 async function onUpdateToken(tokenDocument, changed, options = {}) {
@@ -389,6 +396,7 @@ function onDeleteToken(tokenDocument) {
   clearRecentDedupEntriesForToken(recentOnMoveEvents, tokenDocument);
   recentMoveTokenEvents.delete(tokenDocument.uuid);
   queuedMovementModes.delete(tokenDocument.uuid);
+  clearManagedRegionOnEnterStopStateForToken(tokenDocument);
   internalStopDestinations.delete(tokenDocument.uuid);
   clearHandledMovementInterruptionsForToken(tokenDocument);
   clearInsideStateCacheForToken(tokenDocument);
@@ -444,6 +452,12 @@ async function evaluateTokenEntry(tokenDocument, {
     pathStates: basePathStates,
     movementMode
   });
+  planManagedRegionOnEnterStops(tokenDocument, initialEvaluations, {
+    movementSequenceId,
+    moveSource,
+    movementMode
+  });
+  consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId);
   const stopDecision = chooseStopDecision(initialEvaluations, {
     tokenDocument,
     moveSource,
@@ -1048,27 +1062,12 @@ function chooseStopDecision(evaluations, {
     const {
       regionDocument,
       normalizedDefinition,
-      onEnter,
       onMove,
       filterResult
     } = evaluation;
 
     if (!normalizedDefinition?.enabled || !filterResult.allowed) {
       continue;
-    }
-
-    if (onEnter.enabled && onEnter.stopMovementOnTrigger) {
-      debug("Skipped managed Region movement stop because stopMovementOnTrigger is temporarily disabled.", {
-        movementSequenceId,
-        tokenId: tokenDocument?.id ?? null,
-        regionId: regionDocument?.id ?? null,
-        moveSource,
-        movementMode,
-        trigger: "onEnter",
-        stopSupported: false,
-        stopRequested: true,
-        requiredMovementMode: onEnter.movementMode ?? "any"
-      });
     }
 
     if (onMove.enabled && onMove.stopMovementOnTrigger) {
@@ -1087,6 +1086,198 @@ function chooseStopDecision(evaluations, {
   }
 
   return null;
+}
+
+function planManagedRegionOnEnterStops(tokenDocument, evaluations, {
+  movementSequenceId,
+  moveSource,
+  movementMode
+}) {
+  if (!movementSequenceId || !isInterruptibleMoveSource(moveSource)) {
+    return [];
+  }
+
+  cleanupExpiredManagedRegionOnEnterStopState();
+
+  const plans = [];
+  for (const evaluation of evaluations) {
+    const plan = planManagedRegionOnEnterStop(tokenDocument, evaluation, {
+      movementSequenceId,
+      moveSource,
+      movementMode
+    });
+
+    if (plan) {
+      plans.push(plan);
+    }
+  }
+
+  return plans;
+}
+
+function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
+  movementSequenceId,
+  moveSource,
+  movementMode
+}) {
+  const {
+    regionDocument,
+    normalizedDefinition,
+    onEnter,
+    filterResult,
+    enterDetected,
+    enterMovementModeMatched,
+    movementAnalysis,
+    fromState,
+    toState
+  } = evaluation;
+
+  if (!movementSequenceId || !isInterruptibleMoveSource(moveSource)) {
+    return null;
+  }
+
+  if (!normalizedDefinition?.enabled || !filterResult.allowed) {
+    return null;
+  }
+
+  if (!enterDetected || !onEnter.enabled || !onEnter.stopMovementOnTrigger || !enterMovementModeMatched) {
+    return null;
+  }
+
+  const entryPointState = movementAnalysis.firstEntryState ?? movementAnalysis.firstInsideCellState ?? null;
+  const selectedStopState = movementAnalysis.firstInsideCellState ?? movementAnalysis.firstEntryState ?? null;
+  if (!entryPointState || !selectedStopState) {
+    return null;
+  }
+
+  const entryCenter = entryPointState.center ?? selectedStopState.center ?? toState?.center ?? null;
+  if (
+    checkMovementTriggerDedup(
+      "enter",
+      regionDocument,
+      tokenDocument,
+      moveSource,
+      entryCenter,
+      { record: false }
+    )
+  ) {
+    return null;
+  }
+
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  const regionId = regionDocument?.id ?? regionDocument?.uuid ?? null;
+  if (!tokenUuid || !regionId) {
+    return null;
+  }
+
+  const key = buildManagedRegionOnEnterStopKey(tokenUuid, movementSequenceId, regionId);
+  const alreadyApplied = appliedEnterStops.has(key);
+  const plan = {
+    key,
+    tokenUuid,
+    movementSequenceId,
+    regionId,
+    regionUuid: regionDocument?.uuid ?? null,
+    moveSource,
+    movementMode,
+    fromState: duplicateStopState(fromState ?? selectedStopState),
+    toState: duplicateStopState(toState ?? selectedStopState),
+    entryPoint: buildSimplePositionPayload(entryPointState),
+    entryCell: buildGridCellPayload(movementAnalysis.firstInsideCellState),
+    selectedStopPoint: buildStopPointPayload(selectedStopState),
+    selectedStopState: duplicateStopState(selectedStopState),
+    plannedAt: Date.now(),
+    expiresAt: Date.now() + MANAGED_REGION_ENTER_STOP_TTL_MS
+  };
+
+  if (!alreadyApplied) {
+    pendingEnterStops.set(key, plan);
+  }
+
+  debug("Planned managed Region onEnter stop.", {
+    tokenUuid,
+    movementSequenceId,
+    regionId,
+    moveSource,
+    movementMode,
+    entryPoint: plan.entryPoint,
+    entryCell: plan.entryCell,
+    selectedStopPoint: plan.selectedStopPoint,
+    alreadyApplied
+  });
+
+  return plan;
+}
+
+function consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid || !movementSequenceId) {
+    return [];
+  }
+
+  cleanupExpiredManagedRegionOnEnterStopState();
+
+  const plans = Array.from(pendingEnterStops.values())
+    .filter((plan) => plan.tokenUuid === tokenUuid && plan.movementSequenceId === movementSequenceId);
+
+  for (const plan of plans) {
+    pendingEnterStops.delete(plan.key);
+
+    const alreadyApplied = appliedEnterStops.has(plan.key);
+    if (!alreadyApplied) {
+      appliedEnterStops.set(plan.key, {
+        ...plan,
+        appliedAt: Date.now(),
+        expiresAt: Date.now() + MANAGED_REGION_ENTER_STOP_TTL_MS
+      });
+    }
+
+    debug("Consumed managed Region onEnter stop plan.", {
+      tokenUuid,
+      movementSequenceId,
+      regionId: plan.regionId ?? null,
+      entryPoint: plan.entryPoint ?? null,
+      entryCell: plan.entryCell ?? null,
+      selectedStopPoint: plan.selectedStopPoint ?? null,
+      alreadyApplied
+    });
+  }
+
+  return plans;
+}
+
+function cleanupManagedRegionOnEnterStopPlansForSequence(tokenDocument, movementSequenceId, {
+  reason = "sequence-complete"
+} = {}) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid || !movementSequenceId) {
+    return 0;
+  }
+
+  cleanupExpiredManagedRegionOnEnterStopState();
+
+  let cleanupCount = 0;
+  for (const [key, plan] of pendingEnterStops.entries()) {
+    if (plan.tokenUuid !== tokenUuid || plan.movementSequenceId !== movementSequenceId) {
+      continue;
+    }
+
+    pendingEnterStops.delete(key);
+    cleanupCount += 1;
+
+    debug("Cleaned up managed Region onEnter stop plan.", {
+      tokenUuid,
+      movementSequenceId,
+      regionId: plan.regionId ?? null,
+      entryPoint: plan.entryPoint ?? null,
+      entryCell: plan.entryCell ?? null,
+      selectedStopPoint: plan.selectedStopPoint ?? null,
+      alreadyApplied: appliedEnterStops.has(key),
+      reason
+    });
+  }
+
+  return cleanupCount;
 }
 
 function chooseGridCellStopDecision(evaluations, {
@@ -1715,6 +1906,8 @@ function refreshTrackedTokenStates(scene) {
   recentOnMoveEvents.clear();
   recentMoveTokenEvents.clear();
   queuedMovementModes.clear();
+  pendingEnterStops.clear();
+  appliedEnterStops.clear();
   internalStopDestinations.clear();
   handledMovementInterruptions.clear();
 
@@ -1732,7 +1925,65 @@ function refreshTrackedTokenStates(scene) {
   });
 }
 
+function buildManagedRegionOnEnterStopKey(tokenUuid, movementSequenceId, regionId) {
+  if (!tokenUuid || !movementSequenceId || !regionId) {
+    return null;
+  }
+
+  return `${tokenUuid}|${movementSequenceId}|${regionId}`;
+}
+
+function clearManagedRegionOnEnterStopStateForToken(tokenDocument) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid) {
+    return;
+  }
+
+  for (const [key, plan] of pendingEnterStops.entries()) {
+    if (plan.tokenUuid === tokenUuid) {
+      pendingEnterStops.delete(key);
+    }
+  }
+
+  for (const [key, plan] of appliedEnterStops.entries()) {
+    if (plan.tokenUuid === tokenUuid) {
+      appliedEnterStops.delete(key);
+    }
+  }
+}
+
+function cleanupExpiredManagedRegionOnEnterStopState() {
+  const now = Date.now();
+
+  for (const [key, plan] of pendingEnterStops.entries()) {
+    if ((plan?.expiresAt ?? 0) > now) {
+      continue;
+    }
+
+    pendingEnterStops.delete(key);
+    debug("Cleaned up managed Region onEnter stop plan.", {
+      tokenUuid: plan?.tokenUuid ?? null,
+      movementSequenceId: plan?.movementSequenceId ?? null,
+      regionId: plan?.regionId ?? null,
+      entryPoint: plan?.entryPoint ?? null,
+      entryCell: plan?.entryCell ?? null,
+      selectedStopPoint: plan?.selectedStopPoint ?? null,
+      alreadyApplied: appliedEnterStops.has(key),
+      reason: "expired"
+    });
+  }
+
+  for (const [key, plan] of appliedEnterStops.entries()) {
+    if ((plan?.expiresAt ?? 0) > now) {
+      continue;
+    }
+
+    appliedEnterStops.delete(key);
+  }
+}
+
 function buildMovementSequenceId(tokenDocument, movement, movementPath) {
+  cleanupExpiredManagedRegionOnEnterStopState();
   cleanupExpiredHandledMovementInterruptions();
 
   const points = compactMovementPoints([

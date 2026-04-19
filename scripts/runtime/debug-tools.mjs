@@ -121,7 +121,7 @@ export function buildTestDefinition(preset = "basic") {
       return duplicateData(createEntryDamageSaveTestDefinition({
         preset: normalizedPreset,
         label: "Persistent Zone Debug Entry Stop Movement",
-        stopMovementOnTrigger: false
+        stopMovementOnTrigger: true
       }));
     case "move-stop-movement":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
