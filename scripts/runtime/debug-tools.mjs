@@ -116,6 +116,21 @@ export function buildTestDefinition(preset = "basic") {
     case "entry-damage-save":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createEntryDamageSaveTestDefinition());
+    case "entry-stop-movement":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createEntryDamageSaveTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Entry Stop Movement",
+        stopMovementOnTrigger: false
+      }));
+    case "move-stop-movement":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMoveDamageTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Move Stop Movement",
+        movementMode: "any",
+        stopMovementOnTrigger: false
+      }));
     case "basic":
     default:
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
@@ -364,16 +379,20 @@ function createBasicTestDefinition() {
   };
 }
 
-function createEntryDamageSaveTestDefinition() {
+function createEntryDamageSaveTestDefinition({
+  preset = "entry-damage-save",
+  label = "Persistent Zone Debug Entry Damage Save",
+  stopMovementOnTrigger = false
+} = {}) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: "entry-damage-save"
+      preset
     },
     enabled: true,
-    label: "Persistent Zone Debug Entry Damage Save",
+    label,
     shapeMode: "template",
     template: {
       type: "circle"
@@ -388,6 +407,7 @@ function createEntryDamageSaveTestDefinition() {
     triggers: {
       onEnter: {
         enabled: true,
+        stopMovementOnTrigger,
         damage: {
           enabled: true,
           formula: "2d6",
@@ -560,7 +580,8 @@ function createMovementFilteredTestDefinition({
 function createMoveDamageTestDefinition({
   preset,
   label,
-  movementMode
+  movementMode,
+  stopMovementOnTrigger = false
 }) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -592,6 +613,7 @@ function createMoveDamageTestDefinition({
       onMove: {
         enabled: true,
         movementMode,
+        stopMovementOnTrigger,
         distanceStep: 5,
         damage: {
           enabled: true,

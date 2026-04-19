@@ -386,6 +386,14 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
       ),
       null
     ),
+    stopMovementOnTrigger: coerceBoolean(
+      pickFirstDefined(
+        definition.stopMovementOnTrigger,
+        definition.stopOnTrigger,
+        false
+      ),
+      false
+    ),
     damage: {
       enabled: coerceBoolean(
         pickFirstDefined(damageDefinition.enabled, definition.damage, false),
