@@ -37,5 +37,6 @@ FoundryVTT module dedicated to persistent zones runtime.
 - For linked terrain walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-terrain")`.
 - For ring geometry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-basic")`.
 - For directional side-of-line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-right")`.
+- For composite wall plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-right")`.
 - Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
 - Create or move the template in Foundry to verify that the Region, linked light, and linked walls stay synchronized, then delete the template to confirm cleanup.

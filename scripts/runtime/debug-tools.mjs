@@ -36,6 +36,12 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "wall-heated-left":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("left"));
+    case "wall-heated-right":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("right"));
     case "line-side-left":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createLineSideTestDefinition("left"));
@@ -817,6 +823,89 @@ function createLineSideTestDefinition(side = "left") {
           offsetReference: "body-edge",
           offsetStart: 0,
           offsetEnd: sideBandDepth
+        }
+      }
+    ]
+  };
+}
+
+function createWallHeatedTestDefinition(side = "left") {
+  const normalizedSide = String(side ?? "left").toLowerCase() === "right" ? "right" : "left";
+  const titleSide = normalizedSide === "right" ? "Right" : "Left";
+  const wallThickness = 5;
+  const heatBandDepth = 10;
+
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: `wall-heated-${normalizedSide}`
+    },
+    enabled: true,
+    label: `Persistent Zone Debug Wall Heated ${titleSide}`,
+    shapeMode: "template",
+    template: {
+      type: "ray",
+      width: wallThickness
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    },
+    parts: [
+      {
+        id: "wall-body",
+        label: "Persistent Zone Debug Wall Body",
+        geometry: {
+          type: "template"
+        }
+      },
+      {
+        id: "heated-side",
+        label: `Persistent Zone Debug Heated Side ${titleSide}`,
+        geometry: {
+          type: "side-of-line",
+          side: normalizedSide,
+          offsetReference: "body-edge",
+          offsetStart: 0,
+          offsetEnd: heatBandDepth
+        },
+        triggers: {
+          onEnter: {
+            enabled: true,
+            damage: {
+              enabled: true,
+              formula: "3d8",
+              type: "fire"
+            },
+            save: {
+              enabled: true,
+              ability: "dex",
+              dc: 13,
+              onSuccess: "half"
+            }
+          }
         }
       }
     ]
