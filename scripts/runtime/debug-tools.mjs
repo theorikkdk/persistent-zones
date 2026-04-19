@@ -36,6 +36,40 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "fire-wall-line-left":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("left", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Fire Wall Line Left",
+        heatedPartId: "heated-side-left"
+      }));
+    case "fire-wall-line-right":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("right", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Fire Wall Line Right",
+        heatedPartId: "heated-side-right"
+      }));
+    case "fire-wall-ring-inner":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Fire Wall Ring Inner",
+        heatedPartId: "heated-side-inner"
+      }));
+    case "fire-wall-ring-outer":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Fire Wall Ring Outer",
+        heatedPartId: "heated-side-outer"
+      }));
+    case "ring-heated-inner":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner"));
+    case "ring-heated-outer":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer"));
     case "wall-heated-left":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createWallHeatedTestDefinition("left"));
@@ -829,7 +863,11 @@ function createLineSideTestDefinition(side = "left") {
   };
 }
 
-function createWallHeatedTestDefinition(side = "left") {
+function createWallHeatedTestDefinition(side = "left", {
+  preset = null,
+  label = null,
+  heatedPartId = "heated-side"
+} = {}) {
   const normalizedSide = String(side ?? "left").toLowerCase() === "right" ? "right" : "left";
   const titleSide = normalizedSide === "right" ? "Right" : "Left";
   const wallThickness = 5;
@@ -840,10 +878,10 @@ function createWallHeatedTestDefinition(side = "left") {
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: `wall-heated-${normalizedSide}`
+      preset: preset ?? `wall-heated-${normalizedSide}`
     },
     enabled: true,
-    label: `Persistent Zone Debug Wall Heated ${titleSide}`,
+    label: label ?? `Persistent Zone Debug Wall Heated ${titleSide}`,
     shapeMode: "template",
     template: {
       type: "ray",
@@ -882,7 +920,7 @@ function createWallHeatedTestDefinition(side = "left") {
         }
       },
       {
-        id: "heated-side",
+        id: heatedPartId,
         label: `Persistent Zone Debug Heated Side ${titleSide}`,
         geometry: {
           type: "side-of-line",
@@ -890,6 +928,97 @@ function createWallHeatedTestDefinition(side = "left") {
           offsetReference: "body-edge",
           offsetStart: 0,
           offsetEnd: heatBandDepth
+        },
+        triggers: {
+          onEnter: {
+            enabled: true,
+            damage: {
+              enabled: true,
+              formula: "3d8",
+              type: "fire"
+            },
+            save: {
+              enabled: true,
+              ability: "dex",
+              dc: 13,
+              onSuccess: "half"
+            }
+          }
+        }
+      }
+    ]
+  };
+}
+
+function createRingHeatedTestDefinition(side = "inner", {
+  preset = null,
+  label = null,
+  heatedPartId = null
+} = {}) {
+  const normalizedSide = String(side ?? "inner").toLowerCase() === "outer" ? "outer" : "inner";
+  const titleSide = normalizedSide === "outer" ? "Outer" : "Inner";
+  const heatBandDepth = 10;
+  const resolvedHeatedPartId = heatedPartId ?? `heated-side-${normalizedSide}`;
+
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: preset ?? `ring-heated-${normalizedSide}`
+    },
+    enabled: true,
+    label: label ?? `Persistent Zone Debug Ring Heated ${titleSide}`,
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    },
+    parts: [
+      {
+        id: "wall-body",
+        label: "Persistent Zone Debug Ring Wall Body",
+        geometry: {
+          type: "ring",
+          innerRadiusRatio: 0.5,
+          outerRadiusRatio: 1,
+          segments: 24
+        }
+      },
+      {
+        id: resolvedHeatedPartId,
+        label: `Persistent Zone Debug Ring Heated Side ${titleSide}`,
+        geometry: {
+          type: "side-of-ring",
+          side: normalizedSide,
+          referencePartId: "wall-body",
+          offsetReference: "body-edge",
+          offsetStart: 0,
+          offsetEnd: heatBandDepth,
+          segments: 24
         },
         triggers: {
           onEnter: {
@@ -1028,6 +1157,12 @@ function summarizeDebugDefinition(definition) {
         definition.parts.some((part) => part?.geometry?.type === "side-of-line") ||
       Array.isArray(definition.zones) &&
         definition.zones.some((part) => part?.geometry?.type === "side-of-line"),
+    hasSideOfRingGeometry:
+      definition?.geometry?.type === "side-of-ring" ||
+      Array.isArray(definition.parts) &&
+        definition.parts.some((part) => part?.geometry?.type === "side-of-ring") ||
+      Array.isArray(definition.zones) &&
+        definition.zones.some((part) => part?.geometry?.type === "side-of-ring"),
     hasRingGeometry:
       definition?.geometry?.type === "ring" ||
       Array.isArray(definition.parts) &&

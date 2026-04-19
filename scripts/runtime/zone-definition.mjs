@@ -641,6 +641,100 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
     };
   }
 
+  if (geometryType === "side-of-ring" || geometryType === "sideofring") {
+    const templateDistance = coerceNumber(
+      pickFirstDefined(
+        templateDefinition.distance,
+        definition.distance,
+        templateDocument?.distance
+      ),
+      null
+    );
+    const referenceInnerRadiusRatio = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.referenceInnerRadiusRatio,
+        geometryDefinition.referenceInnerRatio
+      ),
+      null
+    );
+    const referenceOuterRadiusRatio = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.referenceOuterRadiusRatio,
+        geometryDefinition.referenceOuterRatio
+      ),
+      null
+    );
+
+    return {
+      type: "side-of-ring",
+      centerMode: "template",
+      offsetReference: normalizeRingOffsetReferenceMode(
+        pickFirstDefined(
+          geometryDefinition.offsetReference,
+          geometryDefinition.referenceMode,
+          geometryDefinition.anchorMode,
+          "body-edge"
+        )
+      ),
+      side: normalizeRingDirectionalSide(
+        pickFirstDefined(
+          geometryDefinition.side,
+          geometryDefinition.facing,
+          geometryDefinition.zoneSide,
+          "outer"
+        )
+      ),
+      offsetStart: Math.max(0, coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.offsetStart,
+          geometryDefinition.startOffset,
+          0
+        ),
+        0
+      )),
+      offsetEnd: coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.offsetEnd,
+          geometryDefinition.endOffset,
+          geometryDefinition.distance,
+          geometryDefinition.width,
+          geometryDefinition.depth
+        ),
+        null
+      ),
+      referencePartId: pickFirstDefined(
+        geometryDefinition.referencePartId,
+        geometryDefinition.bodyPartId,
+        geometryDefinition.ringPartId,
+        null
+      ),
+      referenceInnerRadius: coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.referenceInnerRadius,
+          referenceInnerRadiusRatio !== null && templateDistance !== null
+            ? templateDistance * referenceInnerRadiusRatio
+            : null
+        ),
+        null
+      ),
+      referenceOuterRadius: coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.referenceOuterRadius,
+          referenceOuterRadiusRatio !== null && templateDistance !== null
+            ? templateDistance * referenceOuterRadiusRatio
+            : null,
+          templateDistance
+        ),
+        null
+      ),
+      referenceInnerRadiusRatio,
+      referenceOuterRadiusRatio,
+      segments: normalizeRingSegmentCount(
+        pickFirstDefined(geometryDefinition.segments, geometryDefinition.segmentCount, 24)
+      )
+    };
+  }
+
   return {
     type: "template"
   };
@@ -764,6 +858,12 @@ function collectCurrentLimits(definition) {
       definition.parts.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-line") ||
     Array.isArray(definition.zones) &&
       definition.zones.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-line");
+  const hasSideOfRingGeometry =
+    safeGet(definition, ["geometry", "type"]) === "side-of-ring" ||
+    Array.isArray(definition.parts) &&
+      definition.parts.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-ring") ||
+    Array.isArray(definition.zones) &&
+      definition.zones.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-ring");
 
   if (safeGet(definition, ["movement"]) !== undefined) {
     limits.push("Movement-through-zone logic is not executed in this MVP step.");
@@ -779,6 +879,10 @@ function collectCurrentLimits(definition) {
 
   if (hasSideOfLineGeometry) {
     limits.push("side-of-line currently derives its reference axis from the template direction and is primarily intended for ray-like templates in this MVP.");
+  }
+
+  if (hasSideOfRingGeometry) {
+    limits.push("side-of-ring currently derives its reference ring from a circle-based annulus definition and is primarily intended for ring body parts in this MVP.");
   }
 
   if (safeGet(definition, ["forcedMovement"]) !== undefined) {
@@ -815,7 +919,7 @@ function validateZonePartConfig(part, index, reasons, {
   }
 
   const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
-  if (!["template", "ring", "side-of-line"].includes(geometryType)) {
+  if (!["template", "ring", "side-of-line", "side-of-ring"].includes(geometryType)) {
     reasons.push(`Part "${part?.id ?? index + 1}" uses unsupported geometry "${geometryType}".`);
     return;
   }
@@ -871,6 +975,58 @@ function validateZonePartConfig(part, index, reasons, {
 
     if (!["ray", "rect"].includes(String(templateType ?? "").toLowerCase())) {
       reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry currently requires a ray or rect template.`);
+    }
+  }
+
+  if (geometryType === "side-of-ring") {
+    const side = normalizeRingDirectionalSide(part?.geometry?.side);
+    const offsetReference = normalizeRingOffsetReferenceMode(part?.geometry?.offsetReference);
+    const offsetStart = coerceNumber(part?.geometry?.offsetStart, null);
+    const offsetEnd = coerceNumber(part?.geometry?.offsetEnd, null);
+    const referencePartId = pickFirstDefined(part?.geometry?.referencePartId, null);
+    const referenceInnerRadius = coerceNumber(part?.geometry?.referenceInnerRadius, null);
+    const referenceOuterRadius = coerceNumber(part?.geometry?.referenceOuterRadius, null);
+
+    if (!["inner", "outer"].includes(side)) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires side to be "inner" or "outer".`);
+    }
+
+    if (offsetReference !== "body-edge") {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry currently requires offsetReference to be "body-edge".`);
+    }
+
+    if (offsetStart === null || offsetStart < 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires offsetStart to be greater than or equal to 0.`);
+    }
+
+    if (offsetEnd === null || offsetEnd <= 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires a positive offsetEnd.`);
+    }
+
+    if (offsetStart !== null && offsetEnd !== null && offsetEnd <= offsetStart) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires offsetEnd to be greater than offsetStart.`);
+    }
+
+    if (!referencePartId) {
+      if (side === "inner" && (referenceInnerRadius === null || referenceInnerRadius <= 0)) {
+        reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires a positive referenceInnerRadius or referencePartId for inner bands.`);
+      }
+
+      if (referenceOuterRadius === null || referenceOuterRadius <= 0) {
+        reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires a positive referenceOuterRadius or referencePartId.`);
+      }
+
+      if (
+        referenceInnerRadius !== null &&
+        referenceOuterRadius !== null &&
+        referenceInnerRadius >= referenceOuterRadius
+      ) {
+        reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry requires referenceInnerRadius to be smaller than referenceOuterRadius.`);
+      }
+    }
+
+    if (String(templateType ?? "").toLowerCase() !== "circle") {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry currently requires a circle template.`);
     }
   }
 }
@@ -939,6 +1095,16 @@ function normalizeDirectionalSide(value) {
 function normalizeOffsetReferenceMode(value) {
   const normalized = String(value ?? "axis").toLowerCase();
   return normalized === "body-edge" ? "body-edge" : "axis";
+}
+
+function normalizeRingDirectionalSide(value) {
+  const normalized = String(value ?? "outer").toLowerCase();
+  return normalized === "inner" ? "inner" : "outer";
+}
+
+function normalizeRingOffsetReferenceMode(value) {
+  const normalized = String(value ?? "body-edge").toLowerCase();
+  return normalized === "body-edge" ? "body-edge" : "body-edge";
 }
 
 function normalizeStringArray(values) {

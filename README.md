@@ -17,6 +17,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - Can create a managed Region group when one template expands into multiple logical parts.
 - Supports a first composite geometry mode for annulus / ring-style parts.
 - Supports a first directional geometry mode for `side-of-line` parts on ray-like templates.
+- Supports a first directional annular geometry mode for `side-of-ring` parts around ring body parts.
 - Stores normalized runtime metadata on the `Region`.
 - Can create simple linked `Wall` and `AmbientLight` documents that follow the managed zone.
 - Cleans stale managed Regions when the source template, item, or concentration state becomes invalid.
@@ -38,5 +39,8 @@ FoundryVTT module dedicated to persistent zones runtime.
 - For ring geometry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-basic")`.
 - For directional side-of-line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-right")`.
 - For composite wall plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-right")`.
+- For composite ring plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-outer")`.
+- For fire-wall-like line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-right")`.
+- For fire-wall-like ring testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-outer")`.
 - Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
 - Create or move the template in Foundry to verify that the Region, linked light, and linked walls stay synchronized, then delete the template to confirm cleanup.
