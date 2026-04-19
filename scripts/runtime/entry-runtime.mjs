@@ -22,6 +22,7 @@ const recentMoveTokenEvents = new Map();
 const queuedMovementModes = new Map();
 const pendingEnterStops = new Map();
 const appliedEnterStops = new Map();
+const preAppliedEnterStopDestinations = new Map();
 const internalStopDestinations = new Map();
 const handledMovementInterruptions = new Map();
 const pendingPreUpdateGridStops = new Map();
@@ -31,6 +32,7 @@ const INTERNAL_STOP_TTL_MS = 3000;
 const MOVEMENT_SEQUENCE_TTL_MS = 5000;
 const MANAGED_REGION_ENTER_STOP_TTL_MS = 5000;
 const MOVEMENT_STOP_SETTLE_TIMEOUT_MS = 100;
+const CONTROLLED_STOP_ANIMATION_SETTLE_TIMEOUT_MS = 1000;
 const PENDING_PREUPDATE_GRID_STOP_TTL_MS = 3000;
 
 export function registerEntryRuntimeHooks() {
@@ -39,6 +41,7 @@ export function registerEntryRuntimeHooks() {
   }
 
   Hooks.on("canvasReady", onCanvasReady);
+  Hooks.on("preUpdateToken", onPreUpdateToken);
   Hooks.on("moveToken", onMoveToken);
   Hooks.on("updateToken", onUpdateToken);
   Hooks.on("createToken", onCreateToken);
@@ -91,31 +94,18 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
     return;
   }
 
-  if (options?.[MODULE_ID]?.internalStopMovement) {
-    return;
-  }
-
   if (!hasTranslationChange(changed)) {
     return;
   }
 
-  if (!isSquareGridStopModeAvailable(tokenDocument?.parent ?? null)) {
-    return;
-  }
-
   const scene = tokenDocument?.parent ?? null;
-  const actor = tokenDocument?.actor ?? null;
-  if (!scene || !actor) {
+  if (!scene) {
     return;
   }
 
-  const managedRegions = findManagedRegions(scene);
-  if (!managedRegions.length) {
-    return;
-  }
-
+  const isInternalUpdate = Boolean(options?.[MODULE_ID]?.internalStopMovement);
   const fromState = snapshotTokenState(tokenDocument);
-  const intendedToState = snapshotTokenStateAtPosition(tokenDocument, {
+  const originalToState = snapshotTokenStateAtPosition(tokenDocument, {
     x: changed.x ?? tokenDocument.x,
     y: changed.y ?? tokenDocument.y,
     width: changed.width ?? tokenDocument.width,
@@ -124,7 +114,7 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
     shape: changed.shape ?? tokenDocument.shape
   });
 
-  if (stateMatchesStopDestination(intendedToState, {
+  if (stateMatchesStopDestination(originalToState, {
     x: fromState.position.x,
     y: fromState.position.y,
     width: fromState.width,
@@ -134,94 +124,76 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
     return;
   }
 
+  const managedRegions = findManagedRegions(scene);
+  if (!managedRegions.length) {
+    return;
+  }
+
+  const movementSequenceId = buildMovementSequenceIdFromStates(tokenDocument, [fromState, originalToState]);
   const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
-    moveSource: "preUpdateToken-grid-truncate",
+    moveSource: "preUpdateToken-diagnostic",
     consume: false
   });
 
   const evaluations = collectRegionEvaluations(tokenDocument, managedRegions, {
     scene,
-    moveSource: "preUpdateToken-grid-truncate",
+    moveSource: "preUpdateToken-diagnostic",
     fromState,
-    toState: intendedToState,
-    pathStates: compactStatePath([fromState, intendedToState]),
+    toState: originalToState,
+    pathStates: compactStatePath([fromState, originalToState]),
     movementMode: movementResolution.resolvedMovementMode
   });
-  const stopDecision = chooseGridCellStopDecision(evaluations, {
-    tokenDocument,
-    moveSource: "preUpdateToken-grid-truncate",
-    movementMode: movementResolution.resolvedMovementMode
+  const eligibleStopEvaluation = evaluations.find((evaluation) => {
+    return Boolean(
+      evaluation?.normalizedDefinition?.enabled &&
+      evaluation?.filterResult?.allowed &&
+      evaluation?.onEnter?.enabled &&
+      evaluation?.onEnter?.stopMovementOnTrigger
+    );
   });
-
-  if (!stopDecision?.stopState?.position) {
-    return;
-  }
-
-  const currentCell = buildGridCellPayload(fromState);
-  const firstInsideCell = buildGridCellPayload(stopDecision.firstInsideCellState);
-  const areSameCell = areGridCellsEqual(currentCell, firstInsideCell);
-  const willActuallyMove = !stateMatchesStopDestination(stopDecision.stopState, {
-    x: fromState.position.x,
-    y: fromState.position.y,
-    width: fromState.width,
-    height: fromState.height,
-    elevation: fromState.elevation
+  const candidateEvaluation = evaluations.find((evaluation) => {
+    return Boolean(
+      evaluation?.normalizedDefinition?.enabled &&
+      evaluation?.filterResult?.allowed &&
+      evaluation?.onEnter?.enabled &&
+      evaluation?.onEnter?.stopMovementOnTrigger &&
+      evaluation?.enterDetected
+    );
   });
+  const candidateWouldEnterRegion = Boolean(candidateEvaluation);
+  const sourceLikelyPlayerDrag = isLikelyPlayerDragPreUpdate(tokenDocument, changed, options);
+  const whyNoTruncationCandidate = candidateWouldEnterRegion
+    ? null
+    : !eligibleStopEvaluation
+      ? "no-eligible-onenter-stop"
+      : explainPreUpdateOnEnterTruncationFailure(eligibleStopEvaluation);
 
-  if (areSameCell || !willActuallyMove) {
-    debug("Skipped managed Region preUpdate grid stop because it would not improve the movement.", {
-      tokenId: tokenDocument?.id ?? null,
-      regionId: stopDecision.regionId ?? null,
-      moveSource: "preUpdateToken-grid-truncate",
-      movementMode: movementResolution.resolvedMovementMode,
-      trigger: stopDecision.trigger,
-      stopReason: stopDecision.stopReason ?? null,
-      stopMode: stopDecision.stopMode ?? "grid-cell",
-      currentCell,
-      firstInsideCell,
-      areSameCell,
-      willActuallyMove,
-      selectedStopPoint: buildSimplePositionPayload(stopDecision.stopState),
-      appliedStopPoint: null,
-      finalTokenPosition: buildSimplePositionPayload(fromState),
-      skippedBecauseSameCell: areSameCell,
-      skippedBecauseNoUsefulAdvance: !willActuallyMove
-    });
-    return;
-  }
-
-  changed.x = stopDecision.stopState.position.x;
-  changed.y = stopDecision.stopState.position.y;
-
-  if (
-    Object.prototype.hasOwnProperty.call(changed, "elevation") ||
-    !compareNumbersWithinTolerance(stopDecision.stopState.elevation, tokenDocument.elevation, 0.5)
-  ) {
-    changed.elevation = stopDecision.stopState.elevation;
-  }
-
-  recordPendingPreUpdateGridStop(tokenDocument, stopDecision, {
-    originalFromState: fromState,
-    originalToState: intendedToState
-  });
-
-  debug("Applied managed Region preUpdate grid stop.", {
-    tokenId: tokenDocument?.id ?? null,
-    regionId: stopDecision.regionId ?? null,
-    moveSource: "preUpdateToken-grid-truncate",
-    movementMode: movementResolution.resolvedMovementMode,
-    trigger: stopDecision.trigger,
-    stopReason: stopDecision.stopReason ?? null,
-    stopMode: stopDecision.stopMode ?? "grid-cell",
-    currentCell,
-    originalFrom: buildSimplePositionPayload(fromState),
-    originalTo: buildSimplePositionPayload(intendedToState),
-    firstInsideCell,
-    areSameCell,
-    willActuallyMove,
-    selectedStopPoint: buildSimplePositionPayload(stopDecision.stopState),
-    onMoveThresholdPoint: buildSimplePositionPayload(stopDecision.onMoveThresholdState),
-    truncatedDestination: buildSimplePositionPayload(stopDecision.stopState)
+  debug("Observed managed Region preUpdate diagnostic.", {
+    tokenUuid: tokenDocument?.uuid ?? null,
+    "changed.x": changed?.x ?? null,
+    "changed.y": changed?.y ?? null,
+    changedX: changed?.x ?? null,
+    changedY: changed?.y ?? null,
+    isInternalUpdate,
+    movementSequenceId,
+    regionId: candidateEvaluation?.regionDocument?.id ?? eligibleStopEvaluation?.regionDocument?.id ?? null,
+    candidateWouldEnterRegion,
+    sourceLikelyPlayerDrag,
+    whyNoTruncationCandidate,
+    preUpdateFrom: buildSimplePositionPayload(fromState),
+    preUpdateTo: buildSimplePositionPayload(originalToState),
+    matchedEntryPoint: buildSimplePositionPayload(
+      candidateEvaluation?.movementAnalysis?.firstEntryState ??
+      eligibleStopEvaluation?.movementAnalysis?.firstEntryState
+    ),
+    matchedEntryCell: buildGridCellPayload(
+      candidateEvaluation?.movementAnalysis?.firstInsideCellState ??
+      eligibleStopEvaluation?.movementAnalysis?.firstInsideCellState
+    ),
+    plannedStopAvailable: false,
+    truncatedDestinationApplied: false,
+    originalTo: buildSimplePositionPayload(originalToState),
+    truncatedTo: null
   });
 }
 
@@ -239,6 +211,21 @@ async function onMoveToken(tokenDocument, movement) {
     return;
   }
   const movementSequenceId = buildMovementSequenceId(tokenDocument, movement, movementPath);
+
+  if (consumeInternalStopDestinationIfMatched(tokenDocument, movementPath.toState)) {
+    markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
+    lastKnownTokenStates.set(tokenDocument.uuid, movementPath.toState);
+
+    debug("Skipped managed Region evaluation for internal stop-movement sync.", {
+      movementSequenceId,
+      tokenId: tokenDocument?.id ?? null,
+      moveSource: movementPath.moveSource,
+      toX: movementPath.toState?.position?.x ?? null,
+      toY: movementPath.toState?.position?.y ?? null
+    });
+    return;
+  }
+
   const handledInterruption = getHandledMovementInterruption(tokenDocument, movementSequenceId);
 
   if (handledInterruption) {
@@ -269,20 +256,6 @@ async function onMoveToken(tokenDocument, movement) {
     return;
   }
 
-  if (consumeInternalStopDestinationIfMatched(tokenDocument, movementPath.toState)) {
-    markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
-    lastKnownTokenStates.set(tokenDocument.uuid, movementPath.toState);
-
-    debug("Skipped managed Region evaluation for internal stop-movement sync.", {
-      movementSequenceId,
-      tokenId: tokenDocument?.id ?? null,
-      moveSource: movementPath.moveSource,
-      toX: movementPath.toState?.position?.x ?? null,
-      toY: movementPath.toState?.position?.y ?? null
-    });
-    return;
-  }
-
   const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
     moveSource: movementPath.moveSource,
     consume: true
@@ -308,8 +281,11 @@ async function onMoveToken(tokenDocument, movement) {
     debug("Resolved managed Region movement stop result.", {
       movementSequenceId,
       tokenId: tokenDocument?.id ?? null,
+      plannedStopAvailable: evaluation.plannedStopAvailable ?? false,
+      truncatedDestinationApplied: evaluation.truncatedDestinationApplied ?? false,
       originalFrom: buildSimplePositionPayload(movementPath.fromState),
       originalTo: buildSimplePositionPayload(movementPath.toState),
+      truncatedTo: evaluation.truncatedTo ?? null,
       stopReason: evaluation.stopReason ?? null,
       stopMode: evaluation.stopMode ?? "sampled-fallback",
       firstInsideCell: evaluation.firstInsideCell ?? null,
@@ -320,6 +296,10 @@ async function onMoveToken(tokenDocument, movement) {
       interruptionApplied: evaluation.movementInterrupted,
       movementInterrupted: evaluation.movementInterrupted,
       interruptionSkippedBecauseAlreadyHandled: false,
+      usedSnapFallback: evaluation.usedSnapFallback ?? false,
+      animationRedirected: evaluation.animationRedirected ?? false,
+      animationRestartedToStop: evaluation.animationRestartedToStop ?? false,
+      usedTeleportFallback: evaluation.usedTeleportFallback ?? false,
       usedNativeTruncation: evaluation.usedNativeTruncation ?? false,
       usedRollbackFallback: evaluation.usedRollbackFallback ?? false
     });
@@ -452,12 +432,38 @@ async function evaluateTokenEntry(tokenDocument, {
     pathStates: basePathStates,
     movementMode
   });
+  let plannedStopAvailable = false;
+  let truncatedDestinationApplied = false;
+  let truncatedTo = null;
+  let usedSnapFallback = false;
+
   planManagedRegionOnEnterStops(tokenDocument, initialEvaluations, {
     movementSequenceId,
     moveSource,
     movementMode
   });
-  consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId);
+  const consumedEnterStopPlans = consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId);
+  const plannedEnterStopDecision = buildManagedRegionOnEnterStopDecision(consumedEnterStopPlans);
+  if (plannedEnterStopDecision) {
+    plannedStopAvailable = true;
+    truncatedDestinationApplied = false;
+    truncatedTo = buildSimplePositionPayload(plannedEnterStopDecision.stopState);
+    usedSnapFallback = plannedEnterStopDecision.stopMode === "grid-cell";
+
+    debug("Skipped managed Region onEnter stop because stop application is temporarily disabled.", {
+      movementSequenceId,
+      tokenId: tokenDocument?.id ?? null,
+      regionId: plannedEnterStopDecision.regionId ?? null,
+      moveSource,
+      movementMode,
+      trigger: "onEnter",
+      stopSupported: false,
+      plannedStopAvailable: true,
+      truncatedDestinationApplied: false,
+      selectedStopPoint: plannedEnterStopDecision.selectedStopPoint ?? null,
+      truncatedTo
+    });
+  }
   const stopDecision = chooseStopDecision(initialEvaluations, {
     tokenDocument,
     moveSource,
@@ -477,6 +483,9 @@ async function evaluateTokenEntry(tokenDocument, {
   let onMoveThresholdPoint = null;
   let usedNativeTruncation = false;
   let usedRollbackFallback = false;
+  let animationRedirected = false;
+  let animationRestartedToStop = false;
+  let usedTeleportFallback = false;
 
   if (stopDecision) {
     interruptionAttempted = true;
@@ -485,20 +494,33 @@ async function evaluateTokenEntry(tokenDocument, {
     stopMode = stopDecision.stopMode ?? null;
     firstInsideCell = buildGridCellPayload(stopDecision.firstInsideCellState);
     onMoveThresholdPoint = buildSimplePositionPayload(stopDecision.onMoveThresholdState);
-    const interruption = await interruptTokenMovementForTrigger({
-      tokenDocument,
-      movement,
-      moveSource,
-      movementSequenceId,
-      originalFromState: fromState ?? basePathStates[0] ?? null,
-      originalToState: toState ?? fallbackFinalState,
-      stopDecision
-    });
+    const interruption = stopDecision.trigger === "onEnter" && stopDecision.planKey
+      ? await applyManagedRegionOnEnterStopFromPlan({
+        tokenDocument,
+        movement,
+        moveSource,
+        movementSequenceId,
+        originalFromState: fromState ?? basePathStates[0] ?? null,
+        originalToState: toState ?? fallbackFinalState,
+        stopDecision
+      })
+      : await interruptTokenMovementForTrigger({
+        tokenDocument,
+        movement,
+        moveSource,
+        movementSequenceId,
+        originalFromState: fromState ?? basePathStates[0] ?? null,
+        originalToState: toState ?? fallbackFinalState,
+        stopDecision
+      });
 
     movementInterrupted = interruption.interrupted;
     appliedStopPoint = interruption.appliedStopPoint ?? null;
     usedNativeTruncation = interruption.usedNativeTruncation ?? false;
     usedRollbackFallback = interruption.usedRollbackFallback ?? false;
+    animationRedirected = interruption.animationRedirected ?? false;
+    animationRestartedToStop = interruption.animationRestartedToStop ?? false;
+    usedTeleportFallback = interruption.usedTeleportFallback ?? false;
     if (movementInterrupted) {
       effectivePathStates = buildTruncatedPathStates(
         basePathStates,
@@ -545,7 +567,14 @@ async function evaluateTokenEntry(tokenDocument, {
     firstInsideCell,
     onMoveThresholdPoint,
     usedNativeTruncation,
-    usedRollbackFallback
+    usedRollbackFallback,
+    animationRedirected,
+    animationRestartedToStop,
+    usedTeleportFallback,
+    plannedStopAvailable,
+    truncatedDestinationApplied,
+    truncatedTo,
+    usedSnapFallback
   };
 }
 
@@ -1093,7 +1122,7 @@ function planManagedRegionOnEnterStops(tokenDocument, evaluations, {
   moveSource,
   movementMode
 }) {
-  if (!movementSequenceId || !isInterruptibleMoveSource(moveSource)) {
+  if (!movementSequenceId || !isOnEnterStopPlanMoveSource(moveSource)) {
     return [];
   }
 
@@ -1132,7 +1161,7 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
     toState
   } = evaluation;
 
-  if (!movementSequenceId || !isInterruptibleMoveSource(moveSource)) {
+  if (!movementSequenceId || !isOnEnterStopPlanMoveSource(moveSource)) {
     return null;
   }
 
@@ -1184,8 +1213,18 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
     toState: duplicateStopState(toState ?? selectedStopState),
     entryPoint: buildSimplePositionPayload(entryPointState),
     entryCell: buildGridCellPayload(movementAnalysis.firstInsideCellState),
+    firstInsideCellState: movementAnalysis.firstInsideCellState
+      ? duplicateStopState(movementAnalysis.firstInsideCellState)
+      : null,
     selectedStopPoint: buildStopPointPayload(selectedStopState),
     selectedStopState: duplicateStopState(selectedStopState),
+    stopMode: movementAnalysis.firstInsideCellState ? "grid-cell" : "sampled-fallback",
+    selectedPathDistancePixels: movementAnalysis.firstInsideCellState
+      ? (movementAnalysis.firstInsideCellPathDistancePixels ?? 0)
+      : (movementAnalysis.firstEntryPathDistancePixels ?? 0),
+    segmentIndex: movementAnalysis.firstInsideCellState
+      ? (movementAnalysis.firstInsideCellSegmentIndex ?? 1)
+      : (movementAnalysis.firstEntrySegmentIndex ?? 1),
     plannedAt: Date.now(),
     expiresAt: Date.now() + MANAGED_REGION_ENTER_STOP_TTL_MS
   };
@@ -1232,6 +1271,8 @@ function consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId)
       });
     }
 
+    plan.alreadyApplied = alreadyApplied;
+
     debug("Consumed managed Region onEnter stop plan.", {
       tokenUuid,
       movementSequenceId,
@@ -1244,6 +1285,146 @@ function consumeManagedRegionOnEnterStopPlans(tokenDocument, movementSequenceId)
   }
 
   return plans;
+}
+
+function buildManagedRegionOnEnterStopDecision(consumedPlans = []) {
+  if (!Array.isArray(consumedPlans) || !consumedPlans.length) {
+    return null;
+  }
+
+  const selectedPlan = [...consumedPlans].sort((left, right) => {
+    const distanceDelta = (left.selectedPathDistancePixels ?? 0) - (right.selectedPathDistancePixels ?? 0);
+    if (distanceDelta !== 0) {
+      return distanceDelta;
+    }
+
+    return String(left.regionId ?? "").localeCompare(String(right.regionId ?? ""));
+  })[0];
+
+  if (!selectedPlan?.selectedStopState?.position) {
+    return null;
+  }
+
+  return {
+    regionId: selectedPlan.regionId ?? null,
+    regionUuid: selectedPlan.regionUuid ?? null,
+    trigger: "onEnter",
+    stopReason: "entry",
+    stopMode: selectedPlan.stopMode ?? "sampled-fallback",
+    firstInsideCellState: selectedPlan.firstInsideCellState ?? null,
+    stopState: duplicateStopState(selectedPlan.selectedStopState),
+    segmentIndex: selectedPlan.segmentIndex ?? 1,
+    onMoveThresholdState: null,
+    planKey: selectedPlan.key ?? null,
+    entryPoint: selectedPlan.entryPoint ?? null,
+    entryCell: selectedPlan.entryCell ?? null,
+    selectedStopPoint: selectedPlan.selectedStopPoint ?? null,
+    alreadyApplied: Boolean(selectedPlan.alreadyApplied)
+  };
+}
+
+function markPreAppliedManagedRegionOnEnterStopDestination(tokenDocument, movementSequenceId, stopDecision, {
+  originalFromState = null,
+  originalToState = null
+} = {}) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  const regionId = stopDecision?.regionId ?? null;
+  const key = buildManagedRegionOnEnterStopKey(tokenUuid, movementSequenceId, regionId);
+  if (!tokenUuid || !key || !stopDecision?.stopState?.position) {
+    return null;
+  }
+
+  cleanupExpiredManagedRegionOnEnterStopState();
+  const record = {
+    key,
+    tokenUuid,
+    movementSequenceId,
+    regionId,
+    regionUuid: stopDecision?.regionUuid ?? null,
+    trigger: "onEnter",
+    stopReason: stopDecision?.stopReason ?? "entry",
+    stopMode: stopDecision?.stopMode ?? "sampled-fallback",
+    entryPoint: stopDecision?.entryPoint ?? null,
+    entryCell: stopDecision?.entryCell ?? buildGridCellPayload(stopDecision?.firstInsideCellState),
+    selectedStopPoint: stopDecision?.selectedStopPoint ?? buildStopPointPayload(stopDecision?.stopState),
+    firstInsideCellState: stopDecision?.firstInsideCellState
+      ? duplicateStopState(stopDecision.firstInsideCellState)
+      : null,
+    originalFromState: originalFromState ? duplicateStopState(originalFromState) : null,
+    originalToState: originalToState ? duplicateStopState(originalToState) : null,
+    truncatedToState: duplicateStopState(stopDecision.stopState),
+    onMoveThresholdState: stopDecision?.onMoveThresholdState
+      ? duplicateStopState(stopDecision.onMoveThresholdState)
+      : null,
+    segmentIndex: stopDecision?.segmentIndex ?? 1,
+    plannedStopAvailable: true,
+    truncatedDestinationApplied: true,
+    expiresAt: Date.now() + MANAGED_REGION_ENTER_STOP_TTL_MS
+  };
+
+  preAppliedEnterStopDestinations.set(key, record);
+  return record;
+}
+
+function consumePreAppliedManagedRegionOnEnterStopDestination(tokenDocument, toState, movementSequenceId = null) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!tokenUuid) {
+    return null;
+  }
+
+  cleanupExpiredManagedRegionOnEnterStopState();
+
+  for (const [key, record] of preAppliedEnterStopDestinations.entries()) {
+    if (record.tokenUuid !== tokenUuid) {
+      continue;
+    }
+
+    const destinationMatched = stateMatchesStopDestination(toState, record.truncatedToState);
+    const sequenceMatched = Boolean(
+      movementSequenceId &&
+      record.movementSequenceId &&
+      record.movementSequenceId === movementSequenceId
+    );
+
+    if (!destinationMatched && !sequenceMatched) {
+      continue;
+    }
+
+    preAppliedEnterStopDestinations.delete(key);
+    return record;
+  }
+
+  return null;
+}
+
+function buildManagedRegionOnEnterStopDecisionFromPreApplied(record) {
+  if (!record?.truncatedToState?.position) {
+    return null;
+  }
+
+  return {
+    regionId: record.regionId ?? null,
+    regionUuid: record.regionUuid ?? null,
+    trigger: "onEnter",
+    stopReason: record.stopReason ?? "entry",
+    stopMode: record.stopMode ?? "sampled-fallback",
+    firstInsideCellState: record.firstInsideCellState ?? null,
+    stopState: duplicateStopState(record.truncatedToState),
+    segmentIndex: record.segmentIndex ?? 1,
+    onMoveThresholdState: record.onMoveThresholdState
+      ? duplicateStopState(record.onMoveThresholdState)
+      : null,
+    planKey: record.key ?? null,
+    entryPoint: record.entryPoint ?? null,
+    entryCell: record.entryCell ?? null,
+    selectedStopPoint: record.selectedStopPoint ?? buildStopPointPayload(record.truncatedToState),
+    alreadyApplied: true,
+    plannedStopAvailable: true,
+    truncatedDestinationApplied: true,
+    originalTo: buildSimplePositionPayload(record.originalToState),
+    truncatedTo: buildSimplePositionPayload(record.truncatedToState),
+    usedSnapFallback: record.stopMode === "grid-cell"
+  };
 }
 
 function cleanupManagedRegionOnEnterStopPlansForSequence(tokenDocument, movementSequenceId, {
@@ -1273,6 +1454,46 @@ function cleanupManagedRegionOnEnterStopPlansForSequence(tokenDocument, movement
       entryCell: plan.entryCell ?? null,
       selectedStopPoint: plan.selectedStopPoint ?? null,
       alreadyApplied: appliedEnterStops.has(key),
+      reason
+    });
+  }
+
+  for (const [key, plan] of appliedEnterStops.entries()) {
+    if (plan.tokenUuid !== tokenUuid || plan.movementSequenceId !== movementSequenceId) {
+      continue;
+    }
+
+    appliedEnterStops.delete(key);
+    cleanupCount += 1;
+
+    debug("Cleaned up managed Region onEnter stop plan.", {
+      tokenUuid,
+      movementSequenceId,
+      regionId: plan.regionId ?? null,
+      entryPoint: plan.entryPoint ?? null,
+      entryCell: plan.entryCell ?? null,
+      selectedStopPoint: plan.selectedStopPoint ?? null,
+      alreadyApplied: true,
+      reason
+    });
+  }
+
+  for (const [key, record] of preAppliedEnterStopDestinations.entries()) {
+    if (record.tokenUuid !== tokenUuid || record.movementSequenceId !== movementSequenceId) {
+      continue;
+    }
+
+    preAppliedEnterStopDestinations.delete(key);
+    cleanupCount += 1;
+
+    debug("Cleaned up managed Region onEnter stop plan.", {
+      tokenUuid,
+      movementSequenceId,
+      regionId: record.regionId ?? null,
+      entryPoint: record.entryPoint ?? null,
+      entryCell: record.entryCell ?? null,
+      selectedStopPoint: record.selectedStopPoint ?? null,
+      alreadyApplied: true,
       reason
     });
   }
@@ -1462,18 +1683,39 @@ async function interruptTokenMovementForTrigger({
       interruptionApplied: false,
       interruptionSkippedBecauseAlreadyHandled: false,
       movementInterrupted: false,
+      animationRedirected: false,
+      animationRestartedToStop: false,
+      usedTeleportFallback: false,
       usedNativeTruncation: false,
       usedRollbackFallback: false
     });
     return {
       interrupted: false,
       appliedStopPoint: null,
+      animationRedirected: false,
+      animationRestartedToStop: false,
+      usedTeleportFallback: false,
       usedNativeTruncation: false,
       usedRollbackFallback: false
     };
   }
 
-  const applyFallbackUpdate = async () => {
+  const applyAnimatedStopUpdate = async () => {
+    markInternalStopDestination(tokenDocument, stopState);
+    await tokenDocument.update({
+      x: stopState.position.x,
+      y: stopState.position.y,
+      elevation: stopState.elevation
+    }, {
+      animate: true,
+      [MODULE_ID]: {
+        internalStopMovement: true
+      }
+    });
+  };
+
+  const applyTeleportFallbackUpdate = async () => {
+    markInternalStopDestination(tokenDocument, stopState);
     await tokenDocument.update({
       x: stopState.position.x,
       y: stopState.position.y,
@@ -1527,6 +1769,9 @@ async function interruptTokenMovementForTrigger({
         interruptionApplied: true,
         interruptionSkippedBecauseAlreadyHandled: false,
         movementInterrupted: true,
+        animationRedirected: true,
+        animationRestartedToStop: false,
+        usedTeleportFallback: false,
         usedNativeTruncation: true,
         usedRollbackFallback: false
       });
@@ -1534,6 +1779,9 @@ async function interruptTokenMovementForTrigger({
       return {
         interrupted: true,
         appliedStopPoint,
+        animationRedirected: true,
+        animationRestartedToStop: false,
+        usedTeleportFallback: false,
         usedNativeTruncation: true,
         usedRollbackFallback: false
       };
@@ -1545,12 +1793,61 @@ async function interruptTokenMovementForTrigger({
 
     markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
       stopPoint,
+      usedRollbackFallback: false
+    });
+
+    tokenDocument.stopMovement?.();
+    await wait(0);
+    await applyAnimatedStopUpdate();
+
+    const animatedState = await awaitControlledStopAnimationSettlement(tokenDocument);
+    if (isStateNearStopState(animatedState, stopState)) {
+      const appliedStopPoint = buildSimplePositionPayload(animatedState);
+
+      debug("Applied managed Region movement stop.", {
+        movementSequenceId,
+        tokenId: tokenDocument?.id ?? null,
+        regionId: stopDecision?.regionId ?? null,
+        moveSource,
+        trigger: stopDecision?.trigger ?? null,
+        originalFrom: buildSimplePositionPayload(originalFromState),
+        originalTo: buildSimplePositionPayload(originalToState),
+        stopReason,
+        stopMode,
+        firstInsideCell,
+        selectedStopPoint: stopPoint,
+        appliedStopPoint,
+        finalTokenPosition: buildSimplePositionPayload(animatedState),
+        onMoveThresholdPoint,
+        interruptionApplied: true,
+        interruptionSkippedBecauseAlreadyHandled: false,
+        movementInterrupted: true,
+        animationRedirected: false,
+        animationRestartedToStop: true,
+        usedTeleportFallback: false,
+        usedNativeTruncation: false,
+        usedRollbackFallback: false
+      });
+
+      return {
+        interrupted: true,
+        appliedStopPoint,
+        animationRedirected: false,
+        animationRestartedToStop: true,
+        usedTeleportFallback: false,
+        usedNativeTruncation: false,
+        usedRollbackFallback: false
+      };
+    }
+
+    markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
+      stopPoint,
       usedRollbackFallback: true
     });
 
     tokenDocument.stopMovement?.();
     await wait(0);
-    await applyFallbackUpdate();
+    await applyTeleportFallbackUpdate();
 
     const finalState = snapshotTokenState(tokenDocument);
     const appliedStopPoint = buildSimplePositionPayload(finalState);
@@ -1573,6 +1870,9 @@ async function interruptTokenMovementForTrigger({
       interruptionApplied: true,
       interruptionSkippedBecauseAlreadyHandled: false,
       movementInterrupted: true,
+      animationRedirected: false,
+      animationRestartedToStop: true,
+      usedTeleportFallback: true,
       usedNativeTruncation: false,
       usedRollbackFallback: true,
       rollbackAfterDestinationReached: movementReachedOriginalDestinationBeforeFallback
@@ -1581,6 +1881,9 @@ async function interruptTokenMovementForTrigger({
     return {
       interrupted: true,
       appliedStopPoint,
+      animationRedirected: false,
+      animationRestartedToStop: true,
+      usedTeleportFallback: true,
       usedNativeTruncation: false,
       usedRollbackFallback: true
     };
@@ -1603,6 +1906,9 @@ async function interruptTokenMovementForTrigger({
       interruptionApplied: false,
       interruptionSkippedBecauseAlreadyHandled: false,
       movementInterrupted: false,
+      animationRedirected: false,
+      animationRestartedToStop: false,
+      usedTeleportFallback: true,
       usedNativeTruncation: false,
       usedRollbackFallback: true,
       error: caughtError?.message ?? "unknown"
@@ -1612,10 +1918,73 @@ async function interruptTokenMovementForTrigger({
     return {
       interrupted: false,
       appliedStopPoint: null,
+      animationRedirected: false,
+      animationRestartedToStop: false,
+      usedTeleportFallback: true,
       usedNativeTruncation: false,
       usedRollbackFallback: true
     };
   }
+}
+
+async function applyManagedRegionOnEnterStopFromPlan({
+  tokenDocument,
+  movement,
+  moveSource,
+  movementSequenceId,
+  originalFromState,
+  originalToState,
+  stopDecision
+}) {
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  const entryPoint = stopDecision?.entryPoint ?? null;
+  const entryCell = stopDecision?.entryCell ?? null;
+  const selectedStopPoint = stopDecision?.selectedStopPoint ?? buildStopPointPayload(stopDecision?.stopState);
+  const alreadyApplied = Boolean(stopDecision?.alreadyApplied);
+
+  const interruption = await interruptTokenMovementForTrigger({
+    tokenDocument,
+    movement,
+    moveSource,
+    movementSequenceId,
+    originalFromState,
+    originalToState,
+    stopDecision
+  });
+
+  debug("Applied managed Region onEnter stop from plan.", {
+    tokenUuid,
+    movementSequenceId,
+    regionId: stopDecision?.regionId ?? null,
+    entryPoint,
+    entryCell,
+    selectedStopPoint,
+    appliedStopPoint: interruption?.appliedStopPoint ?? null,
+    finalTokenPosition: buildSimplePositionPayload(snapshotTokenState(tokenDocument)),
+    animationRedirected: Boolean(interruption?.animationRedirected),
+    animationRestartedToStop: Boolean(interruption?.animationRestartedToStop),
+    usedTeleportFallback: Boolean(interruption?.usedTeleportFallback),
+    usedFallback: Boolean(interruption?.usedTeleportFallback),
+    alreadyApplied
+  });
+
+  debug("Resolved managed Region onEnter stop result.", {
+    tokenUuid,
+    movementSequenceId,
+    regionId: stopDecision?.regionId ?? null,
+    entryPoint,
+    entryCell,
+    selectedStopPoint,
+    appliedStopPoint: interruption?.appliedStopPoint ?? null,
+    finalTokenPosition: buildSimplePositionPayload(snapshotTokenState(tokenDocument)),
+    animationRedirected: Boolean(interruption?.animationRedirected),
+    animationRestartedToStop: Boolean(interruption?.animationRestartedToStop),
+    usedTeleportFallback: Boolean(interruption?.usedTeleportFallback),
+    usedFallback: Boolean(interruption?.usedTeleportFallback),
+    alreadyApplied
+  });
+
+  return interruption;
 }
 
 async function awaitMovementStopSettlement(tokenDocument, initialAnimationPromise) {
@@ -1630,6 +1999,25 @@ async function awaitMovementStopSettlement(tokenDocument, initialAnimationPromis
     await Promise.race([
       movementAnimationPromise.catch(() => null),
       wait(MOVEMENT_STOP_SETTLE_TIMEOUT_MS)
+    ]);
+  } else {
+    await wait(0);
+  }
+
+  return snapshotTokenState(tokenDocument);
+}
+
+async function awaitControlledStopAnimationSettlement(tokenDocument) {
+  const movementAnimationPromise =
+    tokenDocument?.rendered &&
+    typeof tokenDocument?.object?.movementAnimationPromise?.then === "function"
+      ? tokenDocument.object.movementAnimationPromise
+      : null;
+
+  if (movementAnimationPromise) {
+    await Promise.race([
+      movementAnimationPromise.catch(() => null),
+      wait(CONTROLLED_STOP_ANIMATION_SETTLE_TIMEOUT_MS)
     ]);
   } else {
     await wait(0);
@@ -1808,6 +2196,65 @@ function isInterruptibleMoveSource(moveSource) {
   return typeof moveSource === "string" && moveSource.startsWith("moveToken");
 }
 
+function isOnEnterStopPlanMoveSource(moveSource) {
+  return isInterruptibleMoveSource(moveSource);
+}
+
+function isLikelyPlayerDragPreUpdate(tokenDocument, changed, options = {}) {
+  if (options?.[MODULE_ID]?.internalStopMovement) {
+    return false;
+  }
+
+  if (!hasTranslationChange(changed)) {
+    return false;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(changed ?? {}, "width") ||
+    Object.prototype.hasOwnProperty.call(changed ?? {}, "height")
+  ) {
+    return false;
+  }
+
+  return Boolean(tokenDocument?.parent && tokenDocument.parent === canvas?.scene);
+}
+
+function explainPreUpdateOnEnterTruncationFailure(evaluation) {
+  if (!evaluation) {
+    return "missing-evaluation";
+  }
+
+  if (!evaluation.normalizedDefinition?.enabled) {
+    return "definition-disabled";
+  }
+
+  if (!evaluation.filterResult?.allowed) {
+    return "target-filtered";
+  }
+
+  if (!evaluation.onEnter?.enabled) {
+    return "onenter-disabled";
+  }
+
+  if (!evaluation.onEnter?.stopMovementOnTrigger) {
+    return "stop-not-requested";
+  }
+
+  if (!evaluation.enterDetected) {
+    return "entry-not-detected";
+  }
+
+  if (!evaluation.enterMovementModeMatched) {
+    return "movement-mode-mismatch";
+  }
+
+  if (!evaluation.movementAnalysis?.firstEntryState && !evaluation.movementAnalysis?.firstInsideCellState) {
+    return "missing-entry-state";
+  }
+
+  return "plan-not-produced";
+}
+
 function shouldAffectToken(tokenDocument, runtime, normalizedDefinition) {
   if (!tokenDocument?.actor) {
     return { allowed: false, reason: "Token has no Actor." };
@@ -1908,6 +2355,7 @@ function refreshTrackedTokenStates(scene) {
   queuedMovementModes.clear();
   pendingEnterStops.clear();
   appliedEnterStops.clear();
+  preAppliedEnterStopDestinations.clear();
   internalStopDestinations.clear();
   handledMovementInterruptions.clear();
 
@@ -1923,6 +2371,34 @@ function refreshTrackedTokenStates(scene) {
     sceneId: scene?.id ?? null,
     trackedTokens: tokenDocuments.length
   });
+}
+
+function buildMovementSequenceIdFromStates(tokenDocument, states) {
+  cleanupExpiredManagedRegionOnEnterStopState();
+  cleanupExpiredHandledMovementInterruptions();
+
+  const compactStates = compactStatePath(states);
+  const firstState = compactStates[0] ?? null;
+  const lastState = compactStates[compactStates.length - 1] ?? null;
+  if (!firstState || !lastState) {
+    return `${tokenDocument?.uuid ?? tokenDocument?.id ?? "token"}|unknown`;
+  }
+
+  const firstPoint = firstState.position ?? firstState.center ?? null;
+  const lastPoint = lastState.position ?? lastState.center ?? null;
+  return [
+    tokenDocument?.uuid ?? tokenDocument?.id ?? "token",
+    [
+      Math.round(coerceNumber(firstPoint?.x, 0)),
+      Math.round(coerceNumber(firstPoint?.y, 0)),
+      Math.round(coerceNumber(firstState?.elevation, 0))
+    ].join(":"),
+    [
+      Math.round(coerceNumber(lastPoint?.x, 0)),
+      Math.round(coerceNumber(lastPoint?.y, 0)),
+      Math.round(coerceNumber(lastState?.elevation, 0))
+    ].join(":")
+  ].join("|");
 }
 
 function buildManagedRegionOnEnterStopKey(tokenUuid, movementSequenceId, regionId) {
@@ -1948,6 +2424,12 @@ function clearManagedRegionOnEnterStopStateForToken(tokenDocument) {
   for (const [key, plan] of appliedEnterStops.entries()) {
     if (plan.tokenUuid === tokenUuid) {
       appliedEnterStops.delete(key);
+    }
+  }
+
+  for (const [key, record] of preAppliedEnterStopDestinations.entries()) {
+    if (record.tokenUuid === tokenUuid) {
+      preAppliedEnterStopDestinations.delete(key);
     }
   }
 }
@@ -1979,6 +2461,14 @@ function cleanupExpiredManagedRegionOnEnterStopState() {
     }
 
     appliedEnterStops.delete(key);
+  }
+
+  for (const [key, record] of preAppliedEnterStopDestinations.entries()) {
+    if ((record?.expiresAt ?? 0) > now) {
+      continue;
+    }
+
+    preAppliedEnterStopDestinations.delete(key);
   }
 }
 
