@@ -185,11 +185,38 @@ export function normalizeZoneDefinition(
     }),
     targeting: normalizeTargeting(definition.targeting),
     triggers: normalizeTriggers(triggerDefinition, dc),
+    geometry: normalizeGeometryDefinition(null, {
+      templateDocument,
+      templateDefinition,
+      definition
+    }),
     limits: collectCurrentLimits(definition),
+    parts: [],
+    group: {
+      mode: "single",
+      partCount: 0
+    },
     validation: {
       isValid: true,
       reasons: []
     }
+  };
+
+  normalizedDefinition.parts = normalizeZoneParts({
+    definition,
+    normalizedDefinition,
+    templateDocument,
+    templateDefinition,
+    triggerDefinition,
+    terrainDefinition,
+    movementCostDefinition,
+    linkedWallsDefinition,
+    linkedLightDefinition,
+    dc
+  });
+  normalizedDefinition.group = {
+    mode: normalizedDefinition.parts.length > 1 ? "parts" : "single",
+    partCount: normalizedDefinition.parts.length
   };
 
   normalizedDefinition.validation.reasons = collectValidationReasons({
@@ -365,6 +392,204 @@ function normalizeTriggers(triggerDefinition, dc) {
   };
 }
 
+function normalizeZoneParts({
+  definition,
+  normalizedDefinition,
+  templateDocument,
+  templateDefinition,
+  triggerDefinition,
+  terrainDefinition,
+  movementCostDefinition,
+  linkedWallsDefinition,
+  linkedLightDefinition,
+  dc
+}) {
+  const sourceParts = Array.isArray(definition.parts)
+    ? definition.parts
+    : Array.isArray(definition.zones)
+      ? definition.zones
+      : [];
+
+  if (!sourceParts.length) {
+    return [buildDefaultZonePart(normalizedDefinition)];
+  }
+
+  return sourceParts.map((partDefinition, index) => normalizeZonePart(partDefinition, index, {
+    normalizedDefinition,
+    templateDocument,
+    templateDefinition,
+    triggerDefinition,
+    terrainDefinition,
+    movementCostDefinition,
+    linkedWallsDefinition,
+    linkedLightDefinition,
+    dc
+  }));
+}
+
+function buildDefaultZonePart(normalizedDefinition) {
+  return {
+    id: "primary",
+    label: normalizedDefinition.label,
+    geometry: duplicateData(normalizedDefinition.geometry),
+    targeting: duplicateData(normalizedDefinition.targeting),
+    terrain: duplicateData(normalizedDefinition.terrain),
+    linkedWalls: duplicateData(normalizedDefinition.linkedWalls),
+    linkedLight: duplicateData(normalizedDefinition.linkedLight),
+    triggers: duplicateData(normalizedDefinition.triggers)
+  };
+}
+
+function normalizeZonePart(partLikeDefinition, index, {
+  normalizedDefinition,
+  templateDocument,
+  templateDefinition,
+  triggerDefinition,
+  terrainDefinition,
+  movementCostDefinition,
+  linkedWallsDefinition,
+  linkedLightDefinition,
+  dc
+}) {
+  const partDefinition = isPlainObject(partLikeDefinition) ? partLikeDefinition : {};
+  const mergedTriggerDefinition = mergePlainObjects(triggerDefinition, partDefinition.triggers);
+  const mergedTerrainDefinition = mergePlainObjects(
+    terrainDefinition,
+    isPlainObject(partDefinition.terrain) ? partDefinition.terrain : {}
+  );
+  const mergedMovementCostDefinition = mergePlainObjects(
+    movementCostDefinition,
+    isPlainObject(partDefinition.movementCost) ? partDefinition.movementCost : {}
+  );
+  const mergedLinkedWallsDefinition = mergePlainObjects(
+    linkedWallsDefinition,
+    isPlainObject(partDefinition.linkedWalls) ? partDefinition.linkedWalls : {}
+  );
+  const mergedLinkedLightDefinition = mergePlainObjects(
+    linkedLightDefinition,
+    isPlainObject(partDefinition.linkedLight)
+      ? partDefinition.linkedLight
+      : isPlainObject(partDefinition.linkedLights)
+        ? partDefinition.linkedLights
+        : {}
+  );
+  const mergedTargetingDefinition = mergePlainObjects(
+    normalizedDefinition.targeting,
+    isPlainObject(partDefinition.targeting) ? partDefinition.targeting : {}
+  );
+
+  return {
+    id: pickFirstDefined(partDefinition.id, partDefinition.key, `part-${index + 1}`),
+    label: pickFirstDefined(partDefinition.label, partDefinition.name, normalizedDefinition.label),
+    geometry: normalizeGeometryDefinition(partDefinition.geometry, {
+      templateDocument,
+      templateDefinition,
+      definition: partDefinition
+    }),
+    targeting: normalizeTargeting(mergedTargetingDefinition),
+    terrain: normalizeTerrain({
+      terrainDefinition: mergedTerrainDefinition,
+      movementCostDefinition: mergedMovementCostDefinition,
+      definition: partDefinition
+    }),
+    linkedWalls: normalizeLinkedWalls(mergedLinkedWallsDefinition),
+    linkedLight: normalizeLinkedLight(mergedLinkedLightDefinition, {
+      templateDistance: pickFirstDefined(
+        templateDefinition.distance,
+        normalizedDefinition.template?.distance,
+        templateDocument?.distance
+      )
+    }),
+    triggers: normalizeTriggers(mergedTriggerDefinition, dc)
+  };
+}
+
+function normalizeGeometryDefinition(geometryLikeDefinition, {
+  templateDocument = null,
+  templateDefinition = {},
+  definition = {}
+} = {}) {
+  const geometryDefinition = isPlainObject(geometryLikeDefinition) ? geometryLikeDefinition : {};
+  const geometryType = String(
+    pickFirstDefined(
+      geometryDefinition.type,
+      geometryDefinition.mode,
+      geometryDefinition.kind,
+      "template"
+    )
+  ).toLowerCase();
+
+  if (geometryType === "ring" || geometryType === "annulus") {
+    const templateDistance = coerceNumber(
+      pickFirstDefined(
+        templateDefinition.distance,
+        definition.distance,
+        templateDocument?.distance
+      ),
+      null
+    );
+    const outerRadiusRatio = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.outerRadiusRatio,
+        geometryDefinition.outerRatio
+      ),
+      null
+    );
+    const innerRadiusRatio = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.innerRadiusRatio,
+        geometryDefinition.innerRatio
+      ),
+      null
+    );
+    const defaultOuterRadius = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.outerRadius,
+        geometryDefinition.outer,
+        geometryDefinition.radius,
+        outerRadiusRatio !== null && templateDistance !== null
+          ? templateDistance * outerRadiusRatio
+          : null,
+        templateDistance
+      ),
+      null
+    );
+    const defaultInnerRadius = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.innerRadius,
+        geometryDefinition.inner,
+        geometryDefinition.holeRadius,
+        innerRadiusRatio !== null && templateDistance !== null
+          ? templateDistance * innerRadiusRatio
+          : null,
+        0
+      ),
+      0
+    );
+
+    return {
+      type: "ring",
+      centerMode: "template",
+      innerRadius: defaultInnerRadius === null ? null : Math.max(0, defaultInnerRadius),
+      innerRadiusRatio,
+      outerRadius: defaultOuterRadius,
+      outerRadiusRatio,
+      segments: normalizeRingSegmentCount(
+        pickFirstDefined(geometryDefinition.segments, geometryDefinition.segmentCount, 24)
+      )
+    };
+  }
+
+  return {
+    type: "template"
+  };
+}
+
+function normalizeRingSegmentCount(value) {
+  const numericValue = Math.round(coerceNumber(value, 24));
+  return Math.min(Math.max(numericValue, 8), 64);
+}
+
 function normalizeTriggerConfig(triggerLikeDefinition, dc) {
   const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
@@ -444,6 +669,14 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   validateTriggerConfig("onStartTurn", onStartTurn, reasons);
   validateTriggerConfig("onEndTurn", onEndTurn, reasons);
 
+  if (!Array.isArray(normalizedDefinition.parts) || !normalizedDefinition.parts.length) {
+    reasons.push("At least one zone part must be available after normalization.");
+  } else {
+    normalizedDefinition.parts.forEach((part, index) => {
+      validateZonePartConfig(part, index, reasons);
+    });
+  }
+
   return reasons;
 }
 
@@ -452,6 +685,18 @@ function collectCurrentLimits(definition) {
 
   if (safeGet(definition, ["movement"]) !== undefined) {
     limits.push("Movement-through-zone logic is not executed in this MVP step.");
+  }
+
+  if (Array.isArray(definition.parts) || Array.isArray(definition.zones)) {
+    limits.push("Multi-part zones currently create one managed Region per part.");
+  }
+
+  if (
+    safeGet(definition, ["geometry", "type"]) !== undefined ||
+    Array.isArray(definition.parts) ||
+    Array.isArray(definition.zones)
+  ) {
+    limits.push("Ring geometry is approximated with multiple polygon shapes inside one Region part in this MVP.");
   }
 
   if (safeGet(definition, ["forcedMovement"]) !== undefined) {
@@ -478,6 +723,53 @@ function collectCurrentLimits(definition) {
   }
 
   return limits;
+}
+
+function validateZonePartConfig(part, index, reasons) {
+  if (!part?.id) {
+    reasons.push(`Part ${index + 1} requires an id.`);
+  }
+
+  const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
+  if (!["template", "ring"].includes(geometryType)) {
+    reasons.push(`Part "${part?.id ?? index + 1}" uses unsupported geometry "${geometryType}".`);
+    return;
+  }
+
+  if (geometryType === "ring") {
+    const innerRadius = coerceNumber(part?.geometry?.innerRadius, null);
+    const outerRadius = coerceNumber(part?.geometry?.outerRadius, null);
+    const innerRadiusRatio = coerceNumber(part?.geometry?.innerRadiusRatio, null);
+
+    if (outerRadius !== null && outerRadius <= 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires a positive outerRadius.`);
+    }
+
+    if ((innerRadius === null && innerRadiusRatio === null) || (innerRadius !== null && innerRadius < 0)) {
+      reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires an innerRadius greater than or equal to 0.`);
+    }
+
+    if (innerRadius !== null && outerRadius !== null && innerRadius >= outerRadius) {
+      reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires innerRadius to be smaller than outerRadius.`);
+    }
+  }
+}
+
+function mergePlainObjects(baseValue, overrideValue) {
+  const baseObject = isPlainObject(baseValue) ? duplicateData(baseValue) : {};
+  const overrideObject = isPlainObject(overrideValue) ? overrideValue : {};
+  const merged = { ...baseObject };
+
+  for (const [key, value] of Object.entries(overrideObject)) {
+    if (isPlainObject(value) && isPlainObject(merged[key])) {
+      merged[key] = mergePlainObjects(merged[key], value);
+      continue;
+    }
+
+    merged[key] = duplicateData(value);
+  }
+
+  return merged;
 }
 
 function validateTriggerConfig(triggerName, triggerConfig, reasons, {

@@ -36,6 +36,9 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "ring-basic":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingBasicTestDefinition());
     case "linked-light-fire":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createLinkedLightTestDefinition("fire"));
@@ -154,17 +157,38 @@ export async function applyTestDefinitionToItem(itemOrUuid, preset = "basic") {
     return null;
   }
 
-  await item.setFlag(MODULE_ID, DEFINITION_FLAG_KEY, definition);
-  debug("Applied persistent-zones debug definition to Item.", {
+  const previousDefinition = getZoneDefinitionFromItem(item);
+  if (previousDefinition) {
+    await item.update({
+      [`flags.${MODULE_ID}.-=${DEFINITION_FLAG_KEY}`]: null
+    });
+
+    debug("Cleared previous persistent-zones debug definition before replacement.", {
+      itemUuid: item.uuid,
+      itemName: item.name,
+      previousPreset: previousDefinition?.source?.preset ?? null,
+      previousSummary: summarizeDebugDefinition(previousDefinition)
+    });
+  }
+
+  await item.update({
+    [`flags.${MODULE_ID}.${DEFINITION_FLAG_KEY}`]: definition
+  });
+
+  const appliedDefinition = getZoneDefinitionFromItem(item) ?? definition;
+  debug("Replaced persistent-zones debug definition on Item.", {
     itemUuid: item.uuid,
     itemName: item.name,
-    preset: String(preset || "basic").toLowerCase()
+    preset: String(preset || "basic").toLowerCase(),
+    replacedExistingDefinition: Boolean(previousDefinition),
+    previousPreset: previousDefinition?.source?.preset ?? null,
+    appliedSummary: summarizeDebugDefinition(appliedDefinition)
   });
 
   return {
     itemUuid: item.uuid,
     itemName: item.name,
-    definition
+    definition: appliedDefinition
   };
 }
 
@@ -674,6 +698,58 @@ function createDifficultTerrainTestDefinition() {
   };
 }
 
+function createRingBasicTestDefinition() {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: "ring-basic"
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Ring Basic",
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    },
+    parts: [
+      {
+        id: "ring",
+        label: "Persistent Zone Debug Ring",
+        geometry: {
+          type: "ring",
+          innerRadiusRatio: 0.5,
+          segments: 24
+        }
+      }
+    ]
+  };
+}
+
 function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -770,4 +846,25 @@ function toTitleCase(value) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function summarizeDebugDefinition(definition) {
+  if (!definition || typeof definition !== "object") {
+    return {
+      hasDefinition: false
+    };
+  }
+
+  return {
+    preset: definition?.source?.preset ?? null,
+    geometryType: definition?.geometry?.type ?? null,
+    partCount: Array.isArray(definition.parts) ? definition.parts.length : 0,
+    zoneCount: Array.isArray(definition.zones) ? definition.zones.length : 0,
+    hasRingGeometry:
+      definition?.geometry?.type === "ring" ||
+      Array.isArray(definition.parts) &&
+        definition.parts.some((part) => part?.geometry?.type === "ring") ||
+      Array.isArray(definition.zones) &&
+        definition.zones.some((part) => part?.geometry?.type === "ring")
+  };
 }

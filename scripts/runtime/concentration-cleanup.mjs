@@ -33,13 +33,22 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
 
   const regionsToDelete = [];
   const managedRegions = findManagedRegions(scene);
+  const groupedRegions = groupManagedRegionsByCleanupKey(managedRegions);
 
   for (const region of managedRegions) {
     const validation = await validateManagedRegion(region);
     if (!validation.isValid) {
-      if (pendingRegionCleanup.has(region.id)) {
+      const groupKey = buildManagedRegionCleanupKey(region);
+      const groupRegions = groupedRegions.get(groupKey) ?? [region];
+      const groupRegionIds = groupRegions
+        .map((groupRegion) => groupRegion?.id ?? null)
+        .filter(Boolean);
+      const pendingIds = groupRegionIds.filter((regionId) => pendingRegionCleanup.has(regionId));
+
+      if (pendingIds.length === groupRegionIds.length) {
         debug("Skipped Region cleanup because deletion is already pending.", {
           regionId: region.id,
+          regionGroupKey: groupKey,
           sceneId: scene.id,
           reason,
           detail: validation.reason
@@ -49,13 +58,21 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
 
       debug("Scheduling Region cleanup.", {
         regionId: region.id,
+        regionGroupKey: groupKey,
+        regionIds: groupRegionIds,
         sceneId: scene.id,
         reason,
         detail: validation.reason
       });
 
-      pendingRegionCleanup.add(region.id);
-      regionsToDelete.push(region.id);
+      for (const regionId of groupRegionIds) {
+        if (pendingRegionCleanup.has(regionId)) {
+          continue;
+        }
+
+        pendingRegionCleanup.add(regionId);
+        regionsToDelete.push(regionId);
+      }
     }
   }
 
@@ -90,6 +107,15 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
       }
     }
 
+    for (const [groupKey, groupRegionIds] of groupExistingRegionIdsByKey(scene, existingRegionIds).entries()) {
+      debug("Cleaned managed Region group.", {
+        sceneId: scene.id,
+        regionGroupKey: groupKey,
+        regionIds: groupRegionIds,
+        reason
+      });
+    }
+
     return await scene.deleteEmbeddedDocuments("Region", existingRegionIds);
   } catch (caughtError) {
     const message = String(caughtError?.message ?? "");
@@ -108,6 +134,49 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
       pendingRegionCleanup.delete(regionId);
     }
   }
+}
+
+function groupManagedRegionsByCleanupKey(regionDocuments) {
+  const groups = new Map();
+
+  for (const regionDocument of Array.from(regionDocuments ?? [])) {
+    const key = buildManagedRegionCleanupKey(regionDocument);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+
+    groups.get(key).push(regionDocument);
+  }
+
+  return groups;
+}
+
+function groupExistingRegionIdsByKey(scene, regionIds) {
+  const groups = new Map();
+
+  for (const regionId of Array.from(regionIds ?? [])) {
+    const regionDocument = scene?.regions?.get?.(regionId) ?? null;
+    const key = buildManagedRegionCleanupKey(regionDocument);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+
+    groups.get(key).push(regionId);
+  }
+
+  return groups;
+}
+
+function buildManagedRegionCleanupKey(regionDocument) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  return String(
+    runtime.groupId ??
+    runtime.templateUuid ??
+    runtime.templateId ??
+    regionDocument?.uuid ??
+    regionDocument?.id ??
+    "managed-region"
+  );
 }
 
 export async function cleanupWorldRegions({ reason = "manual" } = {}) {

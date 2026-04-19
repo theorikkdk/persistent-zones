@@ -10,6 +10,7 @@ import {
   coerceNumber,
   debug,
   distanceToPixels,
+  duplicateData,
   error,
   findManagedRegions,
   fromUuidSafe,
@@ -32,6 +33,7 @@ import {
 
 let hooksRegistered = false;
 const pendingTemplateSync = new Set();
+const DEFAULT_RING_SEGMENTS = 24;
 
 export function registerRegionFactoryHooks() {
   if (hooksRegistered) {
@@ -116,13 +118,14 @@ export async function createRegionFromTemplate(
     return null;
   }
 
-  const existingRegion = findManagedRegionForTemplate(scene, templateDocument);
-  if (existingRegion && !force) {
+  const existingRegions = findManagedRegionsForTemplate(scene, templateDocument);
+  if (existingRegions.length && !force) {
     debug("Skipped Region creation because a managed Region already exists.", {
       templateId: templateDocument.id,
-      regionId: existingRegion.id
+      regionId: existingRegions[0]?.id ?? null,
+      regionCount: existingRegions.length
     });
-    return existingRegion;
+    return existingRegions[0] ?? null;
   }
 
   const resolvedContext = await resolveTemplateSourceContext(templateDocument);
@@ -159,15 +162,25 @@ export async function createRegionFromTemplate(
   });
 
   if (!normalizedDefinition.validation.isValid) {
+    const validationReasons = Array.isArray(normalizedDefinition.validation.reasons)
+      ? normalizedDefinition.validation.reasons
+      : [];
     debug("Skipped template with an invalid normalized zone definition.", {
       templateId: templateDocument.id,
-      reasons: normalizedDefinition.validation.reasons
+      reasons: validationReasons,
+      reasonsText: validationReasons.join(" | ")
     });
     return null;
   }
 
-  const shapes = await buildRegionShapesFromTemplate(templateDocument);
-  if (!shapes.length) {
+  const groupPlan = await buildManagedRegionGroupPlan({
+    templateDocument,
+    normalizedDefinition,
+    sourceContext,
+    existingRegions
+  });
+
+  if (!groupPlan.parts.length) {
     debug("Skipped template because no supported Region shape could be produced.", {
       templateId: templateDocument.id,
       templateType: getTemplateType(templateDocument)
@@ -175,34 +188,50 @@ export async function createRegionFromTemplate(
     return null;
   }
 
-  const regionData = buildRegionCreateData({
-    templateDocument,
-    normalizedDefinition,
-    sourceContext,
-    shapes
-  });
-
-  const createdRegions = await scene.createEmbeddedDocuments("Region", [regionData]);
-  const createdRegion = createdRegions?.[0] ?? null;
-
-  if (createdRegion) {
-    await syncLinkedDocumentsSafely({
-      templateDocument,
-      regionDocument: createdRegion,
-      normalizedDefinition,
-      shapes,
-      stage: "create-region"
-    });
-
-    debug("Created managed Region from MeasuredTemplate.", {
-      templateId: templateDocument.id,
-      regionId: createdRegion.id,
-      itemUuid: sourceContext.item.uuid,
-      nativeBehaviorCount: createdRegion.behaviors?.size ?? createdRegion.behaviors?.contents?.length ?? regionData.behaviors?.length ?? 0
+  if (existingRegions.length && force) {
+    await deleteManagedRegionGroup(existingRegions, {
+      reason: "force-recreate-group"
     });
   }
 
-  return createdRegion;
+  const createdRegions = await scene.createEmbeddedDocuments(
+    "Region",
+    groupPlan.parts.map((partPlan) => partPlan.regionData)
+  );
+
+  for (let index = 0; index < createdRegions.length; index += 1) {
+    const createdRegion = createdRegions[index] ?? null;
+    const partPlan = groupPlan.parts[index] ?? null;
+    if (!createdRegion || !partPlan) {
+      continue;
+    }
+
+    await syncLinkedDocumentsSafely({
+      templateDocument,
+      regionDocument: createdRegion,
+      normalizedDefinition: partPlan.runtimeDefinition,
+      shapes: partPlan.shapes,
+      stage: "create-region"
+    });
+
+    debug("Created managed Region part from MeasuredTemplate.", {
+      templateId: templateDocument.id,
+      regionGroupId: groupPlan.groupId,
+      regionId: createdRegion.id,
+      partId: partPlan.partId,
+      geometryType: partPlan.geometryType
+    });
+  }
+
+  debug("Created managed Region group from MeasuredTemplate.", {
+    templateId: templateDocument.id,
+    regionGroupId: groupPlan.groupId,
+    regionCount: createdRegions.length,
+    geometryTypes: groupPlan.parts.map((partPlan) => partPlan.geometryType),
+    partIds: groupPlan.parts.map((partPlan) => partPlan.partId)
+  });
+
+  return createdRegions?.[0] ?? null;
 }
 
 async function syncRegionToTemplate(templateDocument, {
@@ -221,80 +250,120 @@ async function syncRegionToTemplate(templateDocument, {
     return null;
   }
 
-  const existingRegion = findManagedRegionForTemplate(scene, templateDocument);
-  if (!existingRegion) {
+  const existingRegions = findManagedRegionsForTemplate(scene, templateDocument);
+  if (!existingRegions.length) {
     const createdRegion = await createRegionFromTemplate(templateDocument, { userId });
-    debug("Synced managed Region from updated MeasuredTemplate.", {
+    debug("Synced managed Region group from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionId: createdRegion?.id ?? null,
+      regionCount: createdRegion ? 1 : 0,
       updateKeys,
-      strategy: "create-region",
+      strategy: "create-region-group",
       syncApplied: Boolean(createdRegion)
     });
     return createdRegion;
   }
 
-  const syncPayload = await buildRegionSyncPayload(templateDocument, existingRegion);
-  if (!syncPayload) {
-    debug("Skipped template sync because Region sync payload could not be built.", {
+  const syncPayload = await buildRegionSyncPayload(templateDocument, existingRegions);
+  if (!syncPayload || !syncPayload.parts.length) {
+    debug("Skipped template sync because Region group sync payload could not be built.", {
       templateId: templateDocument?.id ?? null,
-      regionId: existingRegion.id,
+      regionId: existingRegions[0]?.id ?? null,
+      regionCount: existingRegions.length,
       updateKeys,
       strategy: "update-region",
       syncApplied: false
     });
+    return existingRegions[0] ?? null;
+  }
+
+  if (existingRegions.length > 1 || syncPayload.parts.length > 1) {
+    const recreatedRegions = await recreateManagedRegionGroupFromTemplate(templateDocument, existingRegions, syncPayload);
+    debug("Synced managed Region group from updated MeasuredTemplate.", {
+      templateId: templateDocument?.id ?? null,
+      regionGroupId: syncPayload.groupId,
+      regionId: recreatedRegions?.[0]?.id ?? null,
+      regionCount: recreatedRegions.length,
+      updateKeys,
+      strategy: "recreate-group",
+      syncApplied: recreatedRegions.length > 0
+    });
+    return recreatedRegions[0] ?? null;
+  }
+
+  const existingRegion = existingRegions[0];
+  const partPlan = syncPayload.parts[0] ?? null;
+  if (!partPlan) {
     return existingRegion;
   }
 
   try {
-    await existingRegion.update(syncPayload.updateData);
+    await existingRegion.update(buildRegionUpdateData(partPlan.regionData));
     await syncLinkedDocumentsSafely({
       templateDocument,
       regionDocument: existingRegion,
-      normalizedDefinition: syncPayload.regionData.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]?.normalizedDefinition ?? null,
-      shapes: syncPayload.regionData.shapes,
+      normalizedDefinition: partPlan.runtimeDefinition,
+      shapes: partPlan.shapes,
       stage: "update-region"
     });
 
-    debug("Synced managed Region from updated MeasuredTemplate.", {
+    debug("Synced managed Region part from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionId: existingRegion.id,
+      regionGroupId: syncPayload.groupId,
+      partId: partPlan.partId,
+      geometryType: partPlan.geometryType,
+      updateKeys,
+      strategy: "update-region",
+      syncApplied: true
+    });
+
+    debug("Synced managed Region group from updated MeasuredTemplate.", {
+      templateId: templateDocument?.id ?? null,
+      regionGroupId: syncPayload.groupId,
+      regionId: existingRegion.id,
+      regionCount: 1,
       updateKeys,
       strategy: "update-region",
       syncApplied: true
     });
     return existingRegion;
   } catch (caughtError) {
-    debug("Direct Region update failed during template sync; attempting recreate fallback.", {
+    debug("Direct Region update failed during template sync; attempting recreate group fallback.", {
       templateId: templateDocument?.id ?? null,
       regionId: existingRegion.id,
+      regionGroupId: syncPayload.groupId,
       updateKeys,
-      strategy: "recreate-region",
+      strategy: "recreate-group",
       reason: caughtError?.message ?? "unknown"
     });
 
-    const recreatedRegion = await recreateManagedRegionFromTemplate(templateDocument, existingRegion, syncPayload.regionData);
-    debug("Synced managed Region from updated MeasuredTemplate.", {
+    const recreatedRegions = await recreateManagedRegionGroupFromTemplate(templateDocument, existingRegions, syncPayload);
+    debug("Synced managed Region group from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
-      regionId: recreatedRegion?.id ?? null,
+      regionGroupId: syncPayload.groupId,
+      regionId: recreatedRegions?.[0]?.id ?? null,
+      regionCount: recreatedRegions.length,
       updateKeys,
-      strategy: "recreate-region",
-      syncApplied: Boolean(recreatedRegion)
+      strategy: "recreate-group",
+      syncApplied: recreatedRegions.length > 0
     });
-    return recreatedRegion;
+    return recreatedRegions[0] ?? null;
   }
 }
 
 export function findManagedRegionForTemplate(scene, templateDocument) {
+  return findManagedRegionsForTemplate(scene, templateDocument)[0] ?? null;
+}
+
+function findManagedRegionsForTemplate(scene, templateDocument) {
   const templateId = templateDocument?.id ?? null;
   const templateUuid = templateDocument?.uuid ?? null;
 
-  return (
-    findManagedRegions(scene, (region) => {
-      const runtime = getRegionRuntimeFlags(region);
-      return runtime?.templateId === templateId || runtime?.templateUuid === templateUuid;
-    })[0] ?? null
-  );
+  return findManagedRegions(scene, (region) => {
+    const runtime = getRegionRuntimeFlags(region);
+    return runtime?.templateId === templateId || runtime?.templateUuid === templateUuid;
+  });
 }
 
 async function onDeleteRegion(regionDocument) {
@@ -324,7 +393,12 @@ function buildRegionCreateData({
   normalizedDefinition,
   sourceContext,
   shapes,
-  existingRuntime = null
+  existingRuntime = null,
+  groupId = null,
+  partId = null,
+  partIndex = 0,
+  partCount = 1,
+  geometryType = "template"
 }) {
   const behaviors = buildNativeRegionBehaviors({
     normalizedDefinition,
@@ -338,6 +412,11 @@ function buildRegionCreateData({
     casterUuid: normalizedDefinition.casterUuid ?? sourceContext.caster?.uuid ?? null,
     dc: normalizedDefinition.dc ?? null,
     castLevel: normalizedDefinition.castLevel ?? null,
+    groupId,
+    partId,
+    partIndex,
+    partCount,
+    geometryType,
     linkedDocuments: duplicateLinkedDocuments(existingRuntime?.linkedDocuments),
     normalizedDefinition
   };
@@ -352,9 +431,10 @@ function buildRegionCreateData({
   };
 }
 
-async function buildRegionSyncPayload(templateDocument, regionDocument) {
-  const sourceContext = await resolveRegionSourceContext(templateDocument, regionDocument);
-  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+async function buildRegionSyncPayload(templateDocument, regionDocuments) {
+  const primaryRegion = Array.isArray(regionDocuments) ? regionDocuments[0] ?? null : regionDocuments ?? null;
+  const sourceContext = await resolveRegionSourceContext(templateDocument, primaryRegion);
+  const runtime = getRegionRuntimeFlags(primaryRegion) ?? {};
   let normalizedDefinition = runtime.normalizedDefinition ?? null;
 
   if (sourceContext.item) {
@@ -370,36 +450,28 @@ async function buildRegionSyncPayload(templateDocument, regionDocument) {
   }
 
   if (!normalizedDefinition?.validation?.isValid) {
+    const validationReasons = Array.isArray(normalizedDefinition?.validation?.reasons)
+      ? normalizedDefinition.validation.reasons
+      : [];
     debug("Skipped Region sync because the normalized definition is invalid.", {
       templateId: templateDocument?.id ?? null,
-      regionId: regionDocument?.id ?? null,
-      reasons: normalizedDefinition?.validation?.reasons ?? []
+      regionId: primaryRegion?.id ?? null,
+      reasons: validationReasons,
+      reasonsText: validationReasons.join(" | ")
     });
     return null;
   }
 
-  const shapes = await buildRegionShapesFromTemplate(templateDocument);
-  if (!shapes.length) {
-    debug("Skipped Region sync because no supported Region shape could be produced.", {
-      templateId: templateDocument?.id ?? null,
-      regionId: regionDocument?.id ?? null,
-      templateType: getTemplateType(templateDocument)
-    });
-    return null;
-  }
-
-  const regionData = buildRegionCreateData({
+  return buildManagedRegionGroupPlan({
     templateDocument,
     normalizedDefinition,
     sourceContext,
-    shapes,
-    existingRuntime: runtime
+    existingRegions: Array.isArray(regionDocuments)
+      ? regionDocuments
+      : primaryRegion
+        ? [primaryRegion]
+        : []
   });
-
-  return {
-    regionData,
-    updateData: buildRegionUpdateData(regionData)
-  };
 }
 
 function buildRegionUpdateData(regionData) {
@@ -411,34 +483,38 @@ function buildRegionUpdateData(regionData) {
   };
 }
 
-async function recreateManagedRegionFromTemplate(templateDocument, regionDocument, regionData) {
-  const scene = templateDocument?.parent ?? regionDocument?.parent ?? null;
-  if (!scene || !regionData) {
-    return null;
+async function recreateManagedRegionGroupFromTemplate(templateDocument, regionDocuments, groupPlan) {
+  const scene = templateDocument?.parent ?? regionDocuments?.[0]?.parent ?? null;
+  if (!scene || !groupPlan?.parts?.length) {
+    return [];
   }
 
-  if (scene?.regions?.get?.(regionDocument?.id)) {
-    await cleanupLinkedDocumentsForRegion(regionDocument, {
-      reason: "region-recreate",
-      skipRuntimeUpdate: true
-    });
-    await scene.deleteEmbeddedDocuments("Region", [regionDocument.id]);
-  }
+  await deleteManagedRegionGroup(regionDocuments, {
+    reason: "region-group-recreate"
+  });
 
-  const createdRegions = await scene.createEmbeddedDocuments("Region", [regionData]);
-  const recreatedRegion = createdRegions?.[0] ?? null;
+  const createdRegions = await scene.createEmbeddedDocuments(
+    "Region",
+    groupPlan.parts.map((partPlan) => partPlan.regionData)
+  );
 
-  if (recreatedRegion) {
+  for (let index = 0; index < createdRegions.length; index += 1) {
+    const createdRegion = createdRegions[index] ?? null;
+    const partPlan = groupPlan.parts[index] ?? null;
+    if (!createdRegion || !partPlan) {
+      continue;
+    }
+
     await syncLinkedDocumentsSafely({
       templateDocument,
-      regionDocument: recreatedRegion,
-      normalizedDefinition: regionData.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]?.normalizedDefinition ?? null,
-      shapes: regionData.shapes,
+      regionDocument: createdRegion,
+      normalizedDefinition: partPlan.runtimeDefinition,
+      shapes: partPlan.shapes,
       stage: "recreate-region"
     });
   }
 
-  return recreatedRegion;
+  return createdRegions;
 }
 
 async function resolveRegionSourceContext(templateDocument, regionDocument) {
@@ -453,6 +529,271 @@ async function resolveRegionSourceContext(templateDocument, regionDocument) {
     actor: actorByRuntime ?? resolvedContext.actor ?? itemByRuntime?.actor ?? null,
     caster: casterByRuntime ?? resolvedContext.caster ?? actorByRuntime ?? itemByRuntime?.actor ?? null
   };
+}
+
+async function buildManagedRegionGroupPlan({
+  templateDocument,
+  normalizedDefinition,
+  sourceContext,
+  existingRegions = []
+}) {
+  const groupId = buildManagedRegionGroupId(templateDocument, existingRegions);
+  const sourceParts = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length
+    ? normalizedDefinition.parts
+    : [{
+      id: "primary",
+      label: normalizedDefinition?.label ?? "primary",
+      geometry: { type: "template" },
+      targeting: duplicateData(normalizedDefinition?.targeting ?? {}),
+      terrain: duplicateData(normalizedDefinition?.terrain ?? {}),
+      linkedWalls: duplicateData(normalizedDefinition?.linkedWalls ?? {}),
+      linkedLight: duplicateData(normalizedDefinition?.linkedLight ?? {}),
+      triggers: duplicateData(normalizedDefinition?.triggers ?? {})
+    }];
+
+  const preparedParts = [];
+
+  for (const [index, zonePart] of sourceParts.entries()) {
+    const shapes = await buildRegionShapesForZonePart(templateDocument, zonePart);
+    if (!Array.isArray(shapes) || !shapes.length) {
+      debug("Skipped managed Region part because no supported Region shape could be produced.", {
+        templateId: templateDocument?.id ?? null,
+        regionGroupId: groupId,
+        partId: zonePart?.id ?? `part-${index + 1}`,
+        geometryType: zonePart?.geometry?.type ?? "template"
+      });
+      continue;
+    }
+
+    preparedParts.push({
+      zonePart,
+      shapes,
+      existingRuntime: resolveExistingRuntimeForPart(existingRegions, zonePart?.id ?? null)
+    });
+  }
+
+  const partCount = preparedParts.length;
+  const parts = preparedParts.map((preparedPart, index) => {
+    const runtimeDefinition = buildPartRuntimeDefinition(normalizedDefinition, preparedPart.zonePart, {
+      groupId,
+      partIndex: index,
+      partCount
+    });
+
+    return {
+      partId: preparedPart.zonePart.id ?? `part-${index + 1}`,
+      partIndex: index,
+      geometryType: preparedPart.zonePart?.geometry?.type ?? "template",
+      runtimeDefinition,
+      shapes: preparedPart.shapes,
+      regionData: buildRegionCreateData({
+        templateDocument,
+        normalizedDefinition: runtimeDefinition,
+        sourceContext,
+        shapes: preparedPart.shapes,
+        existingRuntime: preparedPart.existingRuntime,
+        groupId,
+        partId: preparedPart.zonePart.id ?? `part-${index + 1}`,
+        partIndex: index,
+        partCount,
+        geometryType: preparedPart.zonePart?.geometry?.type ?? "template"
+      })
+    };
+  });
+
+  return {
+    groupId,
+    parts
+  };
+}
+
+function buildManagedRegionGroupId(templateDocument, existingRegions = []) {
+  const existingGroupId = existingRegions
+    .map((regionDocument) => getRegionRuntimeFlags(regionDocument)?.groupId ?? null)
+    .find(Boolean);
+
+  if (existingGroupId) {
+    return existingGroupId;
+  }
+
+  return [
+    MODULE_ID,
+    templateDocument?.uuid ?? templateDocument?.id ?? "template",
+    "group"
+  ].join(":");
+}
+
+function buildPartRuntimeDefinition(normalizedDefinition, zonePart, {
+  groupId,
+  partIndex,
+  partCount
+}) {
+  return {
+    ...duplicateData(normalizedDefinition),
+    label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
+    geometry: duplicateData(zonePart?.geometry ?? { type: "template" }),
+    targeting: duplicateData(zonePart?.targeting ?? normalizedDefinition?.targeting ?? {}),
+    terrain: duplicateData(zonePart?.terrain ?? normalizedDefinition?.terrain ?? {}),
+    linkedWalls: duplicateData(zonePart?.linkedWalls ?? normalizedDefinition?.linkedWalls ?? {}),
+    linkedLight: duplicateData(zonePart?.linkedLight ?? normalizedDefinition?.linkedLight ?? {}),
+    triggers: duplicateData(zonePart?.triggers ?? normalizedDefinition?.triggers ?? {}),
+    parts: [duplicateData(zonePart)],
+    group: {
+      id: groupId,
+      mode: partCount > 1 ? "parts" : "single",
+      partCount,
+      partIndex: partIndex + 1
+    },
+    part: {
+      id: zonePart?.id ?? `part-${partIndex + 1}`,
+      label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
+      geometryType: zonePart?.geometry?.type ?? "template"
+    }
+  };
+}
+
+function resolveExistingRuntimeForPart(existingRegions, partId) {
+  if (!Array.isArray(existingRegions) || !existingRegions.length) {
+    return null;
+  }
+
+  if (partId) {
+    const matchingRuntime = existingRegions
+      .map((regionDocument) => getRegionRuntimeFlags(regionDocument))
+      .find((runtime) => runtime?.partId === partId);
+
+    if (matchingRuntime) {
+      return matchingRuntime;
+    }
+  }
+
+  return getRegionRuntimeFlags(existingRegions[0]) ?? null;
+}
+
+async function buildRegionShapesForZonePart(templateDocument, zonePart) {
+  const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
+
+  switch (geometryType) {
+    case "ring":
+      return buildRingShapesFromGeometry(templateDocument, zonePart?.geometry ?? {});
+    case "template":
+    default:
+      return buildRegionShapesFromTemplate(templateDocument);
+  }
+}
+
+function buildRingShapesFromGeometry(templateDocument, geometry) {
+  const outerRadius = distanceToPixels(
+    geometry?.outerRadius ?? templateDocument?.distance ?? 0,
+    templateDocument?.parent ?? null
+  );
+  const innerRadius = distanceToPixels(
+    geometry?.innerRadius ?? 0,
+    templateDocument?.parent ?? null
+  );
+  const segmentCount = Math.min(
+    Math.max(Math.round(coerceNumber(geometry?.segments, DEFAULT_RING_SEGMENTS)), 8),
+    64
+  );
+  const centerX = coerceNumber(templateDocument?.x, 0);
+  const centerY = coerceNumber(templateDocument?.y, 0);
+
+  if (!outerRadius || outerRadius <= 0 || innerRadius < 0 || innerRadius >= outerRadius) {
+    debug("Rejected Region shape build for unsupported ring geometry.", {
+      templateId: templateDocument?.id ?? null,
+      templateType: getTemplateType(templateDocument),
+      builder: "ring-annulus",
+      details: {
+        innerRadius,
+        outerRadius,
+        segmentCount
+      }
+    });
+    return [];
+  }
+
+  const shapes = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    const startAngle = (index / segmentCount) * Math.PI * 2;
+    const endAngle = ((index + 1) / segmentCount) * Math.PI * 2;
+
+    shapes.push({
+      type: "polygon",
+      points: [
+        centerX + Math.cos(startAngle) * outerRadius,
+        centerY + Math.sin(startAngle) * outerRadius,
+        centerX + Math.cos(endAngle) * outerRadius,
+        centerY + Math.sin(endAngle) * outerRadius,
+        centerX + Math.cos(endAngle) * innerRadius,
+        centerY + Math.sin(endAngle) * innerRadius,
+        centerX + Math.cos(startAngle) * innerRadius,
+        centerY + Math.sin(startAngle) * innerRadius
+      ]
+    });
+  }
+
+  debug("Using Region shape builder.", {
+    templateId: templateDocument?.id ?? null,
+    templateType: getTemplateType(templateDocument),
+    builder: "ring-annulus",
+    details: {
+      centerX,
+      centerY,
+      innerRadius,
+      outerRadius,
+      segmentCount
+    }
+  });
+
+  return shapes;
+}
+
+async function deleteManagedRegionGroup(regionDocuments, {
+  reason = "manual-group-cleanup"
+} = {}) {
+  const documents = Array.isArray(regionDocuments)
+    ? regionDocuments.filter(Boolean)
+    : regionDocuments
+      ? [regionDocuments]
+      : [];
+  if (!documents.length) {
+    return [];
+  }
+
+  const scene = documents[0]?.parent ?? null;
+  if (!scene) {
+    return [];
+  }
+
+  const regionIds = documents
+    .map((regionDocument) => regionDocument?.id ?? null)
+    .filter((regionId) => regionId && scene?.regions?.get?.(regionId));
+
+  if (!regionIds.length) {
+    return [];
+  }
+
+  for (const regionDocument of documents) {
+    if (!regionDocument || !scene?.regions?.get?.(regionDocument.id)) {
+      continue;
+    }
+
+    await cleanupLinkedDocumentsForRegion(regionDocument, {
+      reason,
+      skipRuntimeUpdate: true
+    });
+  }
+
+  await scene.deleteEmbeddedDocuments("Region", regionIds);
+
+  debug("Cleaned managed Region group.", {
+    sceneId: scene?.id ?? null,
+    regionGroupId: getRegionRuntimeFlags(documents[0])?.groupId ?? null,
+    regionIds,
+    reason
+  });
+
+  return regionIds;
 }
 
 async function resolveDocumentFromRuntimeUuid(uuid, documentName) {
@@ -770,8 +1111,15 @@ function logBuiltShapes(templateDocument, builder, shapes, details = undefined) 
 function buildRegionName(normalizedDefinition, sourceContext) {
   const itemName = sourceContext.item?.name ?? normalizedDefinition.label ?? "Persistent Zone";
   const casterName = sourceContext.caster?.name ?? sourceContext.actor?.name ?? null;
+  const baseName = casterName ? `${itemName}(${casterName})` : itemName;
+  const partId = normalizedDefinition?.part?.id ?? null;
+  const partCount = coerceNumber(normalizedDefinition?.group?.partCount, 1);
 
-  return casterName ? `${itemName}(${casterName})` : itemName;
+  if (partId && partCount > 1) {
+    return `${baseName} [${partId}]`;
+  }
+
+  return baseName;
 }
 
 function buildTerrainBehaviorName(normalizedDefinition, sourceContext) {
