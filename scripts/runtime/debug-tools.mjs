@@ -36,6 +36,12 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "line-side-left":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLineSideTestDefinition("left"));
+    case "line-side-right":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLineSideTestDefinition("right"));
     case "ring-basic":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createRingBasicTestDefinition());
@@ -750,6 +756,73 @@ function createRingBasicTestDefinition() {
   };
 }
 
+function createLineSideTestDefinition(side = "left") {
+  const normalizedSide = String(side ?? "left").toLowerCase() === "right" ? "right" : "left";
+  const titleSide = normalizedSide === "right" ? "Right" : "Left";
+  const wallThickness = 5;
+  const sideBandDepth = 10;
+
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: `line-side-${normalizedSide}`
+    },
+    enabled: true,
+    label: `Persistent Zone Debug Line Side ${titleSide}`,
+    shapeMode: "template",
+    template: {
+      type: "ray",
+      width: wallThickness
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    },
+    parts: [
+      {
+        id: "wall-body",
+        label: "Persistent Zone Debug Wall Body",
+        geometry: {
+          type: "template"
+        }
+      },
+      {
+        id: `side-${normalizedSide}`,
+        label: `Persistent Zone Debug Side ${titleSide}`,
+        geometry: {
+          type: "side-of-line",
+          side: normalizedSide,
+          offsetReference: "body-edge",
+          offsetStart: 0,
+          offsetEnd: sideBandDepth
+        }
+      }
+    ]
+  };
+}
+
 function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -860,6 +933,12 @@ function summarizeDebugDefinition(definition) {
     geometryType: definition?.geometry?.type ?? null,
     partCount: Array.isArray(definition.parts) ? definition.parts.length : 0,
     zoneCount: Array.isArray(definition.zones) ? definition.zones.length : 0,
+    hasSideOfLineGeometry:
+      definition?.geometry?.type === "side-of-line" ||
+      Array.isArray(definition.parts) &&
+        definition.parts.some((part) => part?.geometry?.type === "side-of-line") ||
+      Array.isArray(definition.zones) &&
+        definition.zones.some((part) => part?.geometry?.type === "side-of-line"),
     hasRingGeometry:
       definition?.geometry?.type === "ring" ||
       Array.isArray(definition.parts) &&

@@ -16,6 +16,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - Creates a managed `Region` from a qualifying `MeasuredTemplate`.
 - Can create a managed Region group when one template expands into multiple logical parts.
 - Supports a first composite geometry mode for annulus / ring-style parts.
+- Supports a first directional geometry mode for `side-of-line` parts on ray-like templates.
 - Stores normalized runtime metadata on the `Region`.
 - Can create simple linked `Wall` and `AmbientLight` documents that follow the managed zone.
 - Cleans stale managed Regions when the source template, item, or concentration state becomes invalid.
@@ -35,5 +36,6 @@ FoundryVTT module dedicated to persistent zones runtime.
 - For linked solid walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-solid")`.
 - For linked terrain walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-terrain")`.
 - For ring geometry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-basic")`.
+- For directional side-of-line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-right")`.
 - Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
 - Create or move the template in Foundry to verify that the Region, linked light, and linked walls stay synchronized, then delete the template to confirm cleanup.

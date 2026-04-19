@@ -219,7 +219,11 @@ export async function createRegionFromTemplate(
       regionGroupId: groupPlan.groupId,
       regionId: createdRegion.id,
       partId: partPlan.partId,
-      geometryType: partPlan.geometryType
+      geometryType: partPlan.geometryType,
+      side: partPlan.geometrySide ?? null,
+      offsetReference: partPlan.geometryOffsetReference ?? null,
+      offsetStart: partPlan.geometryOffsetStart ?? null,
+      offsetEnd: partPlan.geometryOffsetEnd ?? null
     });
   }
 
@@ -313,6 +317,10 @@ async function syncRegionToTemplate(templateDocument, {
       regionGroupId: syncPayload.groupId,
       partId: partPlan.partId,
       geometryType: partPlan.geometryType,
+      side: partPlan.geometrySide ?? null,
+      offsetReference: partPlan.geometryOffsetReference ?? null,
+      offsetStart: partPlan.geometryOffsetStart ?? null,
+      offsetEnd: partPlan.geometryOffsetEnd ?? null,
       updateKeys,
       strategy: "update-region",
       syncApplied: true
@@ -568,7 +576,11 @@ async function buildManagedRegionGroupPlan({
     preparedParts.push({
       zonePart,
       shapes,
-      existingRuntime: resolveExistingRuntimeForPart(existingRegions, zonePart?.id ?? null)
+      existingRuntime: resolveExistingRuntimeForPart(existingRegions, zonePart?.id ?? null),
+      geometrySide: zonePart?.geometry?.side ?? null,
+      geometryOffsetReference: zonePart?.geometry?.offsetReference ?? null,
+      geometryOffsetStart: zonePart?.geometry?.offsetStart ?? null,
+      geometryOffsetEnd: zonePart?.geometry?.offsetEnd ?? null
     });
   }
 
@@ -584,6 +596,10 @@ async function buildManagedRegionGroupPlan({
       partId: preparedPart.zonePart.id ?? `part-${index + 1}`,
       partIndex: index,
       geometryType: preparedPart.zonePart?.geometry?.type ?? "template",
+      geometrySide: preparedPart.geometrySide ?? null,
+      geometryOffsetReference: preparedPart.geometryOffsetReference ?? null,
+      geometryOffsetStart: preparedPart.geometryOffsetStart ?? null,
+      geometryOffsetEnd: preparedPart.geometryOffsetEnd ?? null,
       runtimeDefinition,
       shapes: preparedPart.shapes,
       regionData: buildRegionCreateData({
@@ -674,6 +690,8 @@ async function buildRegionShapesForZonePart(templateDocument, zonePart) {
   const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
 
   switch (geometryType) {
+    case "side-of-line":
+      return await buildSideOfLineShapesFromGeometry(templateDocument, zonePart?.geometry ?? {});
     case "ring":
       return buildRingShapesFromGeometry(templateDocument, zonePart?.geometry ?? {});
     case "template":
@@ -746,6 +764,225 @@ function buildRingShapesFromGeometry(templateDocument, geometry) {
   });
 
   return shapes;
+}
+
+async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
+  const templateType = getTemplateType(templateDocument);
+  const direction = coerceNumber(templateDocument?.direction, 0);
+  const axisLength = distanceToPixels(
+    geometry?.axisLength ?? templateDocument?.distance ?? 0,
+    templateDocument?.parent ?? null
+  );
+  const offsetStart = distanceToPixels(
+    geometry?.offsetStart ?? 0,
+    templateDocument?.parent ?? null
+  );
+  const offsetEnd = distanceToPixels(
+    geometry?.offsetEnd ?? geometry?.sideDistance ?? 0,
+    templateDocument?.parent ?? null
+  );
+  const startX = coerceNumber(templateDocument?.x, 0);
+  const startY = coerceNumber(templateDocument?.y, 0);
+  const radians = degreesToRadians(direction);
+  const unitX = Math.cos(radians);
+  const unitY = Math.sin(radians);
+  const side = String(geometry?.side ?? "left").toLowerCase() === "right" ? "right" : "left";
+  const offsetReference = String(geometry?.offsetReference ?? "axis").toLowerCase() === "body-edge"
+    ? "body-edge"
+    : "axis";
+  const sideMultiplier = side === "right" ? -1 : 1;
+  const normalX = unitY * sideMultiplier;
+  const normalY = -unitX * sideMultiplier;
+  const endX = startX + unitX * axisLength;
+  const endY = startY + unitY * axisLength;
+  const bodyEdge = offsetReference === "body-edge"
+    ? await measureTemplateBodyEdgeDistance(templateDocument, {
+      originX: startX,
+      originY: startY,
+      normalX,
+      normalY
+    })
+    : 0;
+  const bandStart = bodyEdge + offsetStart;
+  const bandEnd = bodyEdge + offsetEnd;
+  const startOffsetX = normalX * bandStart;
+  const startOffsetY = normalY * bandStart;
+  const endOffsetX = normalX * bandEnd;
+  const endOffsetY = normalY * bandEnd;
+
+  if (!["ray", "rect"].includes(templateType) || axisLength <= 0 || offsetStart < 0 || offsetEnd <= offsetStart) {
+    debug("Rejected Region shape build for unsupported side-of-line geometry.", {
+      templateId: templateDocument?.id ?? null,
+      templateType,
+      builder: "side-of-line-template-axis",
+      details: {
+        direction,
+        side,
+        offsetReference,
+        bodyEdge,
+        axisLength,
+        offsetStart,
+        offsetEnd,
+        bandStart,
+        bandEnd
+      }
+    });
+    return [];
+  }
+
+  const finalShape = {
+    type: "polygon",
+    points: [
+      startX + startOffsetX,
+      startY + startOffsetY,
+      endX + startOffsetX,
+      endY + startOffsetY,
+      endX + endOffsetX,
+      endY + endOffsetY,
+      startX + endOffsetX,
+      startY + endOffsetY
+    ]
+  };
+
+  debug("Using Region shape builder.", {
+    templateId: templateDocument?.id ?? null,
+    templateType,
+    builder: "side-of-line-template-axis",
+    details: {
+      startX,
+      startY,
+      endX,
+      endY,
+      direction,
+      side,
+      offsetReference,
+      bodyEdge,
+      axisLength,
+      offsetStart,
+      offsetEnd,
+      generatedBandBounds: {
+        bandStart,
+        bandEnd
+      },
+      axisMode: geometry?.axisMode ?? "template"
+    }
+  });
+
+  return [finalShape];
+}
+
+async function measureTemplateBodyEdgeDistance(templateDocument, {
+  originX,
+  originY,
+  normalX,
+  normalY
+}) {
+  const bodyShapes = await buildRegionShapesFromTemplate(templateDocument);
+  if (!Array.isArray(bodyShapes) || !bodyShapes.length) {
+    return 0;
+  }
+
+  let maxDistance = 0;
+
+  for (const shape of bodyShapes) {
+    maxDistance = Math.max(
+      maxDistance,
+      measureShapePositiveOffset(shape, {
+        originX,
+        originY,
+        normalX,
+        normalY
+      })
+    );
+  }
+
+  return maxDistance;
+}
+
+function measureShapePositiveOffset(shape, {
+  originX,
+  originY,
+  normalX,
+  normalY
+}) {
+  if (!shape || typeof shape !== "object") {
+    return 0;
+  }
+
+  if (shape.type === "circle") {
+    const centerOffset = projectPointOntoNormal({
+      pointX: coerceNumber(shape.x, 0),
+      pointY: coerceNumber(shape.y, 0),
+      originX,
+      originY,
+      normalX,
+      normalY
+    });
+    return Math.max(0, centerOffset + coerceNumber(shape.radius, 0));
+  }
+
+  const points = collectShapePoints(shape);
+  if (!points.length) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    ...points.map(([pointX, pointY]) => projectPointOntoNormal({
+      pointX,
+      pointY,
+      originX,
+      originY,
+      normalX,
+      normalY
+    }))
+  );
+}
+
+function collectShapePoints(shape) {
+  if (shape?.type === "polygon" && Array.isArray(shape.points)) {
+    return flatPointsToPairs(shape.points);
+  }
+
+  if (shape?.type === "rectangle") {
+    const x = coerceNumber(shape.x, 0);
+    const y = coerceNumber(shape.y, 0);
+    const width = coerceNumber(shape.width, 0);
+    const height = coerceNumber(shape.height, 0);
+
+    return [
+      [x, y],
+      [x + width, y],
+      [x + width, y + height],
+      [x, y + height]
+    ];
+  }
+
+  return [];
+}
+
+function flatPointsToPairs(points) {
+  const pairs = [];
+
+  for (let index = 0; index < points.length - 1; index += 2) {
+    pairs.push([
+      coerceNumber(points[index], 0),
+      coerceNumber(points[index + 1], 0)
+    ]);
+  }
+
+  return pairs;
+}
+
+function projectPointOntoNormal({
+  pointX,
+  pointY,
+  originX,
+  originY,
+  normalX,
+  normalY
+}) {
+  return ((pointX - originX) * normalX) + ((pointY - originY) * normalY);
 }
 
 async function deleteManagedRegionGroup(regionDocuments, {
@@ -1243,6 +1480,10 @@ function normalizeRectangleShape(shape) {
     height: Math.abs(height),
     rotation: coerceNumber(shape.rotation, 0)
   };
+}
+
+function degreesToRadians(value) {
+  return (coerceNumber(value, 0) * Math.PI) / 180;
 }
 
 function logRectShapeDecision(templateDocument, {

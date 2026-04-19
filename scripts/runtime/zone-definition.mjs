@@ -580,6 +580,67 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
     };
   }
 
+  if (geometryType === "side-of-line" || geometryType === "sideofline") {
+    const templateDistance = coerceNumber(
+      pickFirstDefined(
+        templateDefinition.distance,
+        definition.distance,
+        templateDocument?.distance
+      ),
+      null
+    );
+    const offsetStart = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.offsetStart,
+        geometryDefinition.startOffset,
+        0
+      ),
+      0
+    );
+    const offsetEnd = coerceNumber(
+      pickFirstDefined(
+        geometryDefinition.offsetEnd,
+        geometryDefinition.endOffset,
+        geometryDefinition.sideDistance,
+        geometryDefinition.distance,
+        geometryDefinition.width,
+        geometryDefinition.depth
+      ),
+      null
+    );
+
+    return {
+      type: "side-of-line",
+      axisMode: "template",
+      offsetReference: normalizeOffsetReferenceMode(
+        pickFirstDefined(
+          geometryDefinition.offsetReference,
+          geometryDefinition.referenceMode,
+          geometryDefinition.anchorMode,
+          "axis"
+        )
+      ),
+      side: normalizeDirectionalSide(
+        pickFirstDefined(
+          geometryDefinition.side,
+          geometryDefinition.facing,
+          geometryDefinition.zoneSide,
+          "left"
+        )
+      ),
+      offsetStart: Math.max(0, offsetStart),
+      offsetEnd,
+      axisLength: coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.axisLength,
+          geometryDefinition.length,
+          templateDistance
+        ),
+        null
+      )
+    };
+  }
+
   return {
     type: "template"
   };
@@ -673,7 +734,9 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
     reasons.push("At least one zone part must be available after normalization.");
   } else {
     normalizedDefinition.parts.forEach((part, index) => {
-      validateZonePartConfig(part, index, reasons);
+      validateZonePartConfig(part, index, reasons, {
+        templateType: normalizedDefinition.template.type
+      });
     });
   }
 
@@ -682,6 +745,25 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
 
 function collectCurrentLimits(definition) {
   const limits = [];
+  const hasRingGeometry =
+    safeGet(definition, ["geometry", "type"]) === "ring" ||
+    safeGet(definition, ["geometry", "type"]) === "annulus" ||
+    Array.isArray(definition.parts) &&
+      definition.parts.some((part) => {
+        const type = safeGet(part, ["geometry", "type"]);
+        return type === "ring" || type === "annulus";
+      }) ||
+    Array.isArray(definition.zones) &&
+      definition.zones.some((part) => {
+        const type = safeGet(part, ["geometry", "type"]);
+        return type === "ring" || type === "annulus";
+      });
+  const hasSideOfLineGeometry =
+    safeGet(definition, ["geometry", "type"]) === "side-of-line" ||
+    Array.isArray(definition.parts) &&
+      definition.parts.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-line") ||
+    Array.isArray(definition.zones) &&
+      definition.zones.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-line");
 
   if (safeGet(definition, ["movement"]) !== undefined) {
     limits.push("Movement-through-zone logic is not executed in this MVP step.");
@@ -691,12 +773,12 @@ function collectCurrentLimits(definition) {
     limits.push("Multi-part zones currently create one managed Region per part.");
   }
 
-  if (
-    safeGet(definition, ["geometry", "type"]) !== undefined ||
-    Array.isArray(definition.parts) ||
-    Array.isArray(definition.zones)
-  ) {
+  if (hasRingGeometry) {
     limits.push("Ring geometry is approximated with multiple polygon shapes inside one Region part in this MVP.");
+  }
+
+  if (hasSideOfLineGeometry) {
+    limits.push("side-of-line currently derives its reference axis from the template direction and is primarily intended for ray-like templates in this MVP.");
   }
 
   if (safeGet(definition, ["forcedMovement"]) !== undefined) {
@@ -725,13 +807,15 @@ function collectCurrentLimits(definition) {
   return limits;
 }
 
-function validateZonePartConfig(part, index, reasons) {
+function validateZonePartConfig(part, index, reasons, {
+  templateType = null
+} = {}) {
   if (!part?.id) {
     reasons.push(`Part ${index + 1} requires an id.`);
   }
 
   const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
-  if (!["template", "ring"].includes(geometryType)) {
+  if (!["template", "ring", "side-of-line"].includes(geometryType)) {
     reasons.push(`Part "${part?.id ?? index + 1}" uses unsupported geometry "${geometryType}".`);
     return;
   }
@@ -751,6 +835,42 @@ function validateZonePartConfig(part, index, reasons) {
 
     if (innerRadius !== null && outerRadius !== null && innerRadius >= outerRadius) {
       reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires innerRadius to be smaller than outerRadius.`);
+    }
+  }
+
+  if (geometryType === "side-of-line") {
+    const side = normalizeDirectionalSide(part?.geometry?.side);
+    const offsetReference = normalizeOffsetReferenceMode(part?.geometry?.offsetReference);
+    const offsetStart = coerceNumber(part?.geometry?.offsetStart, null);
+    const offsetEnd = coerceNumber(part?.geometry?.offsetEnd, null);
+    const axisLength = coerceNumber(part?.geometry?.axisLength, null);
+
+    if (!["left", "right"].includes(side)) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires side to be "left" or "right".`);
+    }
+
+    if (!["axis", "body-edge"].includes(offsetReference)) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires offsetReference to be "axis" or "body-edge".`);
+    }
+
+    if (offsetStart === null || offsetStart < 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires offsetStart to be greater than or equal to 0.`);
+    }
+
+    if (offsetEnd === null || offsetEnd <= 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires a positive offsetEnd.`);
+    }
+
+    if (offsetStart !== null && offsetEnd !== null && offsetEnd <= offsetStart) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires offsetEnd to be greater than offsetStart.`);
+    }
+
+    if (axisLength !== null && axisLength <= 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry requires a positive axisLength when provided.`);
+    }
+
+    if (!["ray", "rect"].includes(String(templateType ?? "").toLowerCase())) {
+      reasons.push(`Part "${part?.id ?? index + 1}" side-of-line geometry currently requires a ray or rect template.`);
     }
   }
 }
@@ -809,6 +929,16 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
 function normalizeMovementMode(value) {
   const normalized = String(value ?? "any").toLowerCase();
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
+}
+
+function normalizeDirectionalSide(value) {
+  const normalized = String(value ?? "left").toLowerCase();
+  return normalized === "right" ? "right" : "left";
+}
+
+function normalizeOffsetReferenceMode(value) {
+  const normalized = String(value ?? "axis").toLowerCase();
+  return normalized === "body-edge" ? "body-edge" : "axis";
 }
 
 function normalizeStringArray(values) {
