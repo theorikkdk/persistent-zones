@@ -45,7 +45,12 @@ export function normalizeZoneDefinition(
   } = {}
 ) {
   const sourceDefinition = duplicateData(rawDefinition);
-  const definition = isPlainObject(sourceDefinition) ? sourceDefinition : {};
+  const rootDefinition = isPlainObject(sourceDefinition) ? sourceDefinition : {};
+  const actualTemplateType = normalizeTemplateTypeValue(templateDocument?.t);
+  const variantSelection = resolveDefinitionVariantSelection(rootDefinition, {
+    actualTemplateType
+  });
+  const definition = variantSelection.effectiveDefinition;
   const templateDefinition = isPlainObject(definition.template) ? definition.template : {};
   const concentrationDefinition = isPlainObject(definition.concentration)
     ? definition.concentration
@@ -183,6 +188,14 @@ export function normalizeZoneDefinition(
     linkedLight: normalizeLinkedLight(linkedLightDefinition, {
       templateDistance: pickFirstDefined(templateDefinition.distance, definition.distance, templateDocument?.distance)
     }),
+    variants: duplicateData(variantSelection.available),
+    availableVariants: duplicateData(variantSelection.availableIds),
+    variantCount: variantSelection.count,
+    defaultVariant: duplicateData(variantSelection.default),
+    defaultVariantId: variantSelection.default?.id ?? null,
+    selectedVariant: duplicateData(variantSelection.selected),
+    selectedVariantId: variantSelection.selected?.id ?? null,
+    variantResolution: duplicateData(variantSelection.resolution),
     targeting: normalizeTargeting(definition.targeting),
     triggers: normalizeTriggers(triggerDefinition, dc),
     geometry: normalizeGeometryDefinition(null, {
@@ -218,6 +231,20 @@ export function normalizeZoneDefinition(
     mode: normalizedDefinition.parts.length > 1 ? "parts" : "single",
     partCount: normalizedDefinition.parts.length
   };
+
+  if (normalizedDefinition.variants.length) {
+    debug("Resolved normalized zone variants.", {
+      itemUuid: normalizedDefinition.itemUuid ?? null,
+      label: normalizedDefinition.label,
+      selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition.defaultVariantId ?? null,
+      availableVariants: normalizedDefinition.availableVariants,
+      variantCount: normalizedDefinition.variantCount,
+      variantResolutionMode: normalizedDefinition.variantResolution?.resolutionMode ?? "none",
+      variantValidation: normalizedDefinition.variantResolution,
+      reasonsText: normalizedDefinition.variantResolution?.reasonsText ?? ""
+    });
+  }
 
   normalizedDefinition.validation.reasons = collectValidationReasons({
     sourceDefinition,
@@ -255,6 +282,341 @@ export function normalizeZoneDefinition(
   }
 
   return normalizedDefinition;
+}
+
+function resolveDefinitionVariantSelection(definition, {
+  actualTemplateType = null
+} = {}) {
+  const availableVariants = Array.isArray(definition?.variants)
+    ? definition.variants
+        .map((variantDefinition, index) => normalizeDefinitionVariant(variantDefinition, index))
+        .filter(Boolean)
+    : [];
+  const availableVariantIds = availableVariants.map((variant) => variant.id);
+  const requestedVariantId = coerceVariantIdentifier(
+    pickFirstDefined(
+      definition?.selectedVariant,
+      definition?.variantId,
+      definition?.variant,
+      null
+    )
+  );
+  const defaultVariantId = coerceVariantIdentifier(
+    pickFirstDefined(
+      definition?.defaultVariant,
+      definition?.defaultVariantId,
+      availableVariants.find((variant) => variant.isDefault)?.id ?? null
+    )
+  );
+
+  if (!availableVariants.length) {
+    return {
+      available: [],
+      availableIds: [],
+      count: 0,
+      default: null,
+      selected: null,
+      resolution: {
+        requestedVariantId,
+        defaultVariantId,
+        selectedVariantId: null,
+        actualTemplateType,
+        resolutionMode: "none",
+        fallbackApplied: false,
+        requestedVariantFound: null,
+        requestedVariantCompatible: null,
+        defaultVariantFound: null,
+        defaultVariantCompatible: null,
+        selectedVariantCompatible: null,
+        variantFound: false,
+        valid: true,
+        reasons: [],
+        reasonsText: ""
+      },
+      effectiveDefinition: stripVariantSelectionKeys(definition)
+    };
+  }
+
+  const requestedVariant = findVariantById(availableVariants, requestedVariantId);
+  const defaultVariant = findVariantById(availableVariants, defaultVariantId);
+  let selectedVariant = null;
+  let resolutionMode = "fallback";
+  let fallbackApplied = false;
+
+  if (requestedVariantId) {
+    selectedVariant = requestedVariant;
+    resolutionMode = "explicit";
+  } else if (defaultVariantId) {
+    selectedVariant = defaultVariant;
+    resolutionMode = "default";
+  } else if (availableVariants.length === 1) {
+    selectedVariant = availableVariants[0];
+    resolutionMode = "single-option";
+  } else {
+    selectedVariant = pickFallbackVariant(availableVariants, {
+      actualTemplateType,
+      allowIncompatible: true
+    });
+    resolutionMode = "fallback";
+    fallbackApplied = true;
+  }
+
+  if (!selectedVariant) {
+    const fallbackVariant = pickFallbackVariant(availableVariants, {
+      actualTemplateType,
+      preferredIds: [defaultVariantId],
+      allowIncompatible: true
+    });
+
+    if (fallbackVariant) {
+      selectedVariant = fallbackVariant;
+      resolutionMode = "fallback";
+      fallbackApplied = true;
+    }
+  }
+
+  let selectedVariantCompatible = evaluateVariantCompatibility(
+    selectedVariant,
+    actualTemplateType
+  );
+
+  if (selectedVariant && selectedVariantCompatible === false) {
+    const fallbackVariant = pickFallbackVariant(availableVariants, {
+      actualTemplateType,
+      preferredIds: [defaultVariantId],
+      excludeIds: [selectedVariant.id],
+      allowIncompatible: false
+    });
+
+    if (fallbackVariant) {
+      selectedVariant = fallbackVariant;
+      resolutionMode = "fallback";
+      fallbackApplied = true;
+      selectedVariantCompatible = evaluateVariantCompatibility(
+        selectedVariant,
+        actualTemplateType
+      );
+    }
+  }
+
+  const reasons = [];
+  if (!selectedVariant) {
+    if (requestedVariantId && !requestedVariant) {
+      reasons.push(`selectedVariant "${requestedVariantId}" was not found in variants[].`);
+    }
+
+    if (defaultVariantId && !defaultVariant) {
+      reasons.push(`defaultVariant "${defaultVariantId}" was not found in variants[].`);
+    }
+
+    reasons.push("No effective variant could be resolved from variants[].");
+  } else if (selectedVariantCompatible === false) {
+    reasons.push(
+      `selectedVariant "${selectedVariant.id}" is incompatible with template type "${actualTemplateType}".`
+    );
+  }
+
+  const effectiveDefinition = mergePlainObjects(
+    stripVariantSelectionKeys(definition),
+    stripVariantSelectionKeys(selectedVariant?.definition ?? {})
+  );
+
+  effectiveDefinition.defaultVariant = defaultVariant?.id ?? defaultVariantId ?? null;
+  effectiveDefinition.defaultVariantId = defaultVariant?.id ?? defaultVariantId ?? null;
+  effectiveDefinition.selectedVariant = selectedVariant?.id ?? null;
+  effectiveDefinition.variant = selectedVariant?.id ?? null;
+  effectiveDefinition.variantId = selectedVariant?.id ?? null;
+
+  return {
+    available: availableVariants.map((variant) => ({
+      id: variant.id,
+      key: variant.id,
+      label: variant.label,
+      templateType: variant.templateType
+    })),
+    availableIds: availableVariantIds,
+    count: availableVariants.length,
+    default: defaultVariant
+      ? {
+          id: defaultVariant.id,
+          key: defaultVariant.id,
+          label: defaultVariant.label,
+          templateType: defaultVariant.templateType
+        }
+      : null,
+    selected: selectedVariant
+      ? {
+          id: selectedVariant.id,
+          key: selectedVariant.id,
+          label: selectedVariant.label,
+          templateType: selectedVariant.templateType
+        }
+      : null,
+    resolution: {
+      requestedVariantId,
+      defaultVariantId,
+      selectedVariantId: selectedVariant?.id ?? null,
+      actualTemplateType,
+      resolutionMode,
+      fallbackApplied,
+      requestedVariantFound: requestedVariantId ? Boolean(requestedVariant) : null,
+      requestedVariantCompatible: evaluateVariantCompatibility(
+        requestedVariant,
+        actualTemplateType
+      ),
+      defaultVariantFound: defaultVariantId ? Boolean(defaultVariant) : null,
+      defaultVariantCompatible: evaluateVariantCompatibility(
+        defaultVariant,
+        actualTemplateType
+      ),
+      selectedVariantCompatible,
+      variantFound: Boolean(selectedVariant),
+      valid: reasons.length === 0,
+      reasons,
+      reasonsText: reasons.join(" | ")
+    },
+    effectiveDefinition
+  };
+}
+
+function normalizeDefinitionVariant(variantLikeDefinition, index) {
+  const variantDefinition = isPlainObject(variantLikeDefinition) ? duplicateData(variantLikeDefinition) : null;
+  if (!variantDefinition) {
+    return null;
+  }
+
+  const id = String(
+    pickFirstDefined(
+      variantDefinition.id,
+      variantDefinition.key,
+      `variant-${index + 1}`
+    )
+  );
+  const templateType = String(
+    pickFirstDefined(
+      safeGet(variantDefinition, ["template", "type"]),
+      variantDefinition.templateType,
+      variantDefinition.shape,
+      ""
+    )
+  ).toLowerCase() || null;
+
+  return {
+    id,
+    label: pickFirstDefined(variantDefinition.label, variantDefinition.name, id),
+    templateType,
+    isDefault: coerceBoolean(
+      pickFirstDefined(variantDefinition.default, variantDefinition.isDefault, false),
+      false
+    ),
+    definition: variantDefinition
+  };
+}
+
+function stripVariantSelectionKeys(definition) {
+  const clone = isPlainObject(definition) ? duplicateData(definition) : {};
+
+  delete clone.variants;
+  delete clone.defaultVariant;
+  delete clone.defaultVariantId;
+  delete clone.selectedVariant;
+  delete clone.variant;
+  delete clone.variantId;
+
+  return clone;
+}
+
+function coerceVariantIdentifier(value) {
+  const identifier = String(value ?? "").trim();
+  return identifier || null;
+}
+
+function normalizeVariantLookupKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function findVariantById(variants, variantId) {
+  if (!Array.isArray(variants) || !variants.length || !variantId) {
+    return null;
+  }
+
+  const lookupKey = normalizeVariantLookupKey(variantId);
+  return variants.find((variant) => normalizeVariantLookupKey(variant?.id) === lookupKey) ?? null;
+}
+
+function evaluateVariantCompatibility(variant, actualTemplateType) {
+  if (!variant) {
+    return null;
+  }
+
+  const normalizedActualTemplateType = normalizeTemplateTypeValue(actualTemplateType);
+  if (!normalizedActualTemplateType) {
+    return null;
+  }
+
+  return isVariantTemplateCompatible(variant, normalizedActualTemplateType);
+}
+
+function isVariantTemplateCompatible(variant, actualTemplateType) {
+  const normalizedActualTemplateType = normalizeTemplateTypeValue(actualTemplateType);
+  if (!variant || !normalizedActualTemplateType) {
+    return true;
+  }
+
+  const variantTemplateType = normalizeTemplateTypeValue(variant.templateType);
+  if (!variantTemplateType) {
+    return true;
+  }
+
+  return variantTemplateType === normalizedActualTemplateType;
+}
+
+function pickFallbackVariant(variants, {
+  actualTemplateType = null,
+  preferredIds = [],
+  excludeIds = [],
+  allowIncompatible = true
+} = {}) {
+  if (!Array.isArray(variants) || !variants.length) {
+    return null;
+  }
+
+  const excludedLookupKeys = new Set(
+    excludeIds
+      .map((variantId) => normalizeVariantLookupKey(variantId))
+      .filter(Boolean)
+  );
+  const availableFallbackVariants = variants.filter(
+    (variant) => !excludedLookupKeys.has(normalizeVariantLookupKey(variant?.id))
+  );
+
+  if (!availableFallbackVariants.length) {
+    return null;
+  }
+
+  const normalizedActualTemplateType = normalizeTemplateTypeValue(actualTemplateType);
+  const compatibleVariants = normalizedActualTemplateType
+    ? availableFallbackVariants.filter((variant) => isVariantTemplateCompatible(variant, normalizedActualTemplateType))
+    : availableFallbackVariants;
+  const preferredCompatibleVariants = compatibleVariants.length
+    ? compatibleVariants
+    : allowIncompatible
+      ? availableFallbackVariants
+      : [];
+
+  for (const preferredId of preferredIds) {
+    const preferredVariant = findVariantById(preferredCompatibleVariants, preferredId);
+    if (preferredVariant) {
+      return preferredVariant;
+    }
+  }
+
+  return preferredCompatibleVariants[0] ?? null;
+}
+
+function normalizeTemplateTypeValue(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || null;
 }
 
 function normalizeSource(sourceDefinition) {
@@ -937,6 +1299,17 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
 
   if (normalizedDefinition.shapeMode !== "template") {
     reasons.push(`shapeMode "${normalizedDefinition.shapeMode}" is not supported by this MVP.`);
+  }
+
+  const variantResolution = isPlainObject(normalizedDefinition.variantResolution)
+    ? normalizedDefinition.variantResolution
+    : null;
+  if ((normalizedDefinition.variantCount ?? 0) > 0 && variantResolution?.valid === false) {
+    if (Array.isArray(variantResolution.reasons) && variantResolution.reasons.length) {
+      reasons.push(...variantResolution.reasons);
+    } else {
+      reasons.push("Variant resolution is invalid for this definition.");
+    }
   }
 
   const onEnter = normalizedDefinition.triggers.onEnter;

@@ -24,6 +24,7 @@ export function createPersistentZonesDebugApi() {
     applyTestDefinitionToItem,
     clearTestDefinitionFromItem,
     inspectItemDefinition,
+    inspectSelectedVariant,
     inspectTemplateSource,
     markNextMovement
   });
@@ -118,6 +119,18 @@ export function buildTestDefinition(preset = "basic") {
         preset: normalizedPreset,
         label: "Persistent Zone Debug Ring Wall Outer Heat"
       }));
+    case "variant-line-left":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createVariantDemoTestDefinition("line-left"));
+    case "variant-line-right":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createVariantDemoTestDefinition("line-right"));
+    case "variant-ring-inner":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createVariantDemoTestDefinition("ring-inner"));
+    case "variant-ring-outer":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createVariantDemoTestDefinition("ring-outer"));
     case "wall-heated-left":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createWallHeatedTestDefinition("left"));
@@ -343,6 +356,76 @@ export async function inspectItemDefinition(itemOrUuid) {
   return result;
 }
 
+export async function inspectSelectedVariant(itemOrUuid, options = {}) {
+  if (!assertDebugGM("inspectSelectedVariant")) {
+    return null;
+  }
+
+  const item = await resolveItemDocument(itemOrUuid);
+  if (!item) {
+    debug("Could not resolve Item for persistent-zones selected variant inspect.", {
+      itemOrUuid,
+      options
+    });
+    return null;
+  }
+
+  const rawDefinition = getZoneDefinitionFromItem(item);
+  if (!rawDefinition) {
+    const emptyResult = {
+      itemUuid: item.uuid,
+      itemName: item.name,
+      hasDefinition: false,
+      availableVariants: [],
+      variantCount: 0,
+      defaultVariant: null,
+      selectedVariant: null,
+      effectiveVariant: null,
+      variantResolution: null
+    };
+
+    debug("Inspected persistent-zones selected variant on Item without definition.", emptyResult);
+    return emptyResult;
+  }
+
+  const inspectOptions = normalizeSelectedVariantInspectOptions(options);
+  const resolvedTemplateType =
+    inspectOptions.templateType ?? inferVariantInspectTemplateType(rawDefinition);
+  const normalizedDefinition = normalizeZoneDefinition(rawDefinition, {
+    item,
+    actor: item.actor ?? null,
+    templateDocument: buildVariantInspectTemplateDocument(resolvedTemplateType)
+  });
+
+  const result = {
+    itemUuid: item.uuid,
+    itemName: item.name,
+    hasDefinition: true,
+    templateType: resolvedTemplateType ?? null,
+    availableVariants: normalizedDefinition.availableVariants ?? [],
+    variantCount: normalizedDefinition.variantCount ?? 0,
+    defaultVariant: normalizedDefinition.defaultVariantId ?? null,
+    selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+    effectiveVariant: normalizedDefinition.selectedVariant ?? null,
+    variantResolution: normalizedDefinition.variantResolution ?? null
+  };
+
+  debug("Inspected persistent-zones selected variant on Item.", {
+    itemUuid: item.uuid,
+    itemName: item.name,
+    templateType: result.templateType,
+    availableVariants: result.availableVariants,
+    variantCount: result.variantCount,
+    defaultVariant: result.defaultVariant,
+    selectedVariant: result.selectedVariant,
+    variantResolutionMode: result.variantResolution?.resolutionMode ?? "none",
+    variantValidation: result.variantResolution ?? null,
+    reasonsText: result.variantResolution?.reasonsText ?? ""
+  });
+
+  return result;
+}
+
 export async function inspectTemplateSource(templateOrUuid) {
   if (!assertDebugGM("inspectTemplateSource")) {
     return null;
@@ -466,6 +549,75 @@ async function resolveTokenDocument(tokenOrUuid) {
   }
 
   return canvas?.scene?.tokens?.get?.(tokenOrUuid) ?? null;
+}
+
+function normalizeSelectedVariantInspectOptions(options) {
+  if (typeof options === "string") {
+    return {
+      templateType: normalizeTemplateTypeOption(options)
+    };
+  }
+
+  return {
+    templateType: normalizeTemplateTypeOption(options?.templateType)
+  };
+}
+
+function normalizeTemplateTypeOption(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || null;
+}
+
+function buildVariantInspectTemplateDocument(templateType) {
+  const normalizedTemplateType = normalizeTemplateTypeOption(templateType);
+  if (!normalizedTemplateType) {
+    return null;
+  }
+
+  return {
+    t: normalizedTemplateType,
+    distance: normalizedTemplateType === "circle" ? 20 : 30,
+    width: ["ray", "rect"].includes(normalizedTemplateType) ? 5 : null,
+    direction: 0,
+    angle: normalizedTemplateType === "cone" ? 90 : null,
+    elevation: 0
+  };
+}
+
+function inferVariantInspectTemplateType(definition) {
+  const directTemplateType = normalizeTemplateTypeOption(definition?.template?.type);
+  if (directTemplateType) {
+    return directTemplateType;
+  }
+
+  const variants = Array.isArray(definition?.variants) ? definition.variants : [];
+  if (!variants.length) {
+    return null;
+  }
+
+  const requestedVariantId = normalizeVariantLookupId(
+    definition?.selectedVariant ??
+      definition?.variantId ??
+      definition?.variant ??
+      definition?.defaultVariant ??
+      definition?.defaultVariantId ??
+      null
+  );
+  const matchedVariant = requestedVariantId
+    ? variants.find((variant) => normalizeVariantLookupId(variant?.id ?? variant?.key ?? null) === requestedVariantId) ?? null
+    : null;
+  const preferredVariant = matchedVariant ?? variants[0] ?? null;
+
+  return normalizeTemplateTypeOption(
+    preferredVariant?.template?.type ??
+      preferredVariant?.templateType ??
+      preferredVariant?.shape ??
+      null
+  );
+}
+
+function normalizeVariantLookupId(value) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 function createBasicTestDefinition() {
@@ -1096,6 +1248,69 @@ function buildCanonicalRingWallBodyGeometry({
   };
 }
 
+function createVariantDemoTestDefinition(selectedVariantId = "line-left") {
+  const normalizedSelectedVariantId = normalizeVariantSelectionId(selectedVariantId);
+  const lineLeftDefinition = createWallHeatedTestDefinition("left", {
+    label: "Persistent Zone Debug Variant Line Left",
+    heatedPartId: "heated-side-left"
+  });
+  const lineRightDefinition = createWallHeatedTestDefinition("right", {
+    label: "Persistent Zone Debug Variant Line Right",
+    heatedPartId: "heated-side-right"
+  });
+  const ringInnerDefinition = createRingHeatedTestDefinition("inner", {
+    label: "Persistent Zone Debug Variant Ring Inner",
+    heatedPartId: "heated-side-inner"
+  });
+  const ringOuterDefinition = createRingHeatedTestDefinition("outer", {
+    label: "Persistent Zone Debug Variant Ring Outer",
+    heatedPartId: "heated-side-outer"
+  });
+
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset: `variant-${normalizedSelectedVariantId}`
+    },
+    enabled: true,
+    label: "Persistent Zone Debug Variant Demo",
+    shapeMode: "template",
+    defaultVariant: "line-left",
+    selectedVariant: normalizedSelectedVariantId,
+    variants: [
+      buildVariantDefinitionEntry("line-left", "Persistent Zone Debug Variant Line Left", lineLeftDefinition),
+      buildVariantDefinitionEntry("line-right", "Persistent Zone Debug Variant Line Right", lineRightDefinition),
+      buildVariantDefinitionEntry("ring-inner", "Persistent Zone Debug Variant Ring Inner", ringInnerDefinition),
+      buildVariantDefinitionEntry("ring-outer", "Persistent Zone Debug Variant Ring Outer", ringOuterDefinition)
+    ]
+  };
+}
+
+function buildVariantDefinitionEntry(variantId, label, definition) {
+  return {
+    id: variantId,
+    key: variantId,
+    label,
+    template: duplicateData(definition?.template ?? {}),
+    targeting: duplicateData(definition?.targeting ?? {}),
+    concentration: duplicateData(definition?.concentration ?? {}),
+    terrain: duplicateData(definition?.terrain ?? {}),
+    linkedWalls: duplicateData(definition?.linkedWalls ?? {}),
+    linkedLight: duplicateData(definition?.linkedLight ?? {}),
+    triggers: duplicateData(definition?.triggers ?? {}),
+    parts: duplicateData(definition?.parts ?? [])
+  };
+}
+
+function normalizeVariantSelectionId(value) {
+  const normalized = String(value ?? "line-left").trim().toLowerCase();
+  return ["line-left", "line-right", "ring-inner", "ring-outer"].includes(normalized)
+    ? normalized
+    : "line-left";
+}
+
 function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -1203,9 +1418,15 @@ function summarizeDebugDefinition(definition) {
 
   return {
     preset: definition?.source?.preset ?? null,
+    defaultVariant: definition?.defaultVariant ?? definition?.defaultVariantId ?? null,
+    selectedVariant: definition?.selectedVariant ?? definition?.variant ?? definition?.variantId ?? null,
+    availableVariants: Array.isArray(definition.variants)
+      ? definition.variants.map((variant) => variant?.id ?? variant?.key ?? null).filter(Boolean)
+      : [],
     geometryType: definition?.geometry?.type ?? null,
     partCount: Array.isArray(definition.parts) ? definition.parts.length : 0,
     zoneCount: Array.isArray(definition.zones) ? definition.zones.length : 0,
+    variantCount: Array.isArray(definition.variants) ? definition.variants.length : 0,
     hasSideOfLineGeometry:
       definition?.geometry?.type === "side-of-line" ||
       Array.isArray(definition.parts) &&

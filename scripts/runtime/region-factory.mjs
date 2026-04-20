@@ -167,10 +167,27 @@ export async function createRegionFromTemplate(
       : [];
     debug("Skipped template with an invalid normalized zone definition.", {
       templateId: templateDocument.id,
+      selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition.defaultVariantId ?? null,
+      availableVariants: normalizedDefinition.availableVariants ?? [],
+      variantResolutionMode: normalizedDefinition.variantResolution?.resolutionMode ?? "none",
+      variantValidation: normalizedDefinition.variantResolution ?? null,
       reasons: validationReasons,
       reasonsText: validationReasons.join(" | ")
     });
     return null;
+  }
+
+  if (Array.isArray(normalizedDefinition.variants) && normalizedDefinition.variants.length) {
+    debug("Resolved managed Region variants for template.", {
+      templateId: templateDocument.id,
+      selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition.defaultVariantId ?? null,
+      availableVariants: normalizedDefinition.availableVariants ?? [],
+      variantCount: normalizedDefinition.variantCount ?? 0,
+      variantResolutionMode: normalizedDefinition.variantResolution?.resolutionMode ?? "none",
+      variantValidation: normalizedDefinition.variantResolution ?? null
+    });
   }
 
   const groupPlan = await buildManagedRegionGroupPlan({
@@ -238,6 +255,10 @@ export async function createRegionFromTemplate(
   debug("Created managed Region group from MeasuredTemplate.", {
     templateId: templateDocument.id,
     regionGroupId: groupPlan.groupId,
+    availableVariants: groupPlan.availableVariantIds ?? [],
+    selectedVariant: groupPlan.selectedVariantId ?? null,
+    defaultVariant: groupPlan.defaultVariantId ?? null,
+    variantResolutionMode: groupPlan.variantResolutionMode ?? "none",
     regionCount: createdRegions.length,
     geometryTypes: groupPlan.parts.map((partPlan) => partPlan.geometryType),
     partIds: groupPlan.parts.map((partPlan) => partPlan.partId)
@@ -294,6 +315,10 @@ async function syncRegionToTemplate(templateDocument, {
     debug("Synced managed Region group from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionGroupId: syncPayload.groupId,
+      availableVariants: syncPayload.availableVariantIds ?? [],
+      selectedVariant: syncPayload.selectedVariantId ?? null,
+      defaultVariant: syncPayload.defaultVariantId ?? null,
+      variantResolutionMode: syncPayload.variantResolutionMode ?? "none",
       regionId: recreatedRegions?.[0]?.id ?? null,
       regionCount: recreatedRegions.length,
       updateKeys,
@@ -345,6 +370,10 @@ async function syncRegionToTemplate(templateDocument, {
     debug("Synced managed Region group from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionGroupId: syncPayload.groupId,
+      availableVariants: syncPayload.availableVariantIds ?? [],
+      selectedVariant: syncPayload.selectedVariantId ?? null,
+      defaultVariant: syncPayload.defaultVariantId ?? null,
+      variantResolutionMode: syncPayload.variantResolutionMode ?? "none",
       regionId: existingRegion.id,
       regionCount: 1,
       updateKeys,
@@ -366,6 +395,10 @@ async function syncRegionToTemplate(templateDocument, {
     debug("Synced managed Region group from updated MeasuredTemplate.", {
       templateId: templateDocument?.id ?? null,
       regionGroupId: syncPayload.groupId,
+      availableVariants: syncPayload.availableVariantIds ?? [],
+      selectedVariant: syncPayload.selectedVariantId ?? null,
+      defaultVariant: syncPayload.defaultVariantId ?? null,
+      variantResolutionMode: syncPayload.variantResolutionMode ?? "none",
       regionId: recreatedRegions?.[0]?.id ?? null,
       regionCount: recreatedRegions.length,
       updateKeys,
@@ -434,6 +467,12 @@ function buildRegionCreateData({
     itemUuid: normalizedDefinition.itemUuid ?? sourceContext.item?.uuid ?? null,
     actorUuid: normalizedDefinition.actorUuid ?? sourceContext.actor?.uuid ?? null,
     casterUuid: normalizedDefinition.casterUuid ?? sourceContext.caster?.uuid ?? null,
+    selectedVariantId: normalizedDefinition.selectedVariant?.id ?? null,
+    defaultVariantId: normalizedDefinition.defaultVariantId ?? null,
+    variantResolutionMode: normalizedDefinition.variantResolution?.resolutionMode ?? "none",
+    availableVariantIds: Array.isArray(normalizedDefinition.variants)
+      ? normalizedDefinition.variants.map((variant) => variant.id)
+      : [],
     dc: normalizedDefinition.dc ?? null,
     castLevel: normalizedDefinition.castLevel ?? null,
     groupId,
@@ -480,6 +519,11 @@ async function buildRegionSyncPayload(templateDocument, regionDocuments) {
     debug("Skipped Region sync because the normalized definition is invalid.", {
       templateId: templateDocument?.id ?? null,
       regionId: primaryRegion?.id ?? null,
+      selectedVariant: normalizedDefinition?.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition?.defaultVariantId ?? null,
+      availableVariants: normalizedDefinition?.availableVariants ?? [],
+      variantResolutionMode: normalizedDefinition?.variantResolution?.resolutionMode ?? "none",
+      variantValidation: normalizedDefinition?.variantResolution ?? null,
       reasons: validationReasons,
       reasonsText: validationReasons.join(" | ")
     });
@@ -649,6 +693,12 @@ async function buildManagedRegionGroupPlan({
 
   return {
     groupId,
+    availableVariantIds: Array.isArray(normalizedDefinition?.variants)
+      ? normalizedDefinition.variants.map((variant) => variant.id)
+      : [],
+    selectedVariantId: normalizedDefinition?.selectedVariant?.id ?? null,
+    defaultVariantId: normalizedDefinition?.defaultVariantId ?? null,
+    variantResolutionMode: normalizedDefinition?.variantResolution?.resolutionMode ?? "none",
     parts
   };
 }
@@ -1086,6 +1136,10 @@ async function deleteManagedRegionGroup(regionDocuments, {
   debug("Cleaned managed Region group.", {
     sceneId: scene?.id ?? null,
     regionGroupId: getRegionRuntimeFlags(documents[0])?.groupId ?? null,
+    availableVariants: getRegionRuntimeFlags(documents[0])?.availableVariantIds ?? [],
+    selectedVariant: getRegionRuntimeFlags(documents[0])?.selectedVariantId ?? null,
+    defaultVariant: getRegionRuntimeFlags(documents[0])?.defaultVariantId ?? null,
+    variantResolutionMode: getRegionRuntimeFlags(documents[0])?.variantResolutionMode ?? "none",
     regionIds,
     reason
   });
