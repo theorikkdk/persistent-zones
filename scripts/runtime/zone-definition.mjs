@@ -504,6 +504,186 @@ function normalizeZonePart(partLikeDefinition, index, {
   };
 }
 
+function normalizeRingGeometryDefinition(geometryDefinition, {
+  templateDocument = null,
+  templateDefinition = {},
+  definition = {}
+} = {}) {
+  const templateRadius = coerceNumber(
+    pickFirstDefined(
+      templateDefinition.distance,
+      definition.distance,
+      templateDocument?.distance
+    ),
+    null
+  );
+  const outerRadiusRatio = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.outerRadiusRatio,
+      geometryDefinition.outerRatio
+    ),
+    null
+  );
+  const innerRadiusRatio = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.innerRadiusRatio,
+      geometryDefinition.innerRatio
+    ),
+    null
+  );
+  const thicknessRatio = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.thicknessRatio,
+      geometryDefinition.wallThicknessRatio,
+      geometryDefinition.bandThicknessRatio
+    ),
+    null
+  );
+  const thickness = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.thickness,
+      geometryDefinition.wallThickness,
+      geometryDefinition.bandThickness,
+      thicknessRatio !== null && templateDistance !== null
+        ? templateDistance * thicknessRatio
+        : null
+    ),
+    null
+  );
+  const referenceRadiusMode = normalizeRingReferenceRadiusMode(
+    pickFirstDefined(
+      geometryDefinition.referenceRadiusMode,
+      geometryDefinition.templateRadiusMode,
+      geometryDefinition.radiusMode,
+      thickness !== null || thicknessRatio !== null
+        ? "outer-edge"
+        : null
+    ),
+    null
+  );
+  const referenceRadius = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.referenceRadius,
+      geometryDefinition.templateRadius,
+      templateRadius
+    ),
+    null
+  );
+  const explicitOuterRadius = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.outerRadius,
+      geometryDefinition.outer,
+      geometryDefinition.radius,
+      outerRadiusRatio !== null && templateRadius !== null
+        ? templateRadius * outerRadiusRatio
+        : null
+    ),
+    null
+  );
+  const explicitInnerRadius = coerceNumber(
+    pickFirstDefined(
+      geometryDefinition.innerRadius,
+      geometryDefinition.inner,
+      geometryDefinition.holeRadius,
+      innerRadiusRatio !== null && templateRadius !== null
+        ? templateRadius * innerRadiusRatio
+        : null
+    ),
+    null
+  );
+
+  let computedInnerRadius = explicitInnerRadius;
+  let computedOuterRadius = explicitOuterRadius;
+  let radiusResolutionMode = "explicit-radii";
+  const normalizedWallThickness = thickness !== null ? Math.max(0, thickness) : null;
+
+  if (normalizedWallThickness !== null && normalizedWallThickness > 0) {
+    if (templateRadius !== null) {
+      computedOuterRadius = templateRadius;
+      computedInnerRadius = Math.max(0, templateRadius - normalizedWallThickness);
+      radiusResolutionMode = "template-outer-edge";
+    } else if (explicitOuterRadius !== null) {
+      computedOuterRadius = explicitOuterRadius;
+      computedInnerRadius = Math.max(0, explicitOuterRadius - normalizedWallThickness);
+      radiusResolutionMode = "outer-radius-thickness";
+    } else if (referenceRadius !== null && referenceRadiusMode) {
+      const resolvedRadii = resolveRingRadiiFromReferenceMode({
+        referenceRadius,
+        thickness: normalizedWallThickness,
+        referenceRadiusMode
+      });
+
+      computedInnerRadius = resolvedRadii.innerRadius;
+      computedOuterRadius = resolvedRadii.outerRadius;
+      radiusResolutionMode = "legacy-reference-radius-mode";
+    }
+  }
+
+  if (computedInnerRadius === null) {
+    computedInnerRadius = 0;
+  }
+
+  const normalizedGeometry = {
+    type: "ring",
+    centerMode: "template",
+    innerRadius: computedInnerRadius === null ? null : Math.max(0, computedInnerRadius),
+    innerRadiusRatio,
+    outerRadius: computedOuterRadius,
+    outerRadiusRatio,
+    thickness: normalizedWallThickness,
+    wallThickness: normalizedWallThickness,
+    thicknessRatio,
+    templateRadius,
+    referenceRadiusMode,
+    referenceRadius,
+    radiusResolutionMode,
+    segments: normalizeRingSegmentCount(
+      pickFirstDefined(geometryDefinition.segments, geometryDefinition.segmentCount, 24)
+    )
+  };
+
+  debug("Normalized ring geometry definition.", {
+    geometryType: normalizedGeometry.type,
+    referenceRadiusMode: normalizedGeometry.referenceRadiusMode,
+    templateRadius: normalizedGeometry.templateRadius,
+    wallThickness: normalizedGeometry.wallThickness,
+    referenceRadius: normalizedGeometry.referenceRadius,
+    computedInnerRadius: normalizedGeometry.innerRadius,
+    computedOuterRadius: normalizedGeometry.outerRadius,
+    radiusResolutionMode: normalizedGeometry.radiusResolutionMode
+  });
+
+  return normalizedGeometry;
+}
+
+function resolveRingRadiiFromReferenceMode({
+  referenceRadius,
+  thickness,
+  referenceRadiusMode
+}) {
+  const normalizedReferenceRadius = Math.max(0, coerceNumber(referenceRadius, 0));
+  const normalizedThickness = Math.max(0, coerceNumber(thickness, 0));
+
+  switch (referenceRadiusMode) {
+    case "inner-edge":
+      return {
+        innerRadius: normalizedReferenceRadius,
+        outerRadius: normalizedReferenceRadius + normalizedThickness
+      };
+    case "centerline":
+      return {
+        innerRadius: Math.max(0, normalizedReferenceRadius - (normalizedThickness / 2)),
+        outerRadius: normalizedReferenceRadius + (normalizedThickness / 2)
+      };
+    case "outer-edge":
+    default:
+      return {
+        innerRadius: Math.max(0, normalizedReferenceRadius - normalizedThickness),
+        outerRadius: normalizedReferenceRadius
+      };
+  }
+}
+
 function normalizeGeometryDefinition(geometryLikeDefinition, {
   templateDocument = null,
   templateDefinition = {},
@@ -520,64 +700,11 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
   ).toLowerCase();
 
   if (geometryType === "ring" || geometryType === "annulus") {
-    const templateDistance = coerceNumber(
-      pickFirstDefined(
-        templateDefinition.distance,
-        definition.distance,
-        templateDocument?.distance
-      ),
-      null
-    );
-    const outerRadiusRatio = coerceNumber(
-      pickFirstDefined(
-        geometryDefinition.outerRadiusRatio,
-        geometryDefinition.outerRatio
-      ),
-      null
-    );
-    const innerRadiusRatio = coerceNumber(
-      pickFirstDefined(
-        geometryDefinition.innerRadiusRatio,
-        geometryDefinition.innerRatio
-      ),
-      null
-    );
-    const defaultOuterRadius = coerceNumber(
-      pickFirstDefined(
-        geometryDefinition.outerRadius,
-        geometryDefinition.outer,
-        geometryDefinition.radius,
-        outerRadiusRatio !== null && templateDistance !== null
-          ? templateDistance * outerRadiusRatio
-          : null,
-        templateDistance
-      ),
-      null
-    );
-    const defaultInnerRadius = coerceNumber(
-      pickFirstDefined(
-        geometryDefinition.innerRadius,
-        geometryDefinition.inner,
-        geometryDefinition.holeRadius,
-        innerRadiusRatio !== null && templateDistance !== null
-          ? templateDistance * innerRadiusRatio
-          : null,
-        0
-      ),
-      0
-    );
-
-    return {
-      type: "ring",
-      centerMode: "template",
-      innerRadius: defaultInnerRadius === null ? null : Math.max(0, defaultInnerRadius),
-      innerRadiusRatio,
-      outerRadius: defaultOuterRadius,
-      outerRadiusRatio,
-      segments: normalizeRingSegmentCount(
-        pickFirstDefined(geometryDefinition.segments, geometryDefinition.segmentCount, 24)
-      )
-    };
+    return normalizeRingGeometryDefinition(geometryDefinition, {
+      templateDocument,
+      templateDefinition,
+      definition
+    });
   }
 
   if (geometryType === "side-of-line" || geometryType === "sideofline") {
@@ -829,7 +956,8 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   } else {
     normalizedDefinition.parts.forEach((part, index) => {
       validateZonePartConfig(part, index, reasons, {
-        templateType: normalizedDefinition.template.type
+        templateType: normalizedDefinition.template.type,
+        templateDistance: normalizedDefinition.template.distance
       });
     });
   }
@@ -912,7 +1040,8 @@ function collectCurrentLimits(definition) {
 }
 
 function validateZonePartConfig(part, index, reasons, {
-  templateType = null
+  templateType = null,
+  templateDistance = null
 } = {}) {
   if (!part?.id) {
     reasons.push(`Part ${index + 1} requires an id.`);
@@ -928,6 +1057,8 @@ function validateZonePartConfig(part, index, reasons, {
     const innerRadius = coerceNumber(part?.geometry?.innerRadius, null);
     const outerRadius = coerceNumber(part?.geometry?.outerRadius, null);
     const innerRadiusRatio = coerceNumber(part?.geometry?.innerRadiusRatio, null);
+    const thickness = coerceNumber(part?.geometry?.thickness, null);
+    const referenceRadius = coerceNumber(part?.geometry?.referenceRadius, null);
 
     if (outerRadius !== null && outerRadius <= 0) {
       reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires a positive outerRadius.`);
@@ -939,6 +1070,19 @@ function validateZonePartConfig(part, index, reasons, {
 
     if (innerRadius !== null && outerRadius !== null && innerRadius >= outerRadius) {
       reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires innerRadius to be smaller than outerRadius.`);
+    }
+
+    if (thickness !== null && thickness <= 0) {
+      reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires thickness to be greater than 0 when provided.`);
+    }
+
+    if (
+      thickness !== null &&
+      (innerRadius === null || outerRadius === null) &&
+      referenceRadius === null &&
+      templateDistance === null
+    ) {
+      reasons.push(`Part "${part?.id ?? index + 1}" ring geometry requires template distance, explicit outerRadius, or legacy referenceRadius when thickness is used.`);
     }
   }
 
@@ -1105,6 +1249,19 @@ function normalizeRingDirectionalSide(value) {
 function normalizeRingOffsetReferenceMode(value) {
   const normalized = String(value ?? "body-edge").toLowerCase();
   return normalized === "body-edge" ? "body-edge" : "body-edge";
+}
+
+function normalizeRingReferenceRadiusMode(value, fallback = "outer-edge") {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const normalized = String(value).toLowerCase();
+  if (["outer-edge", "inner-edge", "centerline"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
 }
 
 function normalizeStringArray(values) {

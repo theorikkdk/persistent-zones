@@ -70,6 +70,54 @@ export function buildTestDefinition(preset = "basic") {
     case "ring-heated-outer":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createRingHeatedTestDefinition("outer"));
+    case "ring-wall-inner-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Inner Heat"
+      }));
+    case "ring-wall-outer-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Outer Heat"
+      }));
+    case "ring-wall-outer-edge-inner-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Inner Heat"
+      }));
+    case "ring-wall-outer-edge-outer-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Outer Heat"
+      }));
+    case "ring-wall-inner-edge-inner-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Inner Heat"
+      }));
+    case "ring-wall-inner-edge-outer-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Outer Heat"
+      }));
+    case "ring-wall-centerline-inner-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Inner Heat"
+      }));
+    case "ring-wall-centerline-outer-heat":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Wall Outer Heat"
+      }));
     case "wall-heated-left":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createWallHeatedTestDefinition("left"));
@@ -1001,12 +1049,7 @@ function createRingHeatedTestDefinition(side = "inner", {
       {
         id: "wall-body",
         label: "Persistent Zone Debug Ring Wall Body",
-        geometry: {
-          type: "ring",
-          innerRadiusRatio: 0.5,
-          outerRadiusRatio: 1,
-          segments: 24
-        }
+        geometry: buildCanonicalRingWallBodyGeometry()
       },
       {
         id: resolvedHeatedPartId,
@@ -1038,6 +1081,18 @@ function createRingHeatedTestDefinition(side = "inner", {
         }
       }
     ]
+  };
+}
+
+function buildCanonicalRingWallBodyGeometry({
+  wallThickness = 5,
+  segments = 24
+} = {}) {
+  return {
+    type: "ring",
+    referenceRadiusMode: "outer-edge",
+    thickness: wallThickness,
+    segments
   };
 }
 

@@ -222,9 +222,16 @@ export async function createRegionFromTemplate(
       geometryType: partPlan.geometryType,
       side: partPlan.geometrySide ?? null,
       referencePartId: partPlan.geometryReferencePartId ?? null,
+      referenceRadiusMode: partPlan.geometryReferenceRadiusMode ?? null,
+      templateRadius: partPlan.geometryTemplateRadius ?? null,
       offsetReference: partPlan.geometryOffsetReference ?? null,
       offsetStart: partPlan.geometryOffsetStart ?? null,
-      offsetEnd: partPlan.geometryOffsetEnd ?? null
+      offsetEnd: partPlan.geometryOffsetEnd ?? null,
+      heatBandStart: partPlan.geometryOffsetStart ?? null,
+      heatBandEnd: partPlan.geometryOffsetEnd ?? null,
+      wallThickness: partPlan.geometryThickness ?? null,
+      computedInnerRadius: partPlan.geometryComputedInnerRadius ?? null,
+      computedOuterRadius: partPlan.geometryComputedOuterRadius ?? null
     });
   }
 
@@ -320,9 +327,16 @@ async function syncRegionToTemplate(templateDocument, {
       geometryType: partPlan.geometryType,
       side: partPlan.geometrySide ?? null,
       referencePartId: partPlan.geometryReferencePartId ?? null,
+      referenceRadiusMode: partPlan.geometryReferenceRadiusMode ?? null,
+      templateRadius: partPlan.geometryTemplateRadius ?? null,
       offsetReference: partPlan.geometryOffsetReference ?? null,
       offsetStart: partPlan.geometryOffsetStart ?? null,
       offsetEnd: partPlan.geometryOffsetEnd ?? null,
+      heatBandStart: partPlan.geometryOffsetStart ?? null,
+      heatBandEnd: partPlan.geometryOffsetEnd ?? null,
+      wallThickness: partPlan.geometryThickness ?? null,
+      computedInnerRadius: partPlan.geometryComputedInnerRadius ?? null,
+      computedOuterRadius: partPlan.geometryComputedOuterRadius ?? null,
       updateKeys,
       strategy: "update-region",
       syncApplied: true
@@ -583,9 +597,14 @@ async function buildManagedRegionGroupPlan({
       existingRuntime: resolveExistingRuntimeForPart(existingRegions, zonePart?.id ?? null),
       geometrySide: zonePart?.geometry?.side ?? null,
       geometryReferencePartId: zonePart?.geometry?.referencePartId ?? null,
+      geometryReferenceRadiusMode: zonePart?.geometry?.referenceRadiusMode ?? null,
+      geometryTemplateRadius: zonePart?.geometry?.templateRadius ?? null,
       geometryOffsetReference: zonePart?.geometry?.offsetReference ?? null,
       geometryOffsetStart: zonePart?.geometry?.offsetStart ?? null,
-      geometryOffsetEnd: zonePart?.geometry?.offsetEnd ?? null
+      geometryOffsetEnd: zonePart?.geometry?.offsetEnd ?? null,
+      geometryThickness: zonePart?.geometry?.wallThickness ?? zonePart?.geometry?.thickness ?? null,
+      geometryComputedInnerRadius: zonePart?.geometry?.innerRadius ?? null,
+      geometryComputedOuterRadius: zonePart?.geometry?.outerRadius ?? null
     });
   }
 
@@ -603,9 +622,14 @@ async function buildManagedRegionGroupPlan({
       geometryType: preparedPart.zonePart?.geometry?.type ?? "template",
       geometrySide: preparedPart.geometrySide ?? null,
       geometryReferencePartId: preparedPart.geometryReferencePartId ?? null,
+      geometryReferenceRadiusMode: preparedPart.geometryReferenceRadiusMode ?? null,
+      geometryTemplateRadius: preparedPart.geometryTemplateRadius ?? null,
       geometryOffsetReference: preparedPart.geometryOffsetReference ?? null,
       geometryOffsetStart: preparedPart.geometryOffsetStart ?? null,
       geometryOffsetEnd: preparedPart.geometryOffsetEnd ?? null,
+      geometryThickness: preparedPart.geometryThickness ?? null,
+      geometryComputedInnerRadius: preparedPart.geometryComputedInnerRadius ?? null,
+      geometryComputedOuterRadius: preparedPart.geometryComputedOuterRadius ?? null,
       runtimeDefinition,
       shapes: preparedPart.shapes,
       regionData: buildRegionCreateData({
@@ -718,8 +742,22 @@ function buildRingShapesFromGeometry(templateDocument, geometry) {
     outerRadius: coerceNumber(geometry?.outerRadius ?? templateDocument?.distance, 0),
     segments: geometry?.segments
   }, {
-    builder: "ring-annulus",
-    rejectionMessage: "Rejected Region shape build for unsupported ring geometry."
+    builder: geometry?.radiusResolutionMode === "template-outer-edge"
+      ? "ring-template-outer-edge"
+      : geometry?.radiusResolutionMode === "legacy-reference-radius-mode"
+        ? "ring-legacy-reference-radius-mode"
+        : geometry?.radiusResolutionMode === "outer-radius-thickness"
+          ? "ring-outer-radius-thickness"
+          : "ring-annulus",
+    rejectionMessage: "Rejected Region shape build for unsupported ring geometry.",
+    detailOverrides: {
+      geometryType: "ring",
+      referenceRadiusMode: geometry?.referenceRadiusMode ?? null,
+      templateRadius: geometry?.templateRadius ?? coerceNumber(templateDocument?.distance, null),
+      wallThickness: geometry?.wallThickness ?? geometry?.thickness ?? null,
+      computedInnerRadius: geometry?.innerRadius ?? null,
+      computedOuterRadius: geometry?.outerRadius ?? null
+    }
   });
 }
 
@@ -771,8 +809,15 @@ function buildSideOfRingShapesFromGeometry(templateDocument, geometry, {
       offsetReference,
       offsetStart,
       offsetEnd,
+      heatBandStart: offsetStart,
+      heatBandEnd: offsetEnd,
       bodyEdge,
       referencePartId: geometry?.referencePartId ?? null,
+      referenceRadiusMode: referenceRing.referenceRadiusMode ?? null,
+      templateRadius: referenceRing.templateRadius ?? coerceNumber(templateDocument?.distance, null),
+      wallThickness: referenceRing.wallThickness ?? referenceRing.thickness ?? null,
+      computedInnerRadius: referenceRing.innerRadius ?? null,
+      computedOuterRadius: referenceRing.outerRadius ?? null,
       generatedBandBounds: {
         innerRadius: bandInnerRadius,
         outerRadius: bandOuterRadius
@@ -1587,6 +1632,10 @@ function resolveSideOfRingReferenceBand(geometry, allParts = []) {
       return {
         innerRadius: coerceNumber(referenceGeometry.innerRadius, 0),
         outerRadius: coerceNumber(referenceGeometry.outerRadius, null),
+        templateRadius: coerceNumber(referenceGeometry.templateRadius, null),
+        referenceRadiusMode: referenceGeometry.referenceRadiusMode ?? null,
+        wallThickness: coerceNumber(referenceGeometry.wallThickness, coerceNumber(referenceGeometry.thickness, null)),
+        thickness: coerceNumber(referenceGeometry.thickness, null),
         segments: referenceGeometry.segments ?? DEFAULT_RING_SEGMENTS
       };
     }
@@ -1600,6 +1649,10 @@ function resolveSideOfRingReferenceBand(geometry, allParts = []) {
   return {
     innerRadius: coerceNumber(geometry?.referenceInnerRadius, 0),
     outerRadius: fallbackOuterRadius,
+    templateRadius: coerceNumber(geometry?.templateRadius, null),
+    referenceRadiusMode: geometry?.referenceRadiusMode ?? null,
+    wallThickness: coerceNumber(geometry?.wallThickness, coerceNumber(geometry?.thickness, null)),
+    thickness: coerceNumber(geometry?.thickness, null),
     segments: geometry?.segments ?? DEFAULT_RING_SEGMENTS
   };
 }

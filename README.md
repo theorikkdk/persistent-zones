@@ -16,6 +16,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - Creates a managed `Region` from a qualifying `MeasuredTemplate`.
 - Can create a managed Region group when one template expands into multiple logical parts.
 - Supports a first composite geometry mode for annulus / ring-style parts.
+- Supports ring wall-body geometry with explicit `thickness`, anchored to the outer edge of the template circle and extending inward.
 - Supports a first directional geometry mode for `side-of-line` parts on ray-like templates.
 - Supports a first directional annular geometry mode for `side-of-ring` parts around ring body parts.
 - Stores normalized runtime metadata on the `Region`.
@@ -40,6 +41,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - For directional side-of-line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-right")`.
 - For composite wall plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-right")`.
 - For composite ring plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-outer")`.
+- For canonical ring wall-body testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-wall-inner-heat")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-wall-outer-heat")`.
 - For fire-wall-like line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-right")`.
 - For fire-wall-like ring testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-outer")`.
 - Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
