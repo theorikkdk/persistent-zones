@@ -1,5 +1,85 @@
 {
   "PERSISTENT_ZONES": {
-    "ZoneSuffix": "Persistent Zone"
+    "ZoneSuffix": "Persistent Zone",
+    "UI": {
+      "ConfigTitle": "Persistent Zones",
+      "HeaderButtonLabel": "Open Persistent Zones configuration",
+      "HeaderButtonHintDisabled": "Persistent Zones not configured on this Item",
+      "HeaderButtonHintInactive": "Persistent Zones configured but disabled on this Item",
+      "HeaderButtonHintValid": "Persistent Zones configured and valid",
+      "HeaderButtonHintInvalid": "Persistent Zones configured, but the current definition is invalid",
+      "ClearTitle": "Clear Persistent Zones Definition",
+      "ClearConfirm": "Remove the persistent-zones definition from this Item?",
+      "NoneOption": "None",
+      "Sections": {
+        "Basics": "Basics",
+        "OnEnter": "On Enter",
+        "Validation": "Validation",
+        "RawDefinition": "Raw Definition",
+        "NormalizedDefinition": "Normalized Definition"
+      },
+      "Fields": {
+        "Enabled": "Persistent Zones Enabled",
+        "BaseType": "Base Type",
+        "SimpleTemplateType": "Template Type",
+        "SelectedVariant": "Selected Variant",
+        "DefaultVariant": "Default Variant",
+        "AvailableVariants": "Available Variants",
+        "VariantResolutionMode": "Variant Resolution",
+        "PreviewTemplateType": "Preview Template Type",
+        "OnEnterEnabled": "Enable onEnter",
+        "DamageFormula": "Damage Formula",
+        "DamageType": "Damage Type",
+        "SaveAbility": "Save Ability",
+        "SaveDcMode": "Save DC Source",
+        "SaveDcModeAuto": "Automatic",
+        "SaveDcModeManual": "Manual",
+        "SaveDc": "Save DC",
+        "WallThickness": "Wall Thickness",
+        "SideThickness": "Heated Side Thickness"
+      },
+      "BaseTypes": {
+        "Simple": "Simple",
+        "Ring": "Ring",
+        "CompositeLine": "Composite Line",
+        "CompositeRing": "Composite Ring"
+      },
+      "TemplateTypes": {
+        "Circle": "Circle",
+        "Cone": "Cone",
+        "Ray": "Line / Ray",
+        "Rect": "Rectangle"
+      },
+      "Variants": {
+        "LineLeft": "Line Left",
+        "LineRight": "Line Right",
+        "RingInner": "Ring Inner",
+        "RingOuter": "Ring Outer"
+      },
+      "Parts": {
+        "WallBody": "Wall Body",
+        "HeatedSideLeft": "Heated Side Left",
+        "HeatedSideRight": "Heated Side Right",
+        "HeatedSideInner": "Heated Side Inner",
+        "HeatedSideOuter": "Heated Side Outer"
+      },
+      "Validation": {
+        "Valid": "Valid",
+        "Invalid": "Invalid",
+        "NoIssues": "No validation issues detected for the current preview."
+      },
+      "Actions": {
+        "Preview": "Preview",
+        "Save": "Save",
+        "Clear": "Clear"
+      },
+      "Help": {
+        "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring."
+      },
+      "Notifications": {
+        "Saved": "Persistent Zones definition saved.",
+        "Cleared": "Persistent Zones definition cleared."
+      }
+    }
   }
 }

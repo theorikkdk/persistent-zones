@@ -161,6 +161,18 @@ export async function createRegionFromTemplate(
     templateDocument
   });
 
+  if (normalizedDefinition.enabled === false) {
+    debug("Skipped template because persistent-zones definition is disabled.", {
+      templateId: templateDocument.id,
+      enabled: false,
+      itemUuid: sourceContext.item?.uuid ?? null,
+      itemName: sourceContext.item?.name ?? null,
+      selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition.defaultVariantId ?? null
+    });
+    return null;
+  }
+
   if (!normalizedDefinition.validation.isValid) {
     const validationReasons = Array.isArray(normalizedDefinition.validation.reasons)
       ? normalizedDefinition.validation.reasons
@@ -526,6 +538,19 @@ async function buildRegionSyncPayload(templateDocument, regionDocuments) {
       variantValidation: normalizedDefinition?.variantResolution ?? null,
       reasons: validationReasons,
       reasonsText: validationReasons.join(" | ")
+    });
+    return null;
+  }
+
+  if (normalizedDefinition.enabled === false) {
+    debug("Skipped Region sync because persistent-zones definition is disabled.", {
+      templateId: templateDocument?.id ?? null,
+      regionId: primaryRegion?.id ?? null,
+      enabled: false,
+      itemUuid: sourceContext.item?.uuid ?? runtime.itemUuid ?? null,
+      itemName: sourceContext.item?.name ?? null,
+      selectedVariant: normalizedDefinition.selectedVariantId ?? null,
+      defaultVariant: normalizedDefinition.defaultVariantId ?? null
     });
     return null;
   }

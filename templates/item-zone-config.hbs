@@ -1,0 +1,184 @@
+<form class="persistent-zones-item-config">
+  <div class="persistent-zones-item-config__layout">
+    <section class="persistent-zones-item-config__card">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Basics"}}</h2>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.Enabled"}}</label>
+        <input type="checkbox" name="enabled" {{#if state.enabled}}checked{{/if}}>
+      </div>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.BaseType"}}</label>
+        <select name="baseType">
+          {{#each baseTypeOptions as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      {{#if showSimpleTemplateType}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SimpleTemplateType"}}</label>
+          <select name="simpleTemplateType">
+            {{#each templateTypeOptions as |option|}}
+              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            {{/each}}
+          </select>
+        </div>
+      {{/if}}
+
+      {{#if showVariantSelect}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}</label>
+          <select name="selectedVariant">
+            {{#each variantOptions as |option|}}
+              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            {{/each}}
+          </select>
+        </div>
+      {{/if}}
+
+      {{#if showWallThickness}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.WallThickness"}}</label>
+          <input type="text" name="wallThickness" value="{{state.wallThickness}}" inputmode="decimal" placeholder="1.0">
+        </div>
+      {{/if}}
+
+      {{#if showSideThickness}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SideThickness"}}</label>
+          <input type="text" name="sideThickness" value="{{state.sideThickness}}" inputmode="decimal" placeholder="3.0">
+        </div>
+      {{/if}}
+    </section>
+
+    <section class="persistent-zones-item-config__card">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.OnEnter"}}</h2>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.OnEnterEnabled"}}</label>
+        <input type="checkbox" name="onEnterEnabled" {{#if state.onEnterEnabled}}checked{{/if}}>
+      </div>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+        <input type="text" name="damageFormula" value="{{state.damageFormula}}" placeholder="2d6">
+      </div>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+        <select name="damageType">
+          {{#each damageTypeOptions as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+        <select name="saveAbility">
+          {{#each abilityOptions as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      {{#if showSaveDcMode}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
+          <select name="saveDcMode">
+            {{#each saveDcModeOptions as |option|}}
+              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            {{/each}}
+          </select>
+        </div>
+      {{/if}}
+
+      {{#if showManualSaveDc}}
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
+          <input type="number" name="saveDc" value="{{state.saveDc}}" min="1" step="1">
+        </div>
+      {{else}}
+        <input type="hidden" name="saveDc" value="{{state.saveDc}}">
+      {{/if}}
+
+      <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.AuthoringSubset"}}</p>
+    </section>
+
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--validation">
+      <div class="persistent-zones-item-config__validation-header">
+        <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</h2>
+        <span class="persistent-zones-item-config__pill {{#if preview.isValid}}is-valid{{else}}is-invalid{{/if}}">
+          {{#if preview.isValid}}
+            {{localize "PERSISTENT_ZONES.UI.Validation.Valid"}}
+          {{else}}
+            {{localize "PERSISTENT_ZONES.UI.Validation.Invalid"}}
+          {{/if}}
+        </span>
+      </div>
+
+      <div class="persistent-zones-item-config__meta">
+        <div>
+          <strong>{{localize "PERSISTENT_ZONES.UI.Fields.PreviewTemplateType"}}:</strong>
+          <span>{{preview.previewTemplateTypeLabel}}</span>
+        </div>
+        {{#if preview.normalizedDefinition.variantCount}}
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.AvailableVariants"}}:</strong>
+            <span>{{preview.normalizedDefinition.availableVariants}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
+            <span>{{preview.normalizedDefinition.selectedVariantId}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DefaultVariant"}}:</strong>
+            <span>{{preview.normalizedDefinition.defaultVariantId}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.VariantResolutionMode"}}:</strong>
+            <span>{{preview.variantResolution.resolutionMode}}</span>
+          </div>
+        {{/if}}
+      </div>
+
+      {{#if preview.reasons.length}}
+        <ul class="persistent-zones-item-config__reasons">
+          {{#each preview.reasons as |reason|}}
+            <li>{{reason}}</li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p class="hint">{{localize "PERSISTENT_ZONES.UI.Validation.NoIssues"}}</p>
+      {{/if}}
+    </section>
+
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--actions">
+      <button type="button" class="button" data-action="preview">
+        <i class="fas fa-search"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Preview"}}</span>
+      </button>
+      <button type="submit" class="button default">
+        <i class="fas fa-save"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Save"}}</span>
+      </button>
+      <button type="button" class="button" data-action="clear">
+        <i class="fas fa-trash"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Clear"}}</span>
+      </button>
+    </section>
+
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.RawDefinition"}}</h2>
+      <textarea readonly>{{preview.rawDefinitionJson}}</textarea>
+    </section>
+
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.NormalizedDefinition"}}</h2>
+      <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
+    </section>
+  </div>
+</form>

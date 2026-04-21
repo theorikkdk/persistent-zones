@@ -1,5 +1,6 @@
 import { createPersistentZonesApi } from "./api.mjs";
 import { MODULE_API_NAMESPACE, MODULE_ID } from "./constants.mjs";
+import { registerPersistentZonesItemConfigUi } from "./ui/item-config-app.mjs";
 import {
   cleanupSceneRegions,
   registerConcentrationCleanupHooks
@@ -32,6 +33,7 @@ function onInit() {
   registerConcentrationCleanupHooks();
   registerEntryRuntimeHooks();
   registerTurnRuntimeHooks();
+  registerPersistentZonesItemConfigUi();
 
   debug("Module initialized.");
 }

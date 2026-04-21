@@ -190,6 +190,110 @@ export async function cleanupWorldRegions({ reason = "manual" } = {}) {
   return deleted;
 }
 
+export async function cleanupRegionsForItem(itemOrUuid, { reason = "manual" } = {}) {
+  const itemUuid = await resolveManagedItemUuid(itemOrUuid);
+  if (!itemUuid) {
+    debug("Skipped managed Region Item cleanup because no Item could be resolved.", {
+      itemOrUuid,
+      reason
+    });
+    return [];
+  }
+
+  const deleted = [];
+
+  for (const scene of game.scenes.contents) {
+    const matchingRegions = findManagedRegions(scene, (regionDocument) => {
+      const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+      return runtime.itemUuid === itemUuid;
+    });
+
+    if (!matchingRegions.length) {
+      continue;
+    }
+
+    const candidateRegionIds = matchingRegions
+      .map((regionDocument) => regionDocument?.id ?? null)
+      .filter(Boolean);
+    const regionIdsToDelete = candidateRegionIds.filter((regionId) => {
+      if (pendingRegionCleanup.has(regionId)) {
+        return false;
+      }
+
+      return Boolean(scene?.regions?.get?.(regionId));
+    });
+
+    if (!regionIdsToDelete.length) {
+      debug("Skipped managed Region Item cleanup because deletion is already pending.", {
+        itemUuid,
+        sceneId: scene.id,
+        reason,
+        regionIds: candidateRegionIds
+      });
+      continue;
+    }
+
+    for (const regionId of regionIdsToDelete) {
+      pendingRegionCleanup.add(regionId);
+    }
+
+    try {
+      for (const regionId of regionIdsToDelete) {
+        const regionDocument = scene?.regions?.get?.(regionId) ?? null;
+        if (!regionDocument) {
+          continue;
+        }
+
+        try {
+          await cleanupLinkedDocumentsForRegion(regionDocument, {
+            reason,
+            skipRuntimeUpdate: true
+          });
+        } catch (caughtError) {
+          error("Failed to cleanup linked documents before Item Region deletion.", caughtError, {
+            itemUuid,
+            regionId,
+            sceneId: scene.id,
+            reason
+          });
+        }
+      }
+
+      for (const [groupKey, groupRegionIds] of groupExistingRegionIdsByKey(scene, regionIdsToDelete).entries()) {
+        debug("Cleaned managed Item Region group.", {
+          itemUuid,
+          sceneId: scene.id,
+          regionGroupKey: groupKey,
+          regionIds: groupRegionIds,
+          reason
+        });
+      }
+
+      const deletedInScene = await scene.deleteEmbeddedDocuments("Region", regionIdsToDelete);
+      deleted.push(...deletedInScene);
+    } catch (caughtError) {
+      const message = String(caughtError?.message ?? "");
+      if (message.toLowerCase().includes("does not exist")) {
+        debug("Ignored managed Item Region cleanup race because the Region was already deleted.", {
+          itemUuid,
+          sceneId: scene.id,
+          reason,
+          regionIds: regionIdsToDelete
+        });
+        continue;
+      }
+
+      throw caughtError;
+    } finally {
+      for (const regionId of regionIdsToDelete) {
+        pendingRegionCleanup.delete(regionId);
+      }
+    }
+  }
+
+  return deleted;
+}
+
 async function onCanvasReady(scene) {
   if (!isPrimaryGM()) {
     return;
@@ -200,6 +304,31 @@ async function onCanvasReady(scene) {
   } catch (caughtError) {
     error("Failed to cleanup Regions on canvasReady.", caughtError);
   }
+}
+
+async function resolveManagedItemUuid(itemOrUuid) {
+  if (!itemOrUuid) {
+    return null;
+  }
+
+  if (itemOrUuid?.documentName === "Item") {
+    return itemOrUuid.uuid ?? null;
+  }
+
+  if (typeof itemOrUuid !== "string") {
+    return null;
+  }
+
+  const resolvedDocument = await fromUuidSafe(itemOrUuid);
+  if (resolvedDocument?.documentName === "Item") {
+    return resolvedDocument.uuid ?? null;
+  }
+
+  if (resolvedDocument?.parent?.documentName === "Item") {
+    return resolvedDocument.parent.uuid ?? null;
+  }
+
+  return null;
 }
 
 async function onDeleteMeasuredTemplate(templateDocument) {

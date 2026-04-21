@@ -1,4 +1,5 @@
 import { MODULE_ID } from "./constants.mjs";
+import { openPersistentZonesItemConfig } from "./ui/item-config-app.mjs";
 import {
   cleanupSceneRegions,
   cleanupWorldRegions
@@ -39,6 +40,10 @@ export function createPersistentZonesApi() {
         caster,
         templateDocument: options.templateDocument ?? null
       });
+    },
+
+    async openItemConfig(itemOrUuid, options = {}) {
+      return openPersistentZonesItemConfig(itemOrUuid, options);
     },
 
     async createRegionFromTemplate(templateDocument, options = {}) {

@@ -1,0 +1,111 @@
+.persistent-zones-item-config-app .window-content {
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+
+.persistent-zones-item-config {
+  height: 100%;
+}
+
+.persistent-zones-item-config__layout {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.persistent-zones-item-config__card {
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--color-bg-option) 72%, transparent);
+}
+
+.persistent-zones-item-config__card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.persistent-zones-item-config__card--validation,
+.persistent-zones-item-config__card--actions,
+.persistent-zones-item-config__card--preview {
+  grid-column: 1 / -1;
+}
+
+.persistent-zones-item-config__card--actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.persistent-zones-item-config__card--actions .button {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.persistent-zones-item-config__validation-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.persistent-zones-item-config__pill {
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.825rem;
+  font-weight: 600;
+}
+
+.persistent-zones-item-config__pill.is-valid {
+  background: rgba(39, 124, 60, 0.18);
+  color: #2b7a34;
+}
+
+.persistent-zones-item-config__pill.is-invalid {
+  background: rgba(162, 52, 52, 0.18);
+  color: #a23434;
+}
+
+.persistent-zones-item-config__meta {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.persistent-zones-item-config__reasons {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.persistent-zones-item-config__card textarea {
+  width: 100%;
+  min-height: 16rem;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.persistent-zones-item-config-button.is-valid {
+  color: #2b7a34;
+}
+
+.persistent-zones-item-config-button.is-invalid {
+  color: #a23434;
+}
+
+.persistent-zones-item-config-button.is-inactive {
+  color: #9b7d3a;
+}
+
+.persistent-zones-item-config-button.is-disabled {
+  color: var(--color-text-dark-secondary);
+}
+
+@media (max-width: 900px) {
+  .persistent-zones-item-config__layout {
+    grid-template-columns: 1fr;
+  }
+}

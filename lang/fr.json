@@ -1,5 +1,85 @@
 {
   "PERSISTENT_ZONES": {
-    "ZoneSuffix": "Zone Persistante"
+    "ZoneSuffix": "Zone persistante",
+    "UI": {
+      "ConfigTitle": "Zones persistantes",
+      "HeaderButtonLabel": "Ouvrir la configuration Persistent Zones",
+      "HeaderButtonHintDisabled": "Persistent Zones n'est pas configur\u00e9 sur cet objet",
+      "HeaderButtonHintInactive": "Persistent Zones est configur\u00e9 mais d\u00e9sactiv\u00e9 sur cet objet",
+      "HeaderButtonHintValid": "Persistent Zones est configur\u00e9 et valide",
+      "HeaderButtonHintInvalid": "Persistent Zones est configur\u00e9, mais la d\u00e9finition actuelle est invalide",
+      "ClearTitle": "Supprimer la d\u00e9finition Persistent Zones",
+      "ClearConfirm": "Supprimer la d\u00e9finition persistent-zones de cet objet ?",
+      "NoneOption": "Aucun",
+      "Sections": {
+        "Basics": "Base",
+        "OnEnter": "\u00c0 l'entr\u00e9e",
+        "Validation": "Validation",
+        "RawDefinition": "D\u00e9finition brute",
+        "NormalizedDefinition": "D\u00e9finition normalis\u00e9e"
+      },
+      "Fields": {
+        "Enabled": "Persistent Zones activ\u00e9",
+        "BaseType": "Type de base",
+        "SimpleTemplateType": "Type de gabarit",
+        "SelectedVariant": "Variante s\u00e9lectionn\u00e9e",
+        "DefaultVariant": "Variante par d\u00e9faut",
+        "AvailableVariants": "Variantes disponibles",
+        "VariantResolutionMode": "R\u00e9solution de variante",
+        "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
+        "OnEnterEnabled": "Activer onEnter",
+        "DamageFormula": "Formule de d\u00e9g\u00e2ts",
+        "DamageType": "Type de d\u00e9g\u00e2ts",
+        "SaveAbility": "Caract\u00e9ristique du save",
+        "SaveDcMode": "Source du DD",
+        "SaveDcModeAuto": "Automatique",
+        "SaveDcModeManual": "Manuel",
+        "SaveDc": "DD du save",
+        "WallThickness": "\u00c9paisseur du mur",
+        "SideThickness": "\u00c9paisseur de la zone lat\u00e9rale"
+      },
+      "BaseTypes": {
+        "Simple": "Simple",
+        "Ring": "Anneau",
+        "CompositeLine": "Ligne composite",
+        "CompositeRing": "Anneau composite"
+      },
+      "TemplateTypes": {
+        "Circle": "Cercle",
+        "Cone": "C\u00f4ne",
+        "Ray": "Ligne / Rayon",
+        "Rect": "Rectangle"
+      },
+      "Variants": {
+        "LineLeft": "Ligne gauche",
+        "LineRight": "Ligne droite",
+        "RingInner": "Anneau int\u00e9rieur",
+        "RingOuter": "Anneau ext\u00e9rieur"
+      },
+      "Parts": {
+        "WallBody": "Corps du mur",
+        "HeatedSideLeft": "C\u00f4t\u00e9 chauff\u00e9 gauche",
+        "HeatedSideRight": "C\u00f4t\u00e9 chauff\u00e9 droit",
+        "HeatedSideInner": "C\u00f4t\u00e9 chauff\u00e9 int\u00e9rieur",
+        "HeatedSideOuter": "C\u00f4t\u00e9 chauff\u00e9 ext\u00e9rieur"
+      },
+      "Validation": {
+        "Valid": "Valide",
+        "Invalid": "Invalide",
+        "NoIssues": "Aucun probl\u00e8me de validation d\u00e9tect\u00e9 pour la pr\u00e9visualisation actuelle."
+      },
+      "Actions": {
+        "Preview": "Pr\u00e9visualiser",
+        "Save": "Enregistrer",
+        "Clear": "Supprimer"
+      },
+      "Help": {
+        "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite."
+      },
+      "Notifications": {
+        "Saved": "D\u00e9finition Persistent Zones enregistr\u00e9e.",
+        "Cleared": "D\u00e9finition Persistent Zones supprim\u00e9e."
+      }
+    }
   }
 }

@@ -18,6 +18,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 - Can create a managed Region group when one template expands into multiple logical parts.
 - Supports explicit variant selection when one logical definition exposes multiple alternative zone compositions.
 - Resolves variants with a stable fallback order: `selectedVariant`, then `defaultVariant`, then single-option, then deterministic fallback.
+- Includes a first Item authoring UI for writing compatible `flags["persistent-zones"].definition` data without using only debug console helpers.
 - Supports a first composite geometry mode for annulus / ring-style parts.
 - Supports ring wall-body geometry with explicit `thickness`, anchored to the outer edge of the template circle and extending inward.
 - Supports a first directional geometry mode for `side-of-line` parts on ray-like templates.
@@ -32,6 +33,7 @@ FoundryVTT module dedicated to persistent zones runtime.
 ## Debug / Dev
 
 - As GM, apply a debug definition to an existing item with `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "basic")`.
+- For first-pass authoring, open an Item sheet and use the `Persistent Zones` header button, or call `await game.persistentZones.openItemConfig(itemOrUuid)`.
 - For entry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "entry-damage-save")`.
 - For turn testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "turn-damage-save")`.
 - For linked light testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light")`.

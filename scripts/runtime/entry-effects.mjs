@@ -1,4 +1,11 @@
-import { debug, coerceNumber, error, pickFirstDefined } from "./utils.mjs";
+import {
+  debug,
+  coerceNumber,
+  error,
+  fromUuidSafe,
+  getRegionRuntimeFlags,
+  pickFirstDefined
+} from "./utils.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -39,6 +46,14 @@ export async function applyConfiguredTriggerEffect({
     const saveResult = configuredTrigger.save?.enabled
       ? await resolveSaveResult(actor, configuredTrigger.save, regionDocument, tokenDocument, normalizedTiming)
       : null;
+
+    if (saveResult?.unresolved) {
+      return buildSkippedResult("Save DC could not be resolved.", {
+        timing: normalizedTiming,
+        save: saveResult
+      });
+    }
+
     const damageResult = configuredTrigger.damage?.enabled
       ? await resolveDamageResult(
         configuredTrigger.damage,
@@ -88,9 +103,28 @@ export async function applyConfiguredTriggerEffect({
 
 async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument, timing = "custom") {
   const ability = String(saveConfig.ability ?? "").toLowerCase();
-  const dc = coerceNumber(saveConfig.dc, null);
+  const dc = await resolveConfiguredSaveDc(saveConfig, regionDocument);
   let roll = null;
   const timingLabel = String(timing || "custom");
+
+  if (dc === null) {
+    debug(`Skipped ${timingLabel} save because no DC could be resolved.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      actorUuid: actor?.uuid ?? null,
+      timing: timingLabel,
+      ability
+    });
+
+    return {
+      ability,
+      dc: null,
+      total: null,
+      success: false,
+      unresolved: true,
+      onSuccess: String(saveConfig.onSuccess ?? "half").toLowerCase()
+    };
+  }
 
   if (typeof actor.rollAbilitySave === "function") {
     roll = await actor.rollAbilitySave(ability, {
@@ -131,6 +165,37 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
   });
 
   return result;
+}
+
+async function resolveConfiguredSaveDc(saveConfig, regionDocument) {
+  const dcMode = normalizeSaveDcMode(saveConfig?.dcMode, saveConfig?.dcSource, saveConfig?.dc);
+  const explicitDc = coerceNumber(saveConfig?.dc, null);
+  if (dcMode !== "auto") {
+    return explicitDc;
+  }
+
+  const dcSource = normalizeSaveDcSource(saveConfig?.dcSource);
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const sourceActor = await resolveSaveSourceActor(dcSource, runtime);
+  const resolvedDc = coerceNumber(
+    pickFirstDefined(
+      getActorSaveDc(sourceActor),
+      runtime.dc,
+      explicitDc
+    ),
+    null
+  );
+
+  debug("Resolved configured save DC.", {
+    regionId: regionDocument?.id ?? null,
+    dcMode,
+    dcSource,
+    sourceActorUuid: sourceActor?.uuid ?? null,
+    resolvedDc,
+    fallbackDc: coerceNumber(pickFirstDefined(runtime.dc, explicitDc), null)
+  });
+
+  return resolvedDc;
 }
 
 async function resolveDamageResult(damageConfig, saveResult, regionDocument, tokenDocument, timing = "custom") {
@@ -217,6 +282,60 @@ function getManualSaveBonus(actor, ability) {
     ),
     0
   );
+}
+
+async function resolveSaveSourceActor(dcSource, runtime) {
+  const sourceOrder =
+    dcSource === "actor"
+      ? [runtime.actorUuid, runtime.casterUuid, runtime.itemUuid]
+      : [runtime.casterUuid, runtime.actorUuid, runtime.itemUuid];
+
+  for (const sourceUuid of sourceOrder) {
+    if (!sourceUuid) {
+      continue;
+    }
+
+    const resolvedDocument = await fromUuidSafe(sourceUuid);
+    if (resolvedDocument?.documentName === "Actor") {
+      return resolvedDocument;
+    }
+
+    if (resolvedDocument?.actor?.documentName === "Actor") {
+      return resolvedDocument.actor;
+    }
+  }
+
+  return null;
+}
+
+function getActorSaveDc(actor) {
+  return coerceNumber(
+    pickFirstDefined(
+      actor?.system?.attributes?.spell?.dc,
+      actor?.system?.attributes?.spelldc,
+      actor?.system?.attributes?.spellcasting?.dc,
+      actor?.system?.spells?.spellcasting?.dc,
+      actor?.system?.spells?.dc
+    ),
+    null
+  );
+}
+
+function normalizeSaveDcMode(dcMode, dcSource, dc) {
+  if (String(dcMode ?? "").toLowerCase() === "auto") {
+    return "auto";
+  }
+
+  if (dcSource) {
+    return "auto";
+  }
+
+  return dc === null || dc === undefined ? "manual" : "manual";
+}
+
+function normalizeSaveDcSource(value) {
+  const normalized = String(value ?? "caster").toLowerCase();
+  return ["caster", "actor", "token"].includes(normalized) ? normalized : "caster";
 }
 
 function buildSkippedResult(reason, extra = {}) {

@@ -1238,6 +1238,14 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
   const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
+  const saveDcMode = normalizeSaveDcMode(
+    pickFirstDefined(
+      saveDefinition.dcMode,
+      saveDefinition.mode,
+      saveDefinition.dcSource ? "auto" : null,
+      "manual"
+    )
+  );
 
   return {
     enabled: coerceBoolean(
@@ -1278,6 +1286,10 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
         false
       ),
       ability: String(pickFirstDefined(saveDefinition.ability, saveDefinition.abilityId, "")).toLowerCase() || null,
+      dcMode: saveDcMode,
+      dcSource: saveDcMode === "auto"
+        ? normalizeSaveDcSource(pickFirstDefined(saveDefinition.dcSource, "caster"))
+        : null,
       dc: coerceNumber(pickFirstDefined(saveDefinition.dc, dc), null),
       onSuccess: String(pickFirstDefined(saveDefinition.onSuccess, "half")).toLowerCase()
     }
@@ -1593,10 +1605,19 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
     if (!triggerConfig.save.ability) {
       reasons.push(`${triggerName} save requires an ability.`);
     }
-    if (triggerConfig.save.dc === null) {
+    if (triggerConfig.save.dcMode !== "auto" && triggerConfig.save.dc === null) {
       reasons.push(`${triggerName} save requires a DC.`);
     }
   }
+}
+
+function normalizeSaveDcMode(value) {
+  return String(value ?? "manual").toLowerCase() === "auto" ? "auto" : "manual";
+}
+
+function normalizeSaveDcSource(value) {
+  const normalized = String(value ?? "caster").toLowerCase();
+  return ["caster", "actor", "token"].includes(normalized) ? normalized : "caster";
 }
 
 function normalizeMovementMode(value) {

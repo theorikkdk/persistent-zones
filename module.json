@@ -39,7 +39,9 @@
       "path": "lang/fr.json"
     }
   ],
-  "styles": [],
+  "styles": [
+    "styles/persistent-zones.css"
+  ],
   "packs": [],
   "socket": false,
   "manifest": "",
