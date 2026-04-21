@@ -1026,15 +1026,43 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
   exitMovementModeMatched,
   exitCenter
 }) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const partId =
+    runtime?.partId ??
+    runtime?.part?.id ??
+    runtime?.normalizedDefinition?.part?.id ??
+    null;
+  const triggerTiming = "onExit";
+  const triggerMode = String(onExit?.mode ?? "none");
+  const selectedActivity =
+    onExit?.activity?.id ??
+    onExit?.activityId ??
+    null;
+
   if (!exitDetected) {
     return false;
   }
 
   if (!onExit.enabled) {
-    debug("Skipped managed Region effect because onExit is disabled.", {
-      tokenId: tokenDocument.id,
-      regionId: regionDocument.id
-    });
+    if (triggerMode === "none") {
+      debug("Skipped managed Region onExit effect because mode = none.", {
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId,
+        triggerTiming,
+        triggerMode,
+        selectedActivity
+      });
+    } else {
+      debug("Skipped managed Region effect because onExit is disabled.", {
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId,
+        triggerTiming,
+        triggerMode,
+        selectedActivity
+      });
+    }
     return false;
   }
 
@@ -1042,7 +1070,11 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
     debug("Skipped managed Region effect because movement mode did not match.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
+      partId,
       trigger: "onExit",
+      triggerTiming,
+      triggerMode,
+      selectedActivity,
       moveSource,
       movementMode,
       requiredMovementMode: onExit.movementMode ?? "any",
@@ -1054,7 +1086,11 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
   if (isDuplicateMovementTrigger("exit", regionDocument, tokenDocument, moveSource, exitCenter)) {
     debug("Skipped managed Region effect because the exit was deduplicated.", {
       tokenId: tokenDocument.id,
-      regionId: regionDocument.id
+      regionId: regionDocument.id,
+      partId,
+      triggerTiming,
+      triggerMode,
+      selectedActivity
     });
     return false;
   }
@@ -1069,10 +1105,20 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
   debug("Managed Region onExit effect completed.", {
     tokenId: tokenDocument.id,
     regionId: regionDocument.id,
+    partId,
+    triggerTiming,
+    triggerMode,
+    selectedActivity,
     moveSource,
     movementMode,
     requiredMovementMode: onExit.movementMode ?? "any",
     movementModeMatched: true,
+    activityFound: application.activityFound ?? null,
+    activityTriggered: application.activityTriggered ?? null,
+    simpleEffectApplied:
+      triggerMode === "simple"
+        ? Boolean(application.applied && !application.skipped)
+        : null,
     applied: application.applied,
     skipped: application.skipped ?? false,
     reason: application.reason ?? null

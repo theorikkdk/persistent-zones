@@ -18,6 +18,7 @@
         "Behaviors": "Comportements des parts effectives",
         "Triggers": "Triggers",
         "OnEnter": "\u00c0 l'entr\u00e9e",
+        "OnExit": "\u00c0 la sortie",
         "OnStartTurn": "Au d\u00e9but du tour",
         "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",

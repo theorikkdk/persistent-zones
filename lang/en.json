@@ -18,6 +18,7 @@
         "Behaviors": "Effective Part Behaviors",
         "Triggers": "Triggers",
         "OnEnter": "On Enter",
+        "OnExit": "On Exit",
         "OnStartTurn": "On Start Turn",
         "OnEndTurn": "On End Turn",
         "Validation": "Validation",

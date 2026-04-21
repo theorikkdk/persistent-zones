@@ -78,6 +78,7 @@ const AUTHORING_PART_IDS = Object.freeze([
 ]);
 const AUTHORING_TRIGGER_TIMINGS = Object.freeze([
   "onEnter",
+  "onExit",
   "onStartTurn",
   "onEndTurn"
 ]);
@@ -921,6 +922,8 @@ function getTriggerFieldBaseName(fieldKey, timing) {
 
 function getTriggerTimingLabel(timing) {
   switch (normalizeAuthoringTriggerTiming(timing)) {
+    case "onExit":
+      return localize("PERSISTENT_ZONES.UI.Sections.OnExit", "On Exit");
     case "onStartTurn":
       return localize("PERSISTENT_ZONES.UI.Sections.OnStartTurn", "On Start Turn");
     case "onEndTurn":
@@ -933,6 +936,8 @@ function getTriggerTimingLabel(timing) {
 
 function normalizeAuthoringTriggerTiming(value) {
   switch (String(value ?? "").trim()) {
+    case "onExit":
+      return "onExit";
     case "onStartTurn":
       return "onStartTurn";
     case "onEndTurn":
