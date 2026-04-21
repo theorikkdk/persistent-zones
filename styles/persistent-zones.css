@@ -358,6 +358,27 @@
   gap: 0.35rem;
 }
 
+.persistent-zones-item-config__debug-parts {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.persistent-zones-item-config__debug-list {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--pz-text);
+}
+
+.persistent-zones-item-config__debug-list li + li {
+  margin-top: 0.25rem;
+}
+
+.persistent-zones-item-config__json-details {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
 .persistent-zones-item-config__card textarea {
   min-height: 10rem;
   resize: vertical;

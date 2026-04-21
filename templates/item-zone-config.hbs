@@ -124,6 +124,20 @@
               </div>
             </div>
 
+            {{#if triggerSection.showMovementMode}}
+              <div class="form-group form-group--stacked">
+                <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementMode"}}</label>
+                <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                  {{#each triggerSection.movementModeOptions as |option|}}
+                    <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                      <input type="radio" name="{{triggerSection.movementModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                      <span>{{option.label}}</span>
+                    </label>
+                  {{/each}}
+                </div>
+              </div>
+            {{/if}}
+
             {{#if triggerSection.showStepMode}}
               <div class="form-group form-group--stacked">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.StepMode"}}</label>
@@ -247,6 +261,20 @@
                   {{/each}}
                 </div>
               </div>
+
+              {{#if triggerSection.showMovementMode}}
+                <div class="form-group form-group--stacked">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementMode"}}</label>
+                  <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                    {{#each triggerSection.movementModeOptions as |option|}}
+                      <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                        <input type="radio" name="{{triggerSection.movementModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                        <span>{{option.label}}</span>
+                      </label>
+                    {{/each}}
+                  </div>
+                </div>
+              {{/if}}
 
               {{#if triggerSection.showStepMode}}
                 <div class="form-group form-group--stacked">
@@ -408,36 +436,73 @@
       <details>
         <summary>{{localize "PERSISTENT_ZONES.UI.Sections.AdvancedDebug"}}</summary>
 
+        <h3>{{localize "PERSISTENT_ZONES.UI.Sections.StructuredDebug"}}</h3>
         <div class="persistent-zones-item-config__meta">
-          <div>
-            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.PreviewTemplateType"}}:</strong>
-            <span>{{preview.previewTemplateTypeLabel}}</span>
-          </div>
-          {{#if preview.normalizedDefinition.variantCount}}
+          {{#each preview.debugInspector.overviewRows as |row|}}
             <div>
-              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.AvailableVariants"}}:</strong>
-              <span>{{preview.normalizedDefinition.availableVariants}}</span>
+              <strong>{{row.label}}:</strong>
+              <span>{{row.value}}</span>
             </div>
-            <div>
-              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
-              <span>{{preview.normalizedDefinition.selectedVariantId}}</span>
-            </div>
-            <div>
-              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DefaultVariant"}}:</strong>
-              <span>{{preview.normalizedDefinition.defaultVariantId}}</span>
-            </div>
-            <div>
-              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.VariantResolutionMode"}}:</strong>
-              <span>{{preview.variantResolution.resolutionMode}}</span>
-            </div>
-          {{/if}}
+          {{/each}}
         </div>
 
-        <h3>{{localize "PERSISTENT_ZONES.UI.Sections.RawDefinition"}}</h3>
-        <textarea readonly>{{preview.rawDefinitionJson}}</textarea>
+        {{#if preview.debugInspector.partSummaries.length}}
+          <div class="persistent-zones-item-config__debug-parts">
+            {{#each preview.debugInspector.partSummaries as |part|}}
+              <fieldset class="persistent-zones-item-config__part-section">
+                <legend>{{part.label}}</legend>
 
-        <h3>{{localize "PERSISTENT_ZONES.UI.Sections.NormalizedDefinition"}}</h3>
-        <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
+                <div class="persistent-zones-item-config__meta">
+                  <div>
+                    <strong>{{localize "PERSISTENT_ZONES.UI.Fields.PartId"}}:</strong>
+                    <span>{{part.id}}</span>
+                  </div>
+                  <div>
+                    <strong>{{localize "PERSISTENT_ZONES.UI.Fields.GeometryType"}}:</strong>
+                    <span>{{part.geometryTypeLabel}}</span>
+                  </div>
+                </div>
+
+                <ul class="persistent-zones-item-config__debug-list">
+                  {{#each part.triggerSummaries as |trigger|}}
+                    <li>
+                      <strong>{{trigger.label}}:</strong>
+                      <span>{{trigger.summaryText}}</span>
+                    </li>
+                  {{/each}}
+                </ul>
+              </fieldset>
+            {{/each}}
+          </div>
+        {{/if}}
+
+        {{#if preview.debugInspector.warnings.length}}
+          <h3>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}</h3>
+          <ul class="persistent-zones-item-config__warnings">
+            {{#each preview.debugInspector.warnings as |warning|}}
+              <li>{{warning}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        {{#if preview.debugInspector.reasons.length}}
+          <h3>{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</h3>
+          <ul class="persistent-zones-item-config__reasons">
+            {{#each preview.debugInspector.reasons as |reason|}}
+              <li>{{reason}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        <details class="persistent-zones-item-config__json-details">
+          <summary>{{localize "PERSISTENT_ZONES.UI.Sections.RawDefinition"}}</summary>
+          <textarea readonly>{{preview.rawDefinitionJson}}</textarea>
+        </details>
+
+        <details class="persistent-zones-item-config__json-details">
+          <summary>{{localize "PERSISTENT_ZONES.UI.Sections.NormalizedDefinition"}}</summary>
+          <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
+        </details>
       </details>
     </section>
   </div>

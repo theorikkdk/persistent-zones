@@ -23,6 +23,7 @@
         "OnStartTurn": "Au d\u00e9but du tour",
         "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",
+        "StructuredDebug": "R\u00e9sum\u00e9 structur\u00e9",
         "AdvancedDebug": "Avancé / Debug",
         "RawDefinition": "D\u00e9finition brute",
         "NormalizedDefinition": "D\u00e9finition normalis\u00e9e"
@@ -40,7 +41,9 @@
         "AvailableVariants": "Variantes disponibles",
         "VariantResolutionMode": "R\u00e9solution de variante",
         "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
+        "Status": "Statut",
         "TriggerMode": "Mode",
+        "MovementMode": "Filtre de mouvement",
         "StepMode": "Mode de pas",
         "CellStep": "Nombre de cases",
         "DistanceStep": "Distance par d\u00e9clenchement",
@@ -54,8 +57,16 @@
         "SaveDcModeManual": "Manuel",
         "SaveDc": "DD du save",
         "Activity": "Activit\u00e9",
+        "PartCount": "Nombre de parts",
+        "PartId": "Identifiant de part",
+        "GeometryType": "Type de g\u00e9om\u00e9trie",
         "WallThickness": "\u00c9paisseur du mur",
         "SideThickness": "\u00c9paisseur de la zone lat\u00e9rale"
+      },
+      "MovementModes": {
+        "Any": "Tous",
+        "Voluntary": "Volontaire",
+        "Forced": "Forc\u00e9"
       },
       "OnEnterModes": {
         "None": "Aucun",
@@ -77,6 +88,12 @@
         "Cone": "C\u00f4ne",
         "Ray": "Ligne / Rayon",
         "Rect": "Rectangle"
+      },
+      "GeometryTypes": {
+        "Template": "Gabarit",
+        "Ring": "Anneau",
+        "SideOfLine": "Bande directionnelle",
+        "SideOfRing": "Bande annulaire directionnelle"
       },
       "TemplateTypeSources": {
         "Auto": "Auto",
@@ -125,6 +142,7 @@
         "RingOuter": "Anneau ext\u00e9rieur"
       },
       "Parts": {
+        "PrimaryZone": "Zone principale",
         "WallBody": "Corps du mur",
         "HeatedSideLeft": "C\u00f4t\u00e9 chauff\u00e9 gauche",
         "HeatedSideRight": "C\u00f4t\u00e9 chauff\u00e9 droit",

@@ -470,6 +470,15 @@ function buildDefinitionPreview(item, formState, definition) {
     const compatibilityIssues = collectActivityCompatibilityValidationIssues(selectionContext.state, item);
     const templateTypeWarnings = Array.from(templateTypeContext.warnings ?? []);
     const selectionWarnings = Array.from(selectionContext.warnings ?? []);
+    const reasons = [
+      ...normalizedReasons,
+      ...compatibilityIssues
+    ];
+    const warnings = [
+      ...templateTypeWarnings,
+      ...selectionWarnings
+    ];
+    const isValid = Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0;
 
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
@@ -481,18 +490,29 @@ function buildDefinitionPreview(item, formState, definition) {
       rawDefinitionJson: JSON.stringify(definition, null, 2),
       normalizedDefinition,
       normalizedDefinitionJson: JSON.stringify(normalizedDefinition, null, 2),
-      isValid: Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0,
-        reasons: [
-            ...normalizedReasons,
-            ...compatibilityIssues
-          ],
-        warnings: [
-          ...templateTypeWarnings,
-          ...selectionWarnings
-        ],
-        variantResolution: normalizedDefinition?.variantResolution ?? null
-      };
-    } catch (caughtError) {
+      isValid,
+      reasons,
+      warnings,
+      variantResolution: normalizedDefinition?.variantResolution ?? null,
+      debugInspector: buildStructuredDebugInspector({
+        item,
+        formState: selectionContext.state,
+        selectionContext,
+        previewTemplateDocument,
+        templateTypeContext,
+        normalizedDefinition,
+        isValid,
+        reasons,
+        warnings
+      })
+    };
+  } catch (caughtError) {
+    const reasons = [caughtError?.message ?? "Unknown preview error."];
+    const warnings = [
+      ...Array.from(templateTypeContext.warnings ?? []),
+      ...Array.from(selectionContext.warnings ?? [])
+    ];
+
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
       previewTemplateTypeLabel: previewTemplateDocument?.t
@@ -501,18 +521,256 @@ function buildDefinitionPreview(item, formState, definition) {
       templateTypeContext,
       rawDefinition: definition,
       rawDefinitionJson: JSON.stringify(definition, null, 2),
+      normalizedDefinition: null,
+      normalizedDefinitionJson: "",
+      isValid: false,
+      reasons,
+      warnings,
+      variantResolution: null,
+      debugInspector: buildStructuredDebugInspector({
+        item,
+        formState: selectionContext.state,
+        selectionContext,
+        previewTemplateDocument,
+        templateTypeContext,
         normalizedDefinition: null,
-        normalizedDefinitionJson: "",
         isValid: false,
-        reasons: [caughtError?.message ?? "Unknown preview error."],
-      warnings: [
-        ...Array.from(templateTypeContext.warnings ?? []),
-        ...Array.from(selectionContext.warnings ?? [])
-      ],
-        variantResolution: null
-      };
+        reasons,
+        warnings
+      })
+    };
+  }
+}
+
+function buildStructuredDebugInspector({
+  item = null,
+  formState = {},
+  selectionContext = null,
+  previewTemplateDocument = null,
+  templateTypeContext = null,
+  normalizedDefinition = null,
+  isValid = false,
+  reasons = [],
+  warnings = []
+} = {}) {
+  const effectiveState = normalizeAuthoringFormState(formState, {
+    item,
+    enforceTemplateCompatibility: true
+  });
+  const effectiveSelectionContext = selectionContext ?? resolveAuthoringSelectionContext(effectiveState, item);
+  const effectiveTemplateTypeContext = templateTypeContext ?? effectiveSelectionContext.templateTypeContext;
+  const normalizedWarnings = Array.from(warnings ?? []).filter(Boolean);
+  const normalizedReasons = Array.from(reasons ?? []).filter(Boolean);
+  const partSummaries = buildStructuredDebugPartSummaries({
+    item,
+    formState: effectiveState,
+    normalizedDefinition
+  });
+  const previewTemplateType = previewTemplateDocument?.t ?? effectiveTemplateTypeContext?.effectiveTemplateType ?? null;
+  const baseTypeLabel = getSelectedChoiceLabel(getBaseTypeChoices(), effectiveState.baseType)
+    ?? normalizeBaseType(effectiveState.baseType);
+  const selectedVariantLabel = effectiveState.selectedVariant
+    ? getVariantLabel(effectiveState.selectedVariant)
+    : localize("PERSISTENT_ZONES.UI.NoneOption", "None");
+
+  return {
+    overviewRows: [
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.Status", "Status"),
+        isValid
+          ? localize("PERSISTENT_ZONES.UI.Validation.Valid", "Valid")
+          : localize("PERSISTENT_ZONES.UI.Validation.Invalid", "Invalid")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.DetectedTemplateType", "Detected Template Type"),
+        effectiveTemplateTypeContext?.detectedTemplateTypeLabel
+          ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.DetectedTemplateSource", "Detected Template Source"),
+        effectiveTemplateTypeContext?.detectedTemplateSourceLabel
+          ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.EffectiveTemplateType", "Effective Template Type"),
+        effectiveTemplateTypeContext?.effectiveTemplateTypeLabel
+          ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.PreviewTemplateType", "Preview Template Type"),
+        previewTemplateType
+          ? localizeTemplateType(previewTemplateType)
+          : localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.BaseType", "Base Type"),
+        baseTypeLabel
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.SelectedVariant", "Selected Variant"),
+        selectedVariantLabel
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.PartCount", "Part Count"),
+        String(partSummaries.length)
+      )
+    ],
+    partSummaries,
+    warnings: normalizedWarnings,
+    reasons: normalizedReasons
+  };
+}
+
+function buildDebugInspectorRow(label, value) {
+  return {
+    label,
+    value: value ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+  };
+}
+
+function buildStructuredDebugPartSummaries({
+  item = null,
+  formState = {},
+  normalizedDefinition = null
+} = {}) {
+  const effectiveState = normalizeAuthoringFormState(formState, {
+    item,
+    enforceTemplateCompatibility: true
+  });
+  const normalizedParts = Array.from(normalizedDefinition?.parts ?? []);
+  const partConfigs = normalizeAuthoringPartConfigs(effectiveState.partConfigs);
+
+  if (!isCompositeBaseType(effectiveState.baseType)) {
+    const normalizedPart = normalizedParts[0] ?? null;
+    return [
+      buildStructuredDebugPartSummary({
+        item,
+        label: localize("PERSISTENT_ZONES.UI.Parts.PrimaryZone", "Primary Zone"),
+        partId: normalizedPart?.id ?? "primary-zone",
+        geometryType: normalizedPart?.geometry?.type ?? normalizedDefinition?.geometry?.type ?? "template",
+        triggerConfigs: effectiveState.triggerConfigs
+      })
+    ];
+  }
+
+  return getEffectivePartIdsForBaseType(effectiveState.baseType, effectiveState.selectedVariant)
+    .map((partId) => {
+      const normalizedPart = normalizedParts.find((part) => part?.id === partId) ?? null;
+      const partConfig = partConfigs?.[partId] ?? getDefaultPartAuthoringConfig(partId);
+
+      return buildStructuredDebugPartSummary({
+        item,
+        label: getEffectiveAuthoringPartLabel(
+          partId,
+          effectiveState.baseType,
+          effectiveState.selectedVariant
+        ),
+        partId,
+        geometryType: normalizedPart?.geometry?.type ?? null,
+        triggerConfigs: partConfig.triggerConfigs
+      });
+    });
+}
+
+function buildStructuredDebugPartSummary({
+  item = null,
+  label = "",
+  partId = "",
+  geometryType = null,
+  triggerConfigs = {}
+} = {}) {
+  const normalizedTriggerConfigs = normalizeAuthoringTriggerConfigs(triggerConfigs);
+
+  return {
+    id: partId,
+    label,
+    geometryType,
+    geometryTypeLabel: localizeGeometryType(geometryType),
+    triggerSummaries: AUTHORING_TRIGGER_TIMINGS.map((timing) => ({
+      label: getTriggerTimingLabel(timing),
+      summaryText: buildStructuredTriggerSummaryText({
+        item,
+        timing,
+        triggerConfig: normalizedTriggerConfigs?.[timing] ?? getDefaultTriggerAuthoringConfig()
+      })
+    }))
+  };
+}
+
+function buildStructuredTriggerSummaryText({
+  item = null,
+  timing = "onEnter",
+  triggerConfig = {}
+} = {}) {
+  const normalizedTiming = normalizeAuthoringTriggerTiming(timing);
+  const state = normalizeAuthoringTriggerConfig(triggerConfig);
+  const segments = [localizeTriggerModeLabel(state.mode)];
+
+  if (state.mode === "none") {
+    return segments.join(" | ");
+  }
+
+  if (isMovementTriggerTiming(normalizedTiming)) {
+    segments.push(
+      `${localize("PERSISTENT_ZONES.UI.Fields.MovementMode", "Movement Filter")}: ${localizeMovementModeLabel(state.movementMode)}`
+    );
+  }
+
+  if (normalizedTiming === "onMove") {
+    const normalizedStepMode = normalizeOnMoveStepMode(
+      state.stepMode,
+      getDefaultOnMoveStepMode()
+    );
+    const stepValue = normalizedStepMode === "grid-cell"
+      ? `x${clampMoveCellStep(state.cellStep, 1)}`
+      : clampTriggerDistanceStep(state.distanceStep, getDefaultOnMoveDistanceStep());
+    segments.push(
+      `${localize("PERSISTENT_ZONES.UI.Fields.StepMode", "Step Mode")}: ${localizeOnMoveStepModeLabel(normalizedStepMode)} ${stepValue}`
+    );
+  }
+
+  if (state.mode === "simple") {
+    if (state.damageFormula) {
+      const damageTypeLabel = getChoiceLabelByValue(
+        getDamageTypeChoices(),
+        state.damageType,
+        state.damageType
+      );
+      segments.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.DamageFormula", "Damage Formula")}: ${state.damageFormula}${damageTypeLabel ? ` ${damageTypeLabel}` : ""}`
+      );
+    }
+
+    if (state.saveAbility) {
+      const abilityLabel = getChoiceLabelByValue(
+        getAbilityChoices(),
+        state.saveAbility,
+        state.saveAbility
+      );
+      const saveDcLabel = state.saveDcMode === "auto"
+        ? localize("PERSISTENT_ZONES.UI.Fields.SaveDcModeAuto", "Automatic")
+        : `${localize("PERSISTENT_ZONES.UI.Fields.SaveDc", "Save DC")} ${Math.max(coerceNumber(state.saveDc, DEFAULT_SAVE_DC), 1)}`;
+      segments.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.SaveAbility", "Save Ability")}: ${abilityLabel ?? state.saveAbility} (${saveDcLabel})`
+      );
     }
   }
+
+  if (state.mode === "activity") {
+    const selectedActivity = buildZoneTriggerActivityFieldContext(item, state.activityId).allActivities
+      .find((activity) => activity.value === normalizeAuthoringActivityId(state.activityId)) ?? null;
+
+    segments.push(
+      `${localize("PERSISTENT_ZONES.UI.Fields.Activity", "Activity")}: ${selectedActivity?.label ?? state.activityId ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")}`
+    );
+
+    if (selectedActivity && !selectedActivity.compatibility?.supported) {
+      segments.push(selectedActivity.compatibilityReasonLabel);
+    }
+  }
+
+  return segments.filter(Boolean).join(" | ");
+}
 
 function readAuthoringFormState(root, seedState = null, item = null) {
   const form = root?.querySelector?.("form") ?? root;
@@ -980,6 +1238,8 @@ function getTriggerFieldBaseName(fieldKey, timing) {
       return normalizedTiming === "onEnter" ? "saveDcMode" : `${timingPrefix}SaveDcMode`;
     case "saveDc":
       return normalizedTiming === "onEnter" ? "saveDc" : `${timingPrefix}SaveDc`;
+    case "movementMode":
+      return normalizedTiming === "onEnter" ? "movementMode" : `${timingPrefix}MovementMode`;
     case "stepMode":
       return normalizedTiming === "onEnter" ? "stepMode" : `${timingPrefix}StepMode`;
     case "cellStep":
@@ -1045,10 +1305,10 @@ function readTriggerAuthoringFormState(form, existingTriggerConfigs = {}, {
       saveAbility: readOptionalValue(form, getTriggerFieldName("saveAbility", timing, { partId }), existingConfig.saveAbility),
       saveDcMode: readOptionalValue(form, getTriggerFieldName("saveDcMode", timing, { partId }), existingConfig.saveDcMode),
       saveDc: readOptionalValue(form, getTriggerFieldName("saveDc", timing, { partId }), existingConfig.saveDc),
+      movementMode: readOptionalValue(form, getTriggerFieldName("movementMode", timing, { partId }), existingConfig.movementMode),
       stepMode: readOptionalValue(form, getTriggerFieldName("stepMode", timing, { partId }), existingConfig.stepMode),
       cellStep: readOptionalValue(form, getTriggerFieldName("cellStep", timing, { partId }), existingConfig.cellStep),
       distanceStep: readOptionalValue(form, getTriggerFieldName("distanceStep", timing, { partId }), existingConfig.distanceStep),
-      movementMode: existingConfig.movementMode,
       stopMovementOnTrigger: existingConfig.stopMovementOnTrigger,
       activityId: readOptionalValue(form, getTriggerFieldName("activityId", timing, { partId }), existingConfig.activityId)
     };
@@ -1667,6 +1927,12 @@ function buildChoiceOptions(choices, selectedValue) {
   }));
 }
 
+function getChoiceLabelByValue(choices, selectedValue, fallbackValue = "") {
+  return Array.from(choices ?? [])
+    .find((choice) => String(choice?.value ?? "") === String(selectedValue ?? ""))
+    ?.label ?? fallbackValue;
+}
+
 function getBaseTypeChoices() {
   return [
     {
@@ -1992,11 +2258,13 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       saveAbilityFieldName: getTriggerFieldName("saveAbility", timing, { partId }),
       saveDcModeFieldName: getTriggerFieldName("saveDcMode", timing, { partId }),
       saveDcFieldName: getTriggerFieldName("saveDc", timing, { partId }),
+      movementModeFieldName: getTriggerFieldName("movementMode", timing, { partId }),
       stepModeFieldName: getTriggerFieldName("stepMode", timing, { partId }),
       cellStepFieldName: getTriggerFieldName("cellStep", timing, { partId }),
       distanceStepFieldName: getTriggerFieldName("distanceStep", timing, { partId }),
       activityFieldName: getTriggerFieldName("activityId", timing, { partId }),
       modeOptions: buildChoiceOptions(getTriggerModeChoices(), triggerState.mode),
+      movementModeOptions: buildChoiceOptions(getMovementModeChoices(), triggerState.movementMode),
       stepModeOptions: buildChoiceOptions(getOnMoveStepModeChoices(), triggerState.stepMode),
       damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), triggerState.damageType),
       saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), triggerState.saveDcMode),
@@ -2013,6 +2281,7 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       activityField,
       showSimpleFields: triggerState.mode === "simple",
       showActivityField: triggerState.mode === "activity",
+      showMovementMode: isMovementTriggerTiming(timing) && triggerState.mode !== "none",
       showStepMode: timing === "onMove" && triggerState.mode !== "none",
       showCellStep:
         timing === "onMove" &&
@@ -2090,6 +2359,23 @@ function getOnMoveStepModeChoices() {
     {
       value: "distance",
       label: localize("PERSISTENT_ZONES.UI.OnMoveStepModes.Distance", "By Distance")
+    }
+  ];
+}
+
+function getMovementModeChoices() {
+  return [
+    {
+      value: "any",
+      label: localize("PERSISTENT_ZONES.UI.MovementModes.Any", "Any")
+    },
+    {
+      value: "voluntary",
+      label: localize("PERSISTENT_ZONES.UI.MovementModes.Voluntary", "Voluntary")
+    },
+    {
+      value: "forced",
+      label: localize("PERSISTENT_ZONES.UI.MovementModes.Forced", "Forced")
     }
   ];
 }
@@ -2471,6 +2757,50 @@ function getSelectedChoiceLabel(choices, selectedValue) {
   return choice?.label ?? null;
 }
 
+function localizeTriggerModeLabel(mode) {
+  switch (normalizeTriggerEffectMode(mode)) {
+    case "simple":
+      return localize("PERSISTENT_ZONES.UI.OnEnterModes.Simple", "Simple");
+    case "activity":
+      return localize("PERSISTENT_ZONES.UI.OnEnterModes.Activity", "Activity");
+    case "none":
+    default:
+      return localize("PERSISTENT_ZONES.UI.OnEnterModes.None", "None");
+  }
+}
+
+function localizeMovementModeLabel(movementMode) {
+  switch (normalizeAuthoringMovementMode(movementMode)) {
+    case "voluntary":
+      return localize("PERSISTENT_ZONES.UI.MovementModes.Voluntary", "Voluntary");
+    case "forced":
+      return localize("PERSISTENT_ZONES.UI.MovementModes.Forced", "Forced");
+    case "any":
+    default:
+      return localize("PERSISTENT_ZONES.UI.MovementModes.Any", "Any");
+  }
+}
+
+function localizeOnMoveStepModeLabel(stepMode) {
+  return normalizeOnMoveStepMode(stepMode, "distance") === "grid-cell"
+    ? localize("PERSISTENT_ZONES.UI.OnMoveStepModes.GridCell", "By Cell")
+    : localize("PERSISTENT_ZONES.UI.OnMoveStepModes.Distance", "By Distance");
+}
+
+function localizeGeometryType(geometryType) {
+  switch (String(geometryType ?? "template").trim().toLowerCase()) {
+    case "ring":
+      return localize("PERSISTENT_ZONES.UI.GeometryTypes.Ring", "Ring");
+    case "side-of-line":
+      return localize("PERSISTENT_ZONES.UI.GeometryTypes.SideOfLine", "Directional Line");
+    case "side-of-ring":
+      return localize("PERSISTENT_ZONES.UI.GeometryTypes.SideOfRing", "Directional Ring");
+    case "template":
+    default:
+      return localize("PERSISTENT_ZONES.UI.GeometryTypes.Template", "Template");
+  }
+}
+
 function localizeTemplateType(templateType) {
   switch (String(templateType ?? "").toLowerCase()) {
     case "cone":
@@ -2520,6 +2850,10 @@ function resolveChoiceLabel(choiceLike, fallbackValue = "") {
 function localize(key, fallback) {
   const localized = game.i18n?.localize?.(key);
   return localized && localized !== key ? localized : fallback;
+}
+
+function isMovementTriggerTiming(timing) {
+  return ["onEnter", "onExit", "onMove"].includes(normalizeAuthoringTriggerTiming(timing));
 }
 
 function isCompositeBaseType(baseType) {

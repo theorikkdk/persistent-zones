@@ -23,6 +23,7 @@
         "OnStartTurn": "On Start Turn",
         "OnEndTurn": "On End Turn",
         "Validation": "Validation",
+        "StructuredDebug": "Structured Summary",
         "AdvancedDebug": "Advanced / Debug",
         "RawDefinition": "Raw Definition",
         "NormalizedDefinition": "Normalized Definition"
@@ -40,7 +41,9 @@
         "AvailableVariants": "Available Variants",
         "VariantResolutionMode": "Variant Resolution",
         "PreviewTemplateType": "Preview Template Type",
+        "Status": "Status",
         "TriggerMode": "Mode",
+        "MovementMode": "Movement Filter",
         "StepMode": "Step Mode",
         "CellStep": "Cell Count",
         "DistanceStep": "Distance Step",
@@ -54,8 +57,16 @@
         "SaveDcModeManual": "Manual",
         "SaveDc": "Save DC",
         "Activity": "Activity",
+        "PartCount": "Part Count",
+        "PartId": "Part ID",
+        "GeometryType": "Geometry Type",
         "WallThickness": "Wall Thickness",
         "SideThickness": "Heated Side Thickness"
+      },
+      "MovementModes": {
+        "Any": "Any",
+        "Voluntary": "Voluntary",
+        "Forced": "Forced"
       },
       "OnEnterModes": {
         "None": "None",
@@ -77,6 +88,12 @@
         "Cone": "Cone",
         "Ray": "Line / Ray",
         "Rect": "Rectangle"
+      },
+      "GeometryTypes": {
+        "Template": "Template",
+        "Ring": "Ring",
+        "SideOfLine": "Directional Line",
+        "SideOfRing": "Directional Ring"
       },
       "TemplateTypeSources": {
         "Auto": "Auto",
@@ -125,6 +142,7 @@
         "RingOuter": "Ring Outer"
       },
       "Parts": {
+        "PrimaryZone": "Primary Zone",
         "WallBody": "Wall Body",
         "HeatedSideLeft": "Heated Side Left",
         "HeatedSideRight": "Heated Side Right",
