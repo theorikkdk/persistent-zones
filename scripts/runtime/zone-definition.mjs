@@ -197,7 +197,9 @@ export function normalizeZoneDefinition(
     selectedVariantId: variantSelection.selected?.id ?? null,
     variantResolution: duplicateData(variantSelection.resolution),
     targeting: normalizeTargeting(definition.targeting),
-    triggers: normalizeTriggers(triggerDefinition, dc),
+    triggers: normalizeTriggers(triggerDefinition, dc, {
+      item
+    }),
     geometry: normalizeGeometryDefinition(null, {
       templateDocument,
       templateDefinition,
@@ -225,7 +227,8 @@ export function normalizeZoneDefinition(
     movementCostDefinition,
     linkedWallsDefinition,
     linkedLightDefinition,
-    dc
+    dc,
+    item
   });
   normalizedDefinition.group = {
     mode: normalizedDefinition.parts.length > 1 ? "parts" : "single",
@@ -731,7 +734,9 @@ function normalizeLinkedLight(linkedLightDefinition, {
   return finalConfig;
 }
 
-function normalizeTriggers(triggerDefinition, dc) {
+function normalizeTriggers(triggerDefinition, dc, {
+  item = null
+} = {}) {
   const startTurnDefinition = pickFirstDefined(
     triggerDefinition.onStartTurn,
     triggerDefinition.onTurnStart
@@ -746,11 +751,21 @@ function normalizeTriggers(triggerDefinition, dc) {
   );
 
   return {
-    onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc),
-    onExit: normalizeTriggerConfig(triggerDefinition.onExit, dc),
-    onMove: normalizeTriggerConfig(moveDefinition, dc),
-    onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc),
-    onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc)
+    onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc, {
+      item
+    }),
+    onExit: normalizeTriggerConfig(triggerDefinition.onExit, dc, {
+      item
+    }),
+    onMove: normalizeTriggerConfig(moveDefinition, dc, {
+      item
+    }),
+    onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc, {
+      item
+    }),
+    onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc, {
+      item
+    })
   };
 }
 
@@ -764,7 +779,8 @@ function normalizeZoneParts({
   movementCostDefinition,
   linkedWallsDefinition,
   linkedLightDefinition,
-  dc
+  dc,
+  item = null
 }) {
   const sourceParts = Array.isArray(definition.parts)
     ? definition.parts
@@ -785,7 +801,8 @@ function normalizeZoneParts({
     movementCostDefinition,
     linkedWallsDefinition,
     linkedLightDefinition,
-    dc
+    dc,
+    item
   }));
 }
 
@@ -811,7 +828,8 @@ function normalizeZonePart(partLikeDefinition, index, {
   movementCostDefinition,
   linkedWallsDefinition,
   linkedLightDefinition,
-  dc
+  dc,
+  item = null
 }) {
   const partDefinition = isPlainObject(partLikeDefinition) ? partLikeDefinition : {};
   const mergedTriggerDefinition = mergePlainObjects(triggerDefinition, partDefinition.triggers);
@@ -862,7 +880,9 @@ function normalizeZonePart(partLikeDefinition, index, {
         templateDocument?.distance
       )
     }),
-    triggers: normalizeTriggers(mergedTriggerDefinition, dc)
+    triggers: normalizeTriggers(mergedTriggerDefinition, dc, {
+      item
+    })
   };
 }
 
@@ -1234,10 +1254,13 @@ function normalizeRingSegmentCount(value) {
   return Math.min(Math.max(numericValue, 8), 64);
 }
 
-function normalizeTriggerConfig(triggerLikeDefinition, dc) {
+function normalizeTriggerConfig(triggerLikeDefinition, dc, {
+  item = null
+} = {}) {
   const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
+  const activityDefinition = isPlainObject(definition.activity) ? definition.activity : {};
   const saveDcMode = normalizeSaveDcMode(
     pickFirstDefined(
       saveDefinition.dcMode,
@@ -1246,12 +1269,27 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
       "manual"
     )
   );
+  const activity = normalizeTriggerActivityConfig(
+    {
+      definition,
+      activityDefinition
+    },
+    item
+  );
+  const inferredMode = inferTriggerEffectMode(definition, {
+    damageDefinition,
+    saveDefinition,
+    activity
+  });
+  const mode = normalizeTriggerEffectMode(definition.mode, inferredMode);
+  const enabled = coerceBoolean(
+    pickFirstDefined(definition.enabled, definition.active, mode !== "none"),
+    mode !== "none"
+  ) && mode !== "none";
 
   return {
-    enabled: coerceBoolean(
-      pickFirstDefined(definition.enabled, definition.active, false),
-      false
-    ),
+    enabled,
+    mode: enabled ? mode : "none",
     movementMode: normalizeMovementMode(
       pickFirstDefined(definition.movementMode, "any")
     ),
@@ -1292,7 +1330,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc) {
         : null,
       dc: coerceNumber(pickFirstDefined(saveDefinition.dc, dc), null),
       onSuccess: String(pickFirstDefined(saveDefinition.onSuccess, "half")).toLowerCase()
-    }
+    },
+    activity
   };
 }
 
@@ -1580,7 +1619,7 @@ function mergePlainObjects(baseValue, overrideValue) {
 function validateTriggerConfig(triggerName, triggerConfig, reasons, {
   requireDistanceStep = false
 } = {}) {
-  if (!triggerConfig?.enabled) {
+  if (!triggerConfig?.enabled || triggerConfig?.mode === "none") {
     return;
   }
 
@@ -1588,6 +1627,19 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
     if (triggerConfig.distanceStep === null || triggerConfig.distanceStep <= 0) {
       reasons.push(`${triggerName} requires a positive distanceStep.`);
     }
+  }
+
+  if (triggerConfig.mode === "activity") {
+    if (!triggerConfig.activity?.id) {
+      reasons.push(`${triggerName} activity mode requires an activity selection.`);
+      return;
+    }
+
+    if (triggerConfig.activity.exists === false) {
+      reasons.push(`${triggerName} activity "${triggerConfig.activity.id}" could not be found on the source Item.`);
+    }
+
+    return;
   }
 
   if (!triggerConfig.damage.enabled && !triggerConfig.save.enabled) {
@@ -1613,6 +1665,120 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
 
 function normalizeSaveDcMode(value) {
   return String(value ?? "manual").toLowerCase() === "auto" ? "auto" : "manual";
+}
+
+function normalizeTriggerEffectMode(value, fallback = "none") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["none", "simple", "activity"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function inferTriggerEffectMode(definition, {
+  damageDefinition = {},
+  saveDefinition = {},
+  activity = null
+} = {}) {
+  if (activity?.id) {
+    return "activity";
+  }
+
+  const hasDamageConfig =
+    damageDefinition.enabled === true ||
+    coerceNumber(damageDefinition.amount, null) !== null ||
+    Boolean(String(pickFirstDefined(damageDefinition.formula, damageDefinition.roll, "")).trim());
+  const hasSaveConfig =
+    saveDefinition.enabled === true ||
+    Boolean(String(pickFirstDefined(saveDefinition.ability, saveDefinition.abilityId, "")).trim());
+
+  if (hasDamageConfig || hasSaveConfig || coerceBoolean(pickFirstDefined(definition.enabled, definition.active), false)) {
+    return "simple";
+  }
+
+  return "none";
+}
+
+function normalizeTriggerActivityConfig({
+  definition = {},
+  activityDefinition = {}
+} = {}, item = null) {
+  const activityId = normalizeActivityIdentifier(
+    pickFirstDefined(
+      activityDefinition.id,
+      activityDefinition.activityId,
+      definition.activityId,
+      typeof definition.activity === "string" ? definition.activity : null
+    )
+  );
+  const activityUuid = pickFirstDefined(
+    activityDefinition.uuid,
+    definition.activityUuid,
+    null
+  );
+  const activityName = pickFirstDefined(
+    activityDefinition.name,
+    definition.activityName,
+    null
+  );
+  const resolvedActivity = findItemActivityByReference(item, {
+    id: activityId,
+    uuid: activityUuid,
+    name: activityName
+  });
+
+  return {
+    id: resolvedActivity?.id ?? activityId,
+    uuid: resolvedActivity?.uuid ?? activityUuid ?? null,
+    name: resolvedActivity?.name ?? activityName ?? null,
+    exists: activityId ? Boolean(resolvedActivity) : false
+  };
+}
+
+function findItemActivityByReference(item, {
+  id = null,
+  uuid = null,
+  name = null
+} = {}) {
+  if (!item?.system?.activities) {
+    return null;
+  }
+
+  if (id && typeof item.system.activities.get === "function") {
+    const directMatch = item.system.activities.get(id);
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  const activities = Array.from(item.system.activities ?? [])
+    .map((entry) => Array.isArray(entry) ? entry[1] : entry)
+    .filter(Boolean);
+
+  return activities.find((activity) => {
+    if (
+      id &&
+      String(activity?.id ?? "").trim().toLowerCase() === String(id).trim().toLowerCase()
+    ) {
+      return true;
+    }
+
+    if (uuid && String(activity?.uuid ?? "").trim().toLowerCase() === String(uuid).trim().toLowerCase()) {
+      return true;
+    }
+
+    if (name && String(activity?.name ?? "").trim().toLowerCase() === String(name).trim().toLowerCase()) {
+      return true;
+    }
+
+    return false;
+  }) ?? null;
+}
+
+function normalizeActivityIdentifier(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
 }
 
 function normalizeSaveDcSource(value) {

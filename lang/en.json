@@ -28,6 +28,7 @@
         "VariantResolutionMode": "Variant Resolution",
         "PreviewTemplateType": "Preview Template Type",
         "OnEnterEnabled": "Enable onEnter",
+        "OnEnterMode": "onEnter Mode",
         "DamageFormula": "Damage Formula",
         "DamageType": "Damage Type",
         "SaveAbility": "Save Ability",
@@ -35,8 +36,14 @@
         "SaveDcModeAuto": "Automatic",
         "SaveDcModeManual": "Manual",
         "SaveDc": "Save DC",
+        "Activity": "Activity",
         "WallThickness": "Wall Thickness",
         "SideThickness": "Heated Side Thickness"
+      },
+      "OnEnterModes": {
+        "None": "None",
+        "Simple": "Simple",
+        "Activity": "Activity"
       },
       "BaseTypes": {
         "Simple": "Simple",
@@ -74,7 +81,8 @@
         "Clear": "Clear"
       },
       "Help": {
-        "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring."
+        "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
+        "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part."
       },
       "Notifications": {
         "Saved": "Persistent Zones definition saved.",

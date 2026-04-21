@@ -30,6 +30,7 @@ const DEFAULT_SAVE_DC_MODE = "manual";
 const DEFAULT_SAVE_DC_SOURCE = "caster";
 const DEFAULT_SIMPLE_TEMPLATE_TYPE = "circle";
 const DEFAULT_DAMAGE_TYPE = "fire";
+const DEFAULT_ON_ENTER_MODE = "none";
 const DEFAULT_LINE_TEMPLATE_WIDTH = 5;
 const DEFAULT_RING_WALL_THICKNESS = 5;
 const DEFAULT_COMPOSITE_WALL_THICKNESS = 1;
@@ -62,6 +63,13 @@ const FALLBACK_ABILITIES = Object.freeze({
   wis: "Wisdom",
   cha: "Charisma"
 });
+const AUTHORING_PART_IDS = Object.freeze([
+  "wall-body",
+  "heated-side-left",
+  "heated-side-right",
+  "heated-side-inner",
+  "heated-side-outer"
+]);
 
 export function registerPersistentZonesItemConfigUi() {
   Hooks.on("renderItemSheet5e", onRenderItemSheet5e);
@@ -123,6 +131,15 @@ class PersistentZonesItemConfig extends FormApplication {
     });
     const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
 
+    const compositeMode = isCompositeBaseType(formState.baseType);
+    const activityChoices = [
+      {
+        value: "",
+        label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      },
+      ...getItemActivityChoices(this.itemDocument)
+    ];
+
     return {
       item: this.itemDocument,
       itemName: this.itemDocument?.name ?? DEFAULT_ZONE_LABEL,
@@ -134,6 +151,7 @@ class PersistentZonesItemConfig extends FormApplication {
         getVariantChoicesForBaseType(formState.baseType),
         formState.selectedVariant
       ),
+      onEnterModeOptions: buildChoiceOptions(getOnEnterModeChoices(), formState.onEnterMode),
       damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), formState.damageType),
       saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), formState.saveDcMode),
       abilityOptions: buildChoiceOptions(
@@ -146,12 +164,22 @@ class PersistentZonesItemConfig extends FormApplication {
         ],
         formState.saveAbility
       ),
+      activityOptions: buildChoiceOptions(activityChoices, formState.activityId),
+      partSections: buildCompositePartSections(formState, this.itemDocument),
       showSimpleTemplateType: formState.baseType === "simple",
       showVariantSelect: hasVariantChoices(formState.baseType),
       showWallThickness: ["ring", "composite-line", "composite-ring"].includes(formState.baseType),
       showSideThickness: ["composite-line", "composite-ring"].includes(formState.baseType),
-      showSaveDcMode: Boolean(formState.saveAbility),
-      showManualSaveDc: Boolean(formState.saveAbility) && formState.saveDcMode === "manual",
+      showGlobalOnEnter: !compositeMode,
+      showCompositePartSections: compositeMode,
+      showGlobalSimpleFields: !compositeMode && formState.onEnterMode === "simple",
+      showGlobalActivityField: !compositeMode && formState.onEnterMode === "activity",
+      showGlobalSaveDcMode: !compositeMode && formState.onEnterMode === "simple" && Boolean(formState.saveAbility),
+      showGlobalManualSaveDc:
+        !compositeMode &&
+        formState.onEnterMode === "simple" &&
+        Boolean(formState.saveAbility) &&
+        formState.saveDcMode === "manual",
       preview
     };
   }
@@ -161,23 +189,30 @@ class PersistentZonesItemConfig extends FormApplication {
 
     html.find("[data-action='preview']").on("click", this.#onPreview.bind(this, html));
     html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
-    html
-      .find("[name='baseType'], [name='saveAbility'], [name='saveDcMode']")
-      .on("change", this.#onBaseTypeChanged.bind(this, html));
+    html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
   }
 
   async _updateObject(_event, formData) {
     const previousDefinition = getZoneDefinitionFromItem(this.itemDocument);
-    const formState = normalizeAuthoringFormState(formData);
+    const formState = readAuthoringFormState(
+      this.form,
+      this._draftState ?? deriveAuthoringStateFromDefinition(previousDefinition, this.itemDocument)
+    );
     const definition = buildDefinitionFromAuthoringState(formState, {
       item: this.itemDocument
     });
+    const previousBaseType = deriveBaseTypeFromDefinition(previousDefinition, this.itemDocument);
+    const nextBaseType = formState.baseType;
+    const removedLegacyFields = collectRemovedLegacyDefinitionFields(previousDefinition, definition);
 
-    await this.itemDocument.update({
-      [`flags.${MODULE_ID}.${DEFINITION_FLAG_KEY}`]: definition
-    });
+    if (previousDefinition) {
+      await this.itemDocument.unsetFlag(MODULE_ID, DEFINITION_FLAG_KEY);
+    }
 
-    this._draftState = duplicateData(formState);
+    await this.itemDocument.setFlag(MODULE_ID, DEFINITION_FLAG_KEY, definition);
+
+    const appliedDefinition = getZoneDefinitionFromItem(this.itemDocument) ?? definition;
+    this._draftState = deriveAuthoringStateFromDefinition(appliedDefinition, this.itemDocument);
     this.itemDocument.sheet?.render(false);
 
     if (previousDefinition && formState.enabled === false) {
@@ -186,12 +221,14 @@ class PersistentZonesItemConfig extends FormApplication {
       });
     }
 
-    debug("Saved persistent-zones item authoring definition.", {
+    debug("Rebuilt item zone definition for base type.", {
       itemUuid: this.itemDocument.uuid,
       itemName: this.itemDocument.name,
-      baseType: formState.baseType,
+      previousBaseType,
+      nextBaseType,
       selectedVariant: formState.selectedVariant,
-      enabled: formState.enabled
+      enabled: formState.enabled,
+      removedLegacyFields
     });
 
     ui.notifications?.info?.(
@@ -206,12 +243,18 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async #onPreview(html, event) {
     event.preventDefault();
-    this._draftState = readAuthoringFormState(html[0]);
+    this._draftState = readAuthoringFormState(
+      html[0],
+      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument)
+    );
     await this.render(false);
   }
 
   async #onBaseTypeChanged(html) {
-    this._draftState = readAuthoringFormState(html[0]);
+    this._draftState = readAuthoringFormState(
+      html[0],
+      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument)
+    );
     await this.render(false);
   }
 
@@ -419,22 +462,26 @@ function buildDefinitionPreview(item, formState, definition) {
   }
 }
 
-function readAuthoringFormState(root) {
+function readAuthoringFormState(root, seedState = null) {
   const form = root?.querySelector?.("form") ?? root;
+  const existingState = normalizeAuthoringFormState(seedState ?? getDefaultAuthoringState());
 
   return normalizeAuthoringFormState({
+    ...duplicateData(existingState),
     enabled: readCheckbox(form, "enabled"),
     baseType: readValue(form, "baseType"),
     simpleTemplateType: readValue(form, "simpleTemplateType"),
     selectedVariant: readValue(form, "selectedVariant"),
-    onEnterEnabled: readCheckbox(form, "onEnterEnabled"),
-    damageFormula: readValue(form, "damageFormula"),
-    damageType: readValue(form, "damageType"),
-    saveAbility: readValue(form, "saveAbility"),
-    saveDcMode: readValue(form, "saveDcMode"),
-    saveDc: readValue(form, "saveDc"),
-    wallThickness: readValue(form, "wallThickness"),
-    sideThickness: readValue(form, "sideThickness")
+    onEnterMode: readOptionalValue(form, "onEnterMode", existingState.onEnterMode),
+    damageFormula: readOptionalValue(form, "damageFormula", existingState.damageFormula),
+    damageType: readOptionalValue(form, "damageType", existingState.damageType),
+    saveAbility: readOptionalValue(form, "saveAbility", existingState.saveAbility),
+    saveDcMode: readOptionalValue(form, "saveDcMode", existingState.saveDcMode),
+    saveDc: readOptionalValue(form, "saveDc", existingState.saveDc),
+    activityId: readOptionalValue(form, "activityId", existingState.activityId),
+    wallThickness: readOptionalValue(form, "wallThickness", existingState.wallThickness),
+    sideThickness: readOptionalValue(form, "sideThickness", existingState.sideThickness),
+    partConfigs: readPartAuthoringFormState(form, existingState.partConfigs)
   });
 }
 
@@ -442,22 +489,14 @@ function normalizeAuthoringFormState(formData = {}) {
   const baseType = normalizeBaseType(formData.baseType);
   const simpleTemplateType = normalizeSimpleTemplateType(formData.simpleTemplateType);
   const selectedVariant = normalizeVariantSelection(baseType, formData.selectedVariant);
-  const damageFormula = String(formData.damageFormula ?? "").trim();
-  const saveAbility = normalizeAbilityId(formData.saveAbility);
-  const saveDcMode = normalizeSaveDcMode(formData.saveDcMode);
-  const saveDc = saveAbility ? Math.max(coerceNumber(formData.saveDc, DEFAULT_SAVE_DC), 1) : DEFAULT_SAVE_DC;
+  const triggerState = normalizeAuthoringTriggerState(formData, getDefaultTriggerAuthoringState());
 
   return {
     enabled: coerceBoolean(formData.enabled, true) ?? true,
     baseType,
     simpleTemplateType,
     selectedVariant,
-    onEnterEnabled: coerceBoolean(formData.onEnterEnabled, false) ?? false,
-    damageFormula,
-    damageType: normalizeDamageType(formData.damageType),
-    saveAbility,
-    saveDcMode,
-    saveDc,
+    ...triggerState,
     wallThickness: clampWallThickness(
       formData.wallThickness,
       getDefaultWallThicknessForBaseType(baseType)
@@ -465,7 +504,8 @@ function normalizeAuthoringFormState(formData = {}) {
     sideThickness: clampSideThickness(
       formData.sideThickness,
       getDefaultSideThicknessForBaseType(baseType)
-    )
+    ),
+    partConfigs: normalizeAuthoringPartConfigs(formData.partConfigs)
   };
 }
 
@@ -475,14 +515,10 @@ function getDefaultAuthoringState(item = null) {
     baseType: "simple",
     simpleTemplateType: inferItemTemplateType(item) ?? DEFAULT_SIMPLE_TEMPLATE_TYPE,
     selectedVariant: DEFAULT_VARIANT_BY_BASE_TYPE["composite-line"],
-    onEnterEnabled: false,
-    damageFormula: "2d6",
-    damageType: DEFAULT_DAMAGE_TYPE,
-    saveAbility: "",
-    saveDcMode: DEFAULT_SAVE_DC_MODE,
-    saveDc: DEFAULT_SAVE_DC,
+    ...getDefaultTriggerAuthoringState(),
     wallThickness: getDefaultWallThicknessForBaseType("simple"),
-    sideThickness: getDefaultSideThicknessForBaseType("simple")
+    sideThickness: getDefaultSideThicknessForBaseType("simple"),
+    partConfigs: buildDefaultPartAuthoringConfigs()
   };
 }
 
@@ -500,7 +536,10 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
     templateDocument: previewTemplateDocument
   });
   const baseType = detectAuthoringBaseType(effectiveDefinition, normalizedDefinition);
-  const onEnterConfig = resolveAuthoringOnEnterTrigger(normalizedDefinition, baseType);
+  const rootOnEnterConfig = isCompositeBaseType(baseType)
+    ? {}
+    : resolveAuthoringOnEnterTrigger(normalizedDefinition, baseType);
+  const rootTriggerState = normalizeAuthoringTriggerState(rootOnEnterConfig, fallbackState);
 
   return {
     enabled: coerceBoolean(rawDefinition.enabled, true) ?? true,
@@ -523,24 +562,222 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         fallbackState.selectedVariant
       )
     ),
-    onEnterEnabled: onEnterConfig.enabled ?? false,
-    damageFormula: String(onEnterConfig.damage?.formula ?? "").trim(),
-    damageType: normalizeDamageType(onEnterConfig.damage?.type ?? fallbackState.damageType),
-    saveAbility: normalizeAbilityId(onEnterConfig.save?.ability),
-    saveDcMode: normalizeSaveDcMode(
+    ...rootTriggerState,
+    wallThickness: deriveAuthoringWallThickness(effectiveDefinition, normalizedDefinition, baseType),
+    sideThickness: deriveCompositeSideThickness(effectiveDefinition, normalizedDefinition, baseType),
+    partConfigs: buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition)
+  };
+}
+
+function deriveBaseTypeFromDefinition(rawDefinition, item = null) {
+  if (!isPlainObject(rawDefinition)) {
+    return null;
+  }
+
+  try {
+    const effectiveDefinition = resolveEffectiveAuthoringDefinition(rawDefinition);
+    const previewTemplateDocument = buildPreviewTemplateDocumentFromDefinition(
+      rawDefinition,
+      effectiveDefinition,
+      item
+    );
+    const normalizedDefinition = normalizeZoneDefinition(rawDefinition, {
+      item,
+      actor: item?.actor ?? null,
+      templateDocument: previewTemplateDocument
+    });
+
+    return detectAuthoringBaseType(effectiveDefinition, normalizedDefinition);
+  } catch (_caughtError) {
+    return detectAuthoringBaseType(resolveEffectiveAuthoringDefinition(rawDefinition), null);
+  }
+}
+
+function collectRemovedLegacyDefinitionFields(previousDefinition, nextDefinition) {
+  if (!isPlainObject(previousDefinition)) {
+    return [];
+  }
+
+  const trackedPaths = [
+    "variants",
+    "selectedVariant",
+    "defaultVariant",
+    "variant",
+    "variantId",
+    "defaultVariantId",
+    "parts",
+    "zones",
+    "geometry",
+    "template.width",
+    "template.angle",
+    "template.direction"
+  ];
+
+  return trackedPaths.filter((path) => {
+    const previousValue = safeGet(previousDefinition, path);
+    const nextValue = safeGet(nextDefinition, path);
+    return previousValue !== undefined && nextValue === undefined;
+  });
+}
+
+function getDefaultTriggerAuthoringState(overrides = {}) {
+  return {
+    onEnterMode: DEFAULT_ON_ENTER_MODE,
+    damageFormula: "2d6",
+    damageType: DEFAULT_DAMAGE_TYPE,
+    saveAbility: "",
+    saveDcMode: DEFAULT_SAVE_DC_MODE,
+    saveDc: DEFAULT_SAVE_DC,
+    activityId: "",
+    ...(duplicateData(overrides) ?? {})
+  };
+}
+
+function getDefaultPartAuthoringConfig(partId = null) {
+  return getDefaultTriggerAuthoringState({
+    partId
+  });
+}
+
+function buildDefaultPartAuthoringConfigs() {
+  return AUTHORING_PART_IDS.reduce((configs, partId) => {
+    configs[partId] = getDefaultPartAuthoringConfig(partId);
+    return configs;
+  }, {});
+}
+
+function normalizeAuthoringTriggerState(triggerLike = {}, fallbackState = {}) {
+  const fallback = {
+    ...getDefaultTriggerAuthoringState(),
+    ...duplicateData(fallbackState ?? {})
+  };
+  const explicitEnabled = coerceBoolean(
+    pickFirstDefined(triggerLike.enabled, triggerLike.active),
+    null
+  );
+  const activityId = normalizeAuthoringActivityId(
+    extractActivityIdFromTriggerConfig(triggerLike) ?? fallback.activityId
+  );
+  const saveAbility = normalizeAbilityId(
+    pickFirstDefined(
+      triggerLike.saveAbility,
+      safeGet(triggerLike, ["save", "ability"]),
+      safeGet(triggerLike, ["save", "abilityId"]),
+      fallback.saveAbility
+    )
+  );
+  const saveDcMode = normalizeSaveDcMode(
+    pickFirstDefined(
+      triggerLike.saveDcMode,
+      safeGet(triggerLike, ["save", "dcMode"]),
+      safeGet(triggerLike, ["save", "dcSource"]) ? "auto" : null,
+      fallback.saveDcMode
+    )
+  );
+
+  return {
+    onEnterMode: normalizeTriggerEffectMode(
       pickFirstDefined(
-        onEnterConfig.save?.dcMode,
-        onEnterConfig.save?.dcSource ? "auto" : null,
-        fallbackState.saveDcMode
+        triggerLike.onEnterMode,
+        triggerLike.mode,
+        explicitEnabled === false ? "none" : null,
+        activityId ? "activity" : null,
+        hasSimpleTriggerConfiguration(triggerLike) ? "simple" : null,
+        fallback.onEnterMode
+      ),
+      fallback.onEnterMode
+    ),
+    damageFormula: String(
+      pickFirstDefined(
+        triggerLike.damageFormula,
+        safeGet(triggerLike, ["damage", "formula"]),
+        safeGet(triggerLike, ["damage", "roll"]),
+        fallback.damageFormula,
+        ""
+      )
+    ).trim(),
+    damageType: normalizeDamageType(
+      pickFirstDefined(
+        triggerLike.damageType,
+        safeGet(triggerLike, ["damage", "type"]),
+        fallback.damageType
       )
     ),
+    saveAbility,
+    saveDcMode,
     saveDc: Math.max(
-      coerceNumber(onEnterConfig.save?.dc, fallbackState.saveDc),
+      coerceNumber(
+        pickFirstDefined(
+          triggerLike.saveDc,
+          safeGet(triggerLike, ["save", "dc"]),
+          fallback.saveDc
+        ),
+        DEFAULT_SAVE_DC
+      ),
       1
     ),
-    wallThickness: deriveAuthoringWallThickness(effectiveDefinition, normalizedDefinition, baseType),
-    sideThickness: deriveCompositeSideThickness(effectiveDefinition, normalizedDefinition, baseType)
+    activityId
   };
+}
+
+function normalizeAuthoringPartConfigs(partConfigs = {}) {
+  return AUTHORING_PART_IDS.reduce((configs, partId) => {
+    configs[partId] = normalizeAuthoringTriggerState(
+      partConfigs?.[partId] ?? {},
+      getDefaultPartAuthoringConfig(partId)
+    );
+    return configs;
+  }, {});
+}
+
+function buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition) {
+  const partConfigs = buildDefaultPartAuthoringConfigs();
+  const applyPartConfig = (partId, triggerConfig) => {
+    if (!partId || !(partId in partConfigs)) {
+      return;
+    }
+
+    partConfigs[partId] = normalizeAuthoringTriggerState(
+      triggerConfig,
+      partConfigs[partId]
+    );
+  };
+
+  for (const part of Array.from(rawDefinition?.parts ?? rawDefinition?.zones ?? [])) {
+    applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers?.onEnter ?? {});
+  }
+
+  for (const variant of Array.from(rawDefinition?.variants ?? [])) {
+    for (const part of Array.from(variant?.parts ?? variant?.zones ?? [])) {
+      applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers?.onEnter ?? {});
+    }
+  }
+
+  for (const part of Array.from(normalizedDefinition?.parts ?? [])) {
+    applyPartConfig(part?.id ?? null, part?.triggers?.onEnter ?? {});
+  }
+
+  return partConfigs;
+}
+
+function readPartAuthoringFormState(form, existingPartConfigs = {}) {
+  const partConfigs = normalizeAuthoringPartConfigs(existingPartConfigs);
+
+  for (const partId of AUTHORING_PART_IDS) {
+    const existingConfig = partConfigs[partId] ?? getDefaultPartAuthoringConfig(partId);
+
+    partConfigs[partId] = {
+      onEnterMode: readOptionalValue(form, `partOnEnterMode__${partId}`, existingConfig.onEnterMode),
+      damageFormula: readOptionalValue(form, `partDamageFormula__${partId}`, existingConfig.damageFormula),
+      damageType: readOptionalValue(form, `partDamageType__${partId}`, existingConfig.damageType),
+      saveAbility: readOptionalValue(form, `partSaveAbility__${partId}`, existingConfig.saveAbility),
+      saveDcMode: readOptionalValue(form, `partSaveDcMode__${partId}`, existingConfig.saveDcMode),
+      saveDc: readOptionalValue(form, `partSaveDc__${partId}`, existingConfig.saveDc),
+      activityId: readOptionalValue(form, `partActivityId__${partId}`, existingConfig.activityId)
+    };
+  }
+
+  return partConfigs;
 }
 
 function buildDefinitionFromAuthoringState(formState, {
@@ -650,33 +887,43 @@ function buildDisabledTriggers() {
 }
 
 function buildOnEnterTriggerConfig(state) {
+  const mode = normalizeTriggerEffectMode(state.onEnterMode, DEFAULT_ON_ENTER_MODE);
   const damageFormula = String(state.damageFormula ?? "").trim();
   const saveAbility = normalizeAbilityId(state.saveAbility);
   const saveDcMode = normalizeSaveDcMode(state.saveDcMode);
+  const activityId = normalizeAuthoringActivityId(state.activityId);
   const saveDc = saveAbility && saveDcMode === "manual"
     ? Math.max(coerceNumber(state.saveDc, DEFAULT_SAVE_DC), 1)
     : null;
 
   return {
-    enabled: state.onEnterEnabled === true,
+    enabled: mode !== "none",
+    mode,
     damage: {
-      enabled: Boolean(state.onEnterEnabled && damageFormula),
+      enabled: mode === "simple" && Boolean(damageFormula),
       formula: damageFormula || null,
       type: normalizeDamageType(state.damageType)
     },
     save: {
-      enabled: Boolean(state.onEnterEnabled && saveAbility),
+      enabled: mode === "simple" && Boolean(saveAbility),
       ability: saveAbility || null,
       dcMode: saveDcMode,
       dcSource: saveAbility && saveDcMode === "auto" ? DEFAULT_SAVE_DC_SOURCE : null,
       dc: saveDc,
       onSuccess: "half"
+    },
+    activity: {
+      id: mode === "activity" ? activityId || null : null
     }
   };
 }
 
 function buildCompositeLineVariantDefinition(side, state) {
   const normalizedSide = normalizeLineVariantSide(side);
+  const wallBodyConfig = state.partConfigs?.["wall-body"] ?? getDefaultPartAuthoringConfig("wall-body");
+  const heatedSideConfig =
+    state.partConfigs?.[`heated-side-${normalizedSide}`] ??
+    getDefaultPartAuthoringConfig(`heated-side-${normalizedSide}`);
 
   return {
     label: getVariantLabel(normalizedSide === "right" ? "line-right" : "line-left"),
@@ -691,6 +938,9 @@ function buildCompositeLineVariantDefinition(side, state) {
         label: localize("PERSISTENT_ZONES.UI.Parts.WallBody", "Wall Body"),
         geometry: {
           type: "template"
+        },
+        triggers: {
+          onEnter: buildOnEnterTriggerConfig(wallBodyConfig)
         }
       },
       {
@@ -709,7 +959,7 @@ function buildCompositeLineVariantDefinition(side, state) {
           offsetEnd: state.sideThickness
         },
         triggers: {
-          onEnter: buildOnEnterTriggerConfig(state)
+          onEnter: buildOnEnterTriggerConfig(heatedSideConfig)
         }
       }
     ]
@@ -718,6 +968,10 @@ function buildCompositeLineVariantDefinition(side, state) {
 
 function buildCompositeRingVariantDefinition(side, state) {
   const normalizedSide = normalizeRingVariantSide(side);
+  const wallBodyConfig = state.partConfigs?.["wall-body"] ?? getDefaultPartAuthoringConfig("wall-body");
+  const heatedSideConfig =
+    state.partConfigs?.[`heated-side-${normalizedSide}`] ??
+    getDefaultPartAuthoringConfig(`heated-side-${normalizedSide}`);
 
   return {
     label: getVariantLabel(normalizedSide === "outer" ? "ring-outer" : "ring-inner"),
@@ -734,6 +988,9 @@ function buildCompositeRingVariantDefinition(side, state) {
           referenceRadiusMode: "outer-edge",
           thickness: state.wallThickness,
           segments: 24
+        },
+        triggers: {
+          onEnter: buildOnEnterTriggerConfig(wallBodyConfig)
         }
       },
       {
@@ -754,7 +1011,7 @@ function buildCompositeRingVariantDefinition(side, state) {
           segments: 24
         },
         triggers: {
-          onEnter: buildOnEnterTriggerConfig(state)
+          onEnter: buildOnEnterTriggerConfig(heatedSideConfig)
         }
       }
     ]
@@ -1167,6 +1424,50 @@ function hasVariantChoices(baseType) {
   return getVariantChoicesForBaseType(baseType).length > 0;
 }
 
+function buildCompositePartSections(formState, item) {
+  const activityChoices = [
+    {
+      value: "",
+      label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+    },
+    ...getItemActivityChoices(item)
+  ];
+
+  return getPartIdsForBaseType(formState.baseType).map((partId) => {
+    const partState = normalizeAuthoringTriggerState(
+      formState.partConfigs?.[partId] ?? {},
+      getDefaultPartAuthoringConfig(partId)
+    );
+
+    return {
+      id: partId,
+      label: getAuthoringPartLabel(partId),
+      state: partState,
+      onEnterModeOptions: buildChoiceOptions(getOnEnterModeChoices(), partState.onEnterMode),
+      damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), partState.damageType),
+      saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), partState.saveDcMode),
+      abilityOptions: buildChoiceOptions(
+        [
+          {
+            value: "",
+            label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+          },
+          ...getAbilityChoices()
+        ],
+        partState.saveAbility
+      ),
+      activityOptions: buildChoiceOptions(activityChoices, partState.activityId),
+      showSimpleFields: partState.onEnterMode === "simple",
+      showActivityField: partState.onEnterMode === "activity",
+      showSaveDcMode: partState.onEnterMode === "simple" && Boolean(partState.saveAbility),
+      showManualSaveDc:
+        partState.onEnterMode === "simple" &&
+        Boolean(partState.saveAbility) &&
+        partState.saveDcMode === "manual"
+    };
+  });
+}
+
 function getDamageTypeChoices() {
   const source = CONFIG?.DND5E?.damageTypes ?? FALLBACK_DAMAGE_TYPES;
   return Object.entries(source).map(([value, label]) => ({
@@ -1194,6 +1495,62 @@ function getSaveDcModeChoices() {
       label: localize("PERSISTENT_ZONES.UI.Fields.SaveDcModeManual", "Manual")
     }
   ];
+}
+
+function getOnEnterModeChoices() {
+  return [
+    {
+      value: "none",
+      label: localize("PERSISTENT_ZONES.UI.OnEnterModes.None", "None")
+    },
+    {
+      value: "simple",
+      label: localize("PERSISTENT_ZONES.UI.OnEnterModes.Simple", "Simple")
+    },
+    {
+      value: "activity",
+      label: localize("PERSISTENT_ZONES.UI.OnEnterModes.Activity", "Activity")
+    }
+  ];
+}
+
+function getItemActivityChoices(item) {
+  return Array.from(item?.system?.activities ?? [])
+    .map((entry) => Array.isArray(entry) ? entry[1] : entry)
+    .filter(Boolean)
+    .map((activity) => ({
+      value: String(activity?.id ?? "").trim(),
+      label: String(activity?.name ?? activity?.id ?? "").trim()
+    }))
+    .filter((choice) => choice.value && choice.label)
+    .sort((left, right) => left.label.localeCompare(right.label, game.i18n?.lang ?? "en"));
+}
+
+function getPartIdsForBaseType(baseType) {
+  switch (normalizeBaseType(baseType)) {
+    case "composite-line":
+      return ["wall-body", "heated-side-left", "heated-side-right"];
+    case "composite-ring":
+      return ["wall-body", "heated-side-inner", "heated-side-outer"];
+    default:
+      return [];
+  }
+}
+
+function getAuthoringPartLabel(partId) {
+  switch (String(partId ?? "").toLowerCase()) {
+    case "heated-side-left":
+      return localize("PERSISTENT_ZONES.UI.Parts.HeatedSideLeft", "Heated Side Left");
+    case "heated-side-right":
+      return localize("PERSISTENT_ZONES.UI.Parts.HeatedSideRight", "Heated Side Right");
+    case "heated-side-inner":
+      return localize("PERSISTENT_ZONES.UI.Parts.HeatedSideInner", "Heated Side Inner");
+    case "heated-side-outer":
+      return localize("PERSISTENT_ZONES.UI.Parts.HeatedSideOuter", "Heated Side Outer");
+    case "wall-body":
+    default:
+      return localize("PERSISTENT_ZONES.UI.Parts.WallBody", "Wall Body");
+  }
 }
 
 function getVariantLabel(variantId) {
@@ -1261,6 +1618,10 @@ function localize(key, fallback) {
   return localized && localized !== key ? localized : fallback;
 }
 
+function isCompositeBaseType(baseType) {
+  return ["composite-line", "composite-ring"].includes(normalizeBaseType(baseType));
+}
+
 function normalizeBaseType(value) {
   const normalized = String(value ?? "simple").trim().toLowerCase();
   return ["simple", "ring", "composite-line", "composite-ring"].includes(normalized)
@@ -1300,6 +1661,60 @@ function normalizeSaveDcMode(value) {
   return String(value ?? DEFAULT_SAVE_DC_MODE).trim().toLowerCase() === "auto"
     ? "auto"
     : "manual";
+}
+
+function normalizeTriggerEffectMode(value, fallback = DEFAULT_ON_ENTER_MODE) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["none", "simple", "activity"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function normalizeAuthoringActivityId(value) {
+  return String(value ?? "").trim();
+}
+
+function extractActivityIdFromTriggerConfig(triggerLike = {}) {
+  return normalizeAuthoringActivityId(
+    pickFirstDefined(
+      triggerLike.activityId,
+      safeGet(triggerLike, ["activity", "id"]),
+      typeof triggerLike.activity === "string" ? triggerLike.activity : null
+    )
+  ) || "";
+}
+
+function hasSimpleTriggerConfiguration(triggerLike = {}) {
+  return Boolean(
+    String(
+      pickFirstDefined(
+        triggerLike.damageFormula,
+        safeGet(triggerLike, ["damage", "formula"]),
+        safeGet(triggerLike, ["damage", "roll"]),
+        ""
+      )
+    ).trim()
+  ) ||
+    coerceNumber(
+      pickFirstDefined(
+        safeGet(triggerLike, ["damage", "amount"]),
+        null
+      ),
+      null
+    ) !== null ||
+    Boolean(
+      normalizeAbilityId(
+        pickFirstDefined(
+          triggerLike.saveAbility,
+          safeGet(triggerLike, ["save", "ability"]),
+          safeGet(triggerLike, ["save", "abilityId"]),
+          ""
+        )
+      )
+    ) ||
+    coerceBoolean(pickFirstDefined(triggerLike.enabled, triggerLike.active), false);
 }
 
 function getDefaultWallThicknessForBaseType(baseType) {
@@ -1358,6 +1773,11 @@ function readCheckbox(form, name) {
 
 function readValue(form, name) {
   return form?.querySelector?.(`[name="${name}"]`)?.value ?? "";
+}
+
+function readOptionalValue(form, name, fallback = "") {
+  const field = form?.querySelector?.(`[name="${name}"]`);
+  return field ? field.value : fallback;
 }
 
 function canConfigurePersistentZonesItem(item) {

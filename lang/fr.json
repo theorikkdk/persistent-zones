@@ -28,6 +28,7 @@
         "VariantResolutionMode": "R\u00e9solution de variante",
         "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
         "OnEnterEnabled": "Activer onEnter",
+        "OnEnterMode": "Mode onEnter",
         "DamageFormula": "Formule de d\u00e9g\u00e2ts",
         "DamageType": "Type de d\u00e9g\u00e2ts",
         "SaveAbility": "Caract\u00e9ristique du save",
@@ -35,8 +36,14 @@
         "SaveDcModeAuto": "Automatique",
         "SaveDcModeManual": "Manuel",
         "SaveDc": "DD du save",
+        "Activity": "Activit\u00e9",
         "WallThickness": "\u00c9paisseur du mur",
         "SideThickness": "\u00c9paisseur de la zone lat\u00e9rale"
+      },
+      "OnEnterModes": {
+        "None": "Aucun",
+        "Simple": "Simple",
+        "Activity": "Activit\u00e9"
       },
       "BaseTypes": {
         "Simple": "Simple",
@@ -74,7 +81,8 @@
         "Clear": "Supprimer"
       },
       "Help": {
-        "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite."
+        "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
+        "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part."
       },
       "Notifications": {
         "Saved": "D\u00e9finition Persistent Zones enregistr\u00e9e.",

@@ -29,17 +29,58 @@ export async function applyConfiguredTriggerEffect({
   const actor = tokenDocument?.actor ?? null;
   const normalizedTiming = String(timing || "custom");
   const configuredTrigger = triggerConfig ?? {};
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const partId = runtime.partId ?? runtime.part?.id ?? runtime.normalizedDefinition?.part?.id ?? null;
+  const triggerMode = resolveTriggerEffectMode(configuredTrigger);
 
   if (!actor) {
-    return buildSkippedResult("Token has no Actor.");
+    return buildSkippedResult("Token has no Actor.", {
+      timing: normalizedTiming,
+      partId,
+      triggerMode
+    });
   }
 
   if (!configuredTrigger.enabled) {
-    return buildSkippedResult(`${normalizedTiming} is not enabled.`);
+    return buildSkippedResult(`${normalizedTiming} is not enabled.`, {
+      timing: normalizedTiming,
+      partId,
+      triggerMode
+    });
+  }
+
+  if (triggerMode === "none") {
+    debug(`Skipped ${normalizedTiming} effect because mode = none.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      partId,
+      timing: normalizedTiming,
+      triggerMode
+    });
+
+    return buildSkippedResult(`${normalizedTiming} mode is none.`, {
+      timing: normalizedTiming,
+      partId,
+      triggerMode
+    });
+  }
+
+  if (triggerMode === "activity") {
+    return applyActivityTriggerEffect({
+      regionDocument,
+      tokenDocument,
+      triggerConfig: configuredTrigger,
+      timing: normalizedTiming,
+      partId
+    });
   }
 
   if (!configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
-    return buildSkippedResult(`${normalizedTiming} has no enabled save or damage.`);
+    return buildSkippedResult(`${normalizedTiming} has no enabled save or damage.`, {
+      timing: normalizedTiming,
+      partId,
+      triggerMode
+    });
   }
 
   try {
@@ -50,6 +91,8 @@ export async function applyConfiguredTriggerEffect({
     if (saveResult?.unresolved) {
       return buildSkippedResult("Save DC could not be resolved.", {
         timing: normalizedTiming,
+        partId,
+        triggerMode,
         save: saveResult
       });
     }
@@ -69,11 +112,13 @@ export async function applyConfiguredTriggerEffect({
       await applyDamageToActor(actor, appliedDamage);
     }
 
-    debug(`Applied ${normalizedTiming} effect.`, {
+    debug(`Applied ${normalizedTiming} simple effect.`, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
       actorUuid: actor.uuid,
+      partId,
       timing: normalizedTiming,
+      triggerMode,
       save: saveResult,
       damage: damageResult,
       appliedDamage
@@ -82,6 +127,8 @@ export async function applyConfiguredTriggerEffect({
     return {
       applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
       skipped: false,
+      partId,
+      triggerMode,
       timing: normalizedTiming,
       save: saveResult,
       damage: damageResult,
@@ -91,14 +138,557 @@ export async function applyConfiguredTriggerEffect({
     error("Failed to apply configured trigger effect.", caughtError, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
+      partId,
       timing: normalizedTiming
     });
 
     return buildSkippedResult("Effect application failed.", {
       timing: normalizedTiming,
+      partId,
+      triggerMode,
       error: caughtError?.message ?? "unknown"
     });
   }
+}
+
+async function applyActivityTriggerEffect({
+  regionDocument,
+  tokenDocument,
+  triggerConfig,
+  timing = "custom",
+  partId = null
+}) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const triggerMode = "activity";
+  const selectedActivity = triggerConfig?.activity?.id ?? null;
+  const item = await resolveRuntimeItem(runtime);
+  const activity = resolveItemActivity(item, triggerConfig?.activity ?? {});
+
+  if (!item) {
+    debug(`Skipped ${timing} activity effect because no source Item could be resolved.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      partId,
+      timing,
+      triggerMode,
+      selectedActivity,
+      activityFound: false
+    });
+
+    return buildSkippedResult("Activity source Item could not be resolved.", {
+      timing,
+      partId,
+      triggerMode,
+      selectedActivity,
+      activityFound: false
+    });
+  }
+
+  if (!activity || typeof activity.use !== "function") {
+    debug(`Skipped ${timing} activity effect because the configured activity could not be found.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      itemUuid: item?.uuid ?? null,
+      partId,
+      timing,
+      triggerMode,
+      selectedActivity,
+      activityFound: false
+    });
+
+    return buildSkippedResult("Configured activity could not be found on the source Item.", {
+      timing,
+      partId,
+      triggerMode,
+      selectedActivity,
+      activityFound: false,
+      itemUuid: item?.uuid ?? null
+    });
+  }
+
+  const activityCompatibility = resolveZoneTriggeredActivityCompatibility(activity);
+
+  debug(`Resolved ${timing} activity compatibility.`, {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    itemUuid: item?.uuid ?? null,
+    partId,
+    timing,
+    triggerMode,
+    selectedActivity,
+    activityFound: true,
+    activityType: activityCompatibility.activityType,
+    activityCompatibility: activityCompatibility.code,
+    activitySupported: activityCompatibility.supported,
+    usedFullActivityFlow: false,
+    templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+    consumptionPrevented: activityCompatibility.consumptionPrevented,
+    concentrationPrevented: activityCompatibility.concentrationPrevented,
+    reasonsText: activityCompatibility.reasonsText
+  });
+
+  if (!activityCompatibility.supported) {
+    debug(`Skipped ${timing} activity effect because the configured activity is not compatible with zone-trigger execution.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      itemUuid: item?.uuid ?? null,
+      partId,
+      timing,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code,
+      usedFullActivityFlow: false,
+      templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+      consumptionPrevented: activityCompatibility.consumptionPrevented,
+      concentrationPrevented: activityCompatibility.concentrationPrevented,
+      reasonsText: activityCompatibility.reasonsText
+    });
+
+    return buildSkippedResult("Configured activity is not compatible with zone-trigger execution.", {
+      timing,
+      partId,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code,
+      usedFullActivityFlow: false,
+      templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+      consumptionPrevented: activityCompatibility.consumptionPrevented,
+      concentrationPrevented: activityCompatibility.concentrationPrevented,
+      reasons: activityCompatibility.reasons,
+      reasonsText: activityCompatibility.reasonsText
+    });
+  }
+
+  try {
+    const activityResult = await executeZoneTriggeredActivity({
+      activity,
+      item,
+      regionDocument,
+      tokenDocument,
+      timing,
+      compatibility: activityCompatibility
+    });
+    const activityTriggered = activityResult?.triggered === true;
+
+    debug(`Triggered ${timing} activity effect.`, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      itemUuid: item?.uuid ?? null,
+      partId,
+      timing,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code,
+      activityTriggered,
+      usedFullActivityFlow: false,
+      templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+      consumptionPrevented: activityCompatibility.consumptionPrevented,
+      concentrationPrevented: activityCompatibility.concentrationPrevented
+    });
+
+    return {
+      applied: activityTriggered,
+      skipped: !activityTriggered,
+      timing,
+      partId,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code,
+      activityTriggered,
+      itemUuid: item?.uuid ?? null,
+      activityName: activity?.name ?? null,
+      usedFullActivityFlow: false,
+      templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+      consumptionPrevented: activityCompatibility.consumptionPrevented,
+      concentrationPrevented: activityCompatibility.concentrationPrevented,
+      ...activityResult
+    };
+  } catch (caughtError) {
+    error("Failed to trigger configured activity effect.", caughtError, {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      itemUuid: item?.uuid ?? null,
+      partId,
+      timing,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code
+    });
+
+    return buildSkippedResult("Configured activity failed.", {
+      timing,
+      partId,
+      triggerMode,
+      selectedActivity,
+      activityFound: true,
+      activityType: activityCompatibility.activityType,
+      activityCompatibility: activityCompatibility.code,
+      usedFullActivityFlow: false,
+      templateCreationPrevented: activityCompatibility.templateCreationPrevented,
+      consumptionPrevented: activityCompatibility.consumptionPrevented,
+      concentrationPrevented: activityCompatibility.concentrationPrevented,
+      error: caughtError?.message ?? "unknown"
+    });
+  }
+}
+
+function resolveZoneTriggeredActivityCompatibility(activity) {
+  const activityType = normalizeActivityType(activity?.type ?? activity?.metadata?.type);
+  const saveAbility = resolveActivitySaveAbility(activity);
+  const saveDc = coerceNumber(activity?.save?.dc?.value, null);
+  const damagePartCount = getActivityDamagePartCount(activity);
+  const effectCount = getActivityEffectCount(activity);
+  const targetTemplateType = String(activity?.target?.template?.type ?? "").trim().toLowerCase() || null;
+  const reasons = [];
+
+  if (!["damage", "save"].includes(activityType)) {
+    reasons.push(`Activity type "${activityType || "unknown"}" is not supported by zone-trigger activity mode.`);
+  }
+
+  if (activityType === "damage" && damagePartCount < 1) {
+    reasons.push("Damage activity has no damage parts to resolve.");
+  }
+
+  if (activityType === "save") {
+    if (!saveAbility) {
+      reasons.push("Save activity has no target save ability.");
+    }
+
+    if (saveDc === null) {
+      reasons.push("Save activity has no resolved save DC.");
+    }
+  }
+
+  return {
+    supported: reasons.length === 0,
+    code: reasons.length === 0
+      ? `${activityType || "unknown"}-targeted`
+      : `unsupported-${activityType || "unknown"}`,
+    reasons,
+    reasonsText: reasons.join(" | "),
+    activityType,
+    saveAbility,
+    saveDc,
+    damagePartCount,
+    effectCount,
+    activityEffectsIgnored: effectCount > 0,
+    targetTemplateType,
+    usedFullActivityFlow: false,
+    templateCreationPrevented: Boolean(targetTemplateType),
+    consumptionPrevented: true,
+    concentrationPrevented: true
+  };
+}
+
+async function executeZoneTriggeredActivity({
+  activity,
+  item,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  compatibility = {}
+}) {
+  switch (compatibility.activityType) {
+    case "damage":
+      return executeZoneTriggeredDamageActivity({
+        activity,
+        item,
+        regionDocument,
+        tokenDocument,
+        timing,
+        compatibility
+      });
+    case "save":
+      return executeZoneTriggeredSaveActivity({
+        activity,
+        item,
+        regionDocument,
+        tokenDocument,
+        timing,
+        compatibility
+      });
+    default:
+      return {
+        triggered: false,
+        activityType: compatibility.activityType ?? null
+      };
+  }
+}
+
+async function executeZoneTriggeredDamageActivity({
+  activity,
+  item,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  compatibility = {}
+}) {
+  const actor = tokenDocument?.actor ?? null;
+  const damageRolls = await rollZoneTriggeredActivityDamage({
+    activity,
+    item,
+    regionDocument,
+    tokenDocument,
+    timing
+  });
+  const rawDamages = buildDamageEntriesFromRolls(damageRolls);
+  const appliedDamage = await applyDamageEntriesToActor(actor, rawDamages);
+
+  return {
+    triggered: rawDamages.length > 0,
+    activityType: compatibility.activityType ?? "damage",
+    save: null,
+    damage: {
+      type: "activity",
+      rollCount: Array.isArray(damageRolls) ? damageRolls.length : 0,
+      damageCount: rawDamages.length,
+      damages: rawDamages,
+      appliedDamage
+    }
+  };
+}
+
+async function executeZoneTriggeredSaveActivity({
+  activity,
+  item,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  compatibility = {}
+}) {
+  const actor = tokenDocument?.actor ?? null;
+  const saveResult = await rollZoneTriggeredActivitySave({
+    activity,
+    regionDocument,
+    tokenDocument,
+    timing,
+    saveAbility: compatibility.saveAbility,
+    saveDc: compatibility.saveDc
+  });
+  const damageRolls = compatibility.damagePartCount > 0
+    ? await rollZoneTriggeredActivityDamage({
+      activity,
+      item,
+      regionDocument,
+      tokenDocument,
+      timing
+    })
+    : [];
+  const rawDamages = buildDamageEntriesFromRolls(damageRolls);
+  const adjustedDamages = adjustDamageEntriesForSave(
+    rawDamages,
+    saveResult,
+    String(activity?.damage?.onSave ?? "half").toLowerCase()
+  );
+  const appliedDamage = await applyDamageEntriesToActor(actor, adjustedDamages);
+
+  return {
+    triggered: Boolean(saveResult || adjustedDamages.length),
+    activityType: compatibility.activityType ?? "save",
+    save: saveResult,
+    damage: {
+      type: "activity",
+      rollCount: Array.isArray(damageRolls) ? damageRolls.length : 0,
+      damageCount: adjustedDamages.length,
+      damages: adjustedDamages,
+      appliedDamage,
+      damageOnSave: String(activity?.damage?.onSave ?? "half").toLowerCase()
+    }
+  };
+}
+
+async function rollZoneTriggeredActivitySave({
+  activity,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  saveAbility = null,
+  saveDc = null
+}) {
+  const actor = tokenDocument?.actor ?? null;
+  if (!actor || !saveAbility || saveDc === null || typeof actor.rollSavingThrow !== "function") {
+    return null;
+  }
+
+  const rollResult = await actor.rollSavingThrow({
+    ability: saveAbility,
+    target: saveDc
+  }, {
+    configure: false
+  }, {
+    data: {
+      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timing} activity save`,
+      speaker: ChatMessage.getSpeaker({ actor, token: tokenDocument })
+    }
+  });
+  const saveRoll = Array.isArray(rollResult) ? rollResult[0] : rollResult;
+  if (!saveRoll) {
+    return null;
+  }
+  const total = coerceNumber(saveRoll?.total, null);
+  const success = total !== null ? total >= saveDc : false;
+
+  debug(`Calculated ${timing} activity save.`, {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    actorUuid: actor?.uuid ?? null,
+    timing,
+    triggerMode: "activity",
+    activityType: "save",
+    ability: saveAbility,
+    dc: saveDc,
+    total,
+    success
+  });
+
+  return {
+    ability: saveAbility,
+    dc: saveDc,
+    total,
+    success,
+    onSuccess: String(activity?.damage?.onSave ?? "half").toLowerCase()
+  };
+}
+
+async function rollZoneTriggeredActivityDamage({
+  activity,
+  item,
+  regionDocument,
+  tokenDocument,
+  timing = "custom"
+}) {
+  if (typeof activity?.rollDamage !== "function") {
+    return [];
+  }
+
+  const rolls = await activity.rollDamage({}, {
+    configure: false
+  }, {
+    create: true,
+    data: {
+      flavor: `${item?.name ?? regionDocument?.name ?? "Persistent Zone"}: ${timing} activity damage`
+    }
+  });
+
+  debug(`Calculated ${timing} activity damage.`, {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    actorUuid: tokenDocument?.actor?.uuid ?? null,
+    itemUuid: item?.uuid ?? null,
+    timing,
+    triggerMode: "activity",
+    activityType: normalizeActivityType(activity?.type ?? activity?.metadata?.type),
+    rollCount: Array.isArray(rolls) ? rolls.length : 0
+  });
+
+  return Array.isArray(rolls) ? rolls : [];
+}
+
+function buildDamageEntriesFromRolls(rolls) {
+  if (!Array.isArray(rolls) || !rolls.length) {
+    return [];
+  }
+
+  return rolls
+    .map((roll) => {
+      const total = coerceNumber(roll?.total, 0);
+      const damageType = roll?.options?.type ?? null;
+      const isHealing = Boolean(damageType && CONFIG?.DND5E?.healingTypes?.[damageType]);
+      const properties = Array.isArray(roll?.options?.properties)
+        ? roll.options.properties
+        : roll?.options?.properties instanceof Set
+          ? Array.from(roll.options.properties)
+          : [];
+
+      return {
+        value: isHealing ? -Math.max(total, 0) : Math.max(total, 0),
+        type: damageType,
+        properties: new Set(properties)
+      };
+    })
+    .filter((entry) => entry.value !== 0);
+}
+
+function adjustDamageEntriesForSave(damages, saveResult, onSuccess = "half") {
+  if (!Array.isArray(damages) || !damages.length || !saveResult?.success) {
+    return Array.isArray(damages) ? damages : [];
+  }
+
+  return damages
+    .map((entry) => {
+      if (!entry || entry.value <= 0) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+        value: adjustDamageForSave(entry.value, {
+          success: true,
+          onSuccess
+        })
+      };
+    })
+    .filter((entry) => coerceNumber(entry?.value, 0) !== 0);
+}
+
+async function applyDamageEntriesToActor(actor, damages) {
+  if (!actor || !Array.isArray(damages) || !damages.length) {
+    return 0;
+  }
+
+  const calculatedDamage = typeof actor.calculateDamage === "function"
+    ? actor.calculateDamage(damages)
+    : null;
+  const appliedDamage = coerceNumber(
+    calculatedDamage?.amount,
+    damages.reduce((sum, entry) => sum + coerceNumber(entry?.value, 0), 0)
+  );
+
+  if (typeof actor.applyDamage === "function") {
+    await actor.applyDamage(damages);
+    return appliedDamage;
+  }
+
+  await applyDamageToActor(actor, Math.max(appliedDamage, 0));
+  return appliedDamage;
+}
+
+function resolveActivitySaveAbility(activity) {
+  const abilities = Array.from(activity?.save?.ability ?? [])
+    .map((ability) => String(ability ?? "").trim().toLowerCase())
+    .filter(Boolean);
+
+  return abilities[0] ?? null;
+}
+
+function getActivityDamagePartCount(activity) {
+  return Array.isArray(activity?.damage?.parts) ? activity.damage.parts.length : 0;
+}
+
+function getActivityEffectCount(activity) {
+  if (Array.isArray(activity?.effects)) {
+    return activity.effects.length;
+  }
+
+  if (typeof activity?.effects?.size === "number") {
+    return activity.effects.size;
+  }
+
+  return Array.from(activity?.effects ?? []).filter(Boolean).length;
+}
+
+function normalizeActivityType(value) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument, timing = "custom") {
@@ -336,6 +926,69 @@ function normalizeSaveDcMode(dcMode, dcSource, dc) {
 function normalizeSaveDcSource(value) {
   const normalized = String(value ?? "caster").toLowerCase();
   return ["caster", "actor", "token"].includes(normalized) ? normalized : "caster";
+}
+
+function resolveTriggerEffectMode(triggerConfig = {}) {
+  const explicitMode = String(triggerConfig?.mode ?? "").trim().toLowerCase();
+  if (["none", "simple", "activity"].includes(explicitMode)) {
+    return explicitMode;
+  }
+
+  if (triggerConfig?.activity?.id) {
+    return "activity";
+  }
+
+  return "simple";
+}
+
+async function resolveRuntimeItem(runtime = {}) {
+  const resolvedItem = await fromUuidSafe(runtime?.itemUuid ?? null);
+  if (resolvedItem?.documentName === "Item") {
+    return resolvedItem;
+  }
+
+  if (resolvedItem?.item?.documentName === "Item") {
+    return resolvedItem.item;
+  }
+
+  return null;
+}
+
+function resolveItemActivity(item, activityConfig = {}) {
+  const activityId = String(activityConfig?.id ?? "").trim();
+  const activityUuid = String(activityConfig?.uuid ?? "").trim();
+  const activityName = String(activityConfig?.name ?? "").trim().toLowerCase();
+
+  if (!item?.system?.activities) {
+    return null;
+  }
+
+  if (activityId && typeof item.system.activities.get === "function") {
+    const directActivity = item.system.activities.get(activityId);
+    if (directActivity) {
+      return directActivity;
+    }
+  }
+
+  const activities = Array.from(item.system.activities ?? [])
+    .map((entry) => Array.isArray(entry) ? entry[1] : entry)
+    .filter(Boolean);
+
+  return activities.find((activity) => {
+    if (activityId && String(activity?.id ?? "").trim() === activityId) {
+      return true;
+    }
+
+    if (activityUuid && String(activity?.uuid ?? "").trim() === activityUuid) {
+      return true;
+    }
+
+    if (activityName && String(activity?.name ?? "").trim().toLowerCase() === activityName) {
+      return true;
+    }
+
+    return false;
+  }) ?? null;
 }
 
 function buildSkippedResult(reason, extra = {}) {
