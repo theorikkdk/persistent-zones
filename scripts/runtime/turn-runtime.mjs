@@ -93,6 +93,17 @@ async function processCombatTiming(combat, state, timing) {
     const runtime = getRegionRuntimeFlags(regionDocument);
     const normalizedDefinition = runtime?.normalizedDefinition ?? null;
     const triggerConfig = getTurnTriggerConfig(normalizedDefinition, timing);
+    const partId =
+      runtime?.partId ??
+      runtime?.part?.id ??
+      normalizedDefinition?.part?.id ??
+      null;
+    const triggerTiming = timing === "start" ? "onStartTurn" : "onEndTurn";
+    const triggerMode = String(triggerConfig?.mode ?? "none");
+    const selectedActivity =
+      triggerConfig?.activity?.id ??
+      triggerConfig?.activityId ??
+      null;
     const tokenInside = testTokenInsideManagedRegion(
       tokenDocument,
       regionDocument,
@@ -113,7 +124,7 @@ async function processCombatTiming(combat, state, timing) {
         regionDocument,
         tokenDocument,
         triggerConfig,
-        timing: timing === "start" ? "onStartTurn" : "onEndTurn"
+        timing: triggerTiming
       });
 
       if (!application.skipped) {
@@ -134,7 +145,10 @@ async function processCombatTiming(combat, state, timing) {
       turn: state.turn,
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
-      timing,
+      partId,
+      triggerTiming,
+      triggerMode,
+      selectedActivity,
       tokenInside,
       alreadyApplied,
       effectApplied

@@ -13,8 +13,15 @@
       "NoneOption": "Aucun",
       "Sections": {
         "Basics": "Base",
+        "Activation": "Activation",
+        "Geometry": "Géométrie",
+        "Behaviors": "Comportements des parts effectives",
+        "Triggers": "Triggers",
         "OnEnter": "\u00c0 l'entr\u00e9e",
+        "OnStartTurn": "Au d\u00e9but du tour",
+        "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",
+        "AdvancedDebug": "Avancé / Debug",
         "RawDefinition": "D\u00e9finition brute",
         "NormalizedDefinition": "D\u00e9finition normalis\u00e9e"
       },
@@ -22,11 +29,16 @@
         "Enabled": "Persistent Zones activ\u00e9",
         "BaseType": "Type de base",
         "SimpleTemplateType": "Type de gabarit",
+        "TemplateTypeSource": "Source du type de gabarit",
+        "DetectedTemplateType": "Type de gabarit d\u00e9tect\u00e9",
+        "DetectedTemplateSource": "Source d\u00e9tect\u00e9e",
+        "EffectiveTemplateType": "Type de gabarit effectif",
         "SelectedVariant": "Variante s\u00e9lectionn\u00e9e",
         "DefaultVariant": "Variante par d\u00e9faut",
         "AvailableVariants": "Variantes disponibles",
         "VariantResolutionMode": "R\u00e9solution de variante",
         "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
+        "TriggerMode": "Mode",
         "OnEnterEnabled": "Activer onEnter",
         "OnEnterMode": "Mode onEnter",
         "DamageFormula": "Formule de d\u00e9g\u00e2ts",
@@ -57,6 +69,21 @@
         "Ray": "Ligne / Rayon",
         "Rect": "Rectangle"
       },
+      "TemplateTypeSources": {
+        "Auto": "Auto",
+        "Manual": "Manuel",
+        "DetectedFromActivity": "D\u00e9tect\u00e9 depuis l'activit\u00e9",
+        "DetectedFromItemTarget": "D\u00e9tect\u00e9 depuis le gabarit cible de l'objet",
+        "DetectedFromItemTemplate": "D\u00e9tect\u00e9 depuis le gabarit de l'objet"
+      },
+      "TemplateTypeWarnings": {
+        "AutoNotDetected": "Aucun type de gabarit dnd5e n'a pu \u00eatre d\u00e9tect\u00e9 automatiquement pour cet objet.",
+        "AutoFallback": "La pr\u00e9visualisation utilise un fallback s\u00fbr.",
+        "AutoAmbiguous": "Plusieurs types de gabarit dnd5e ont \u00e9t\u00e9 d\u00e9tect\u00e9s sur cet objet.",
+        "AutoUsingDetected": "Le mode auto utilise le premier type d\u00e9tect\u00e9.",
+        "ManualMismatch": "L'override manuel du type de gabarit diff\u00e8re du type de gabarit dnd5e d\u00e9tect\u00e9.",
+        "NoDetectedSource": "Aucune source de gabarit dnd5e n'a \u00e9t\u00e9 d\u00e9tect\u00e9e."
+      },
       "ActivityTypes": {
         "Damage": "D\u00e9g\u00e2ts",
         "Save": "Save",
@@ -76,6 +103,12 @@
         "MissingSaveAbility": "L'activit\u00e9 n'a pas de caract\u00e9ristique de save cible.",
         "MissingSaveDc": "L'activit\u00e9 n'a pas de DD de save r\u00e9solu."
       },
+      "Compatibility": {
+        "CompatibleBaseTypes": "Types de base compatibles",
+        "CompatibleVariants": "Variantes compatibles",
+        "BaseTypeFiltered": "Le type de base enregistr\u00e9 est incompatible avec le type de gabarit effectif, donc l'\u00e9diteur utilise un fallback compatible.",
+        "VariantFiltered": "La variante enregistr\u00e9e est incompatible avec le type de base effectif, donc l'\u00e9diteur utilise un fallback compatible."
+      },
       "Variants": {
         "LineLeft": "Ligne gauche",
         "LineRight": "Ligne droite",
@@ -87,11 +120,16 @@
         "HeatedSideLeft": "C\u00f4t\u00e9 chauff\u00e9 gauche",
         "HeatedSideRight": "C\u00f4t\u00e9 chauff\u00e9 droit",
         "HeatedSideInner": "C\u00f4t\u00e9 chauff\u00e9 int\u00e9rieur",
-        "HeatedSideOuter": "C\u00f4t\u00e9 chauff\u00e9 ext\u00e9rieur"
+        "HeatedSideOuter": "C\u00f4t\u00e9 chauff\u00e9 ext\u00e9rieur",
+        "HeatedZoneLeft": "Zone chauff\u00e9e (gauche)",
+        "HeatedZoneRight": "Zone chauff\u00e9e (droite)",
+        "HeatedZoneInner": "Zone chauff\u00e9e (int\u00e9rieure)",
+        "HeatedZoneOuter": "Zone chauff\u00e9e (ext\u00e9rieure)"
       },
       "Validation": {
         "Valid": "Valide",
         "Invalid": "Invalide",
+        "Warning": "Avertissement",
         "NoIssues": "Aucun probl\u00e8me de validation d\u00e9tect\u00e9 pour la pr\u00e9visualisation actuelle."
       },
       "Actions": {
@@ -101,7 +139,9 @@
       },
       "Help": {
         "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
-        "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part."
+        "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
+        "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
+        "ActiveVariantParts": "Seules les parts effectives de la variante actuellement s\u00e9lectionn\u00e9e sont affich\u00e9es ici."
       },
       "Notifications": {
         "Saved": "D\u00e9finition Persistent Zones enregistr\u00e9e.",

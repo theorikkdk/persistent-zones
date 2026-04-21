@@ -35,6 +35,90 @@ export function getZoneDefinitionFromItem(item) {
   );
 }
 
+export function resolveItemTemplateTypeDetection(item) {
+  const candidates = [];
+  const activityEntries = getItemActivityEntries(item);
+
+  for (const [index, entry] of activityEntries.entries()) {
+    const activity = Array.isArray(entry) ? entry[1] : entry;
+    const activityId = Array.isArray(entry) ? entry[0] : activity?.id ?? null;
+    const activityName = String(
+      pickFirstDefined(activity?.name, activity?.label, activityId, `activity-${index + 1}`)
+    ).trim();
+    const activityCandidates = [
+      createTemplateTypeCandidate(safeGet(activity, ["target", "type"]), {
+        sourceKind: "activity",
+        sourcePath: "system.activities[].target.type",
+        sourceLabel: activityName,
+        activityId: activityId ?? null
+      }),
+      createTemplateTypeCandidate(safeGet(activity, ["target", "template", "type"]), {
+        sourceKind: "activity",
+        sourcePath: "system.activities[].target.template.type",
+        sourceLabel: activityName,
+        activityId: activityId ?? null
+      }),
+      createTemplateTypeCandidate(safeGet(activity, ["template", "type"]), {
+        sourceKind: "activity",
+        sourcePath: "system.activities[].template.type",
+        sourceLabel: activityName,
+        activityId: activityId ?? null
+      }),
+      createTemplateTypeCandidate(safeGet(activity, ["activation", "template", "type"]), {
+        sourceKind: "activity",
+        sourcePath: "system.activities[].activation.template.type",
+        sourceLabel: activityName,
+        activityId: activityId ?? null
+      })
+    ].filter(Boolean);
+
+    candidates.push(...activityCandidates);
+  }
+
+  const itemLevelCandidates = [
+    createTemplateTypeCandidate(safeGet(item, ["system", "target", "type"]), {
+      sourceKind: "item-target",
+      sourcePath: "system.target.type",
+      sourceLabel: "Item target type"
+    }),
+    createTemplateTypeCandidate(safeGet(item, ["system", "target", "template", "type"]), {
+      sourceKind: "item-target",
+      sourcePath: "system.target.template.type",
+      sourceLabel: "Item target template"
+    }),
+    createTemplateTypeCandidate(safeGet(item, ["system", "template", "type"]), {
+      sourceKind: "item-template",
+      sourcePath: "system.template.type",
+      sourceLabel: "Item template"
+    })
+  ].filter(Boolean);
+
+  candidates.push(...itemLevelCandidates);
+
+  const detected = candidates[0] ?? null;
+  const distinctTemplateTypes = Array.from(
+    new Set(candidates.map((candidate) => candidate.templateType).filter(Boolean))
+  );
+  const distinctRawTemplateTypes = Array.from(
+    new Set(candidates.map((candidate) => candidate.templateTypeRaw).filter(Boolean))
+  );
+
+  return {
+    templateType: detected?.templateType ?? null,
+    templateTypeRaw: detected?.templateTypeRaw ?? null,
+    sourceKind: detected?.sourceKind ?? "none",
+    sourcePath: detected?.sourcePath ?? null,
+    sourceLabel: detected?.sourceLabel ?? null,
+    activityId: detected?.activityId ?? null,
+    candidateCount: candidates.length,
+    candidates,
+    ambiguous: distinctTemplateTypes.length > 1,
+    multipleSources: candidates.length > 1,
+    distinctTemplateTypes,
+    distinctRawTemplateTypes
+  };
+}
+
 export function normalizeZoneDefinition(
   rawDefinition,
   {
@@ -64,16 +148,44 @@ export function normalizeZoneDefinition(
     : isPlainObject(definition.linkedLights)
       ? definition.linkedLights
       : {};
-
-  const templateType = String(
+  const detectedTemplateInfo = resolveItemTemplateTypeDetection(item);
+  const templateTypeSource = normalizeTemplateTypeSource(
     pickFirstDefined(
-      templateDocument?.t,
+      templateDefinition.typeSource,
+      definition.templateTypeSource,
+      templateDefinition.type !== undefined || definition.templateType !== undefined ? "manual" : "auto"
+    )
+  );
+  const detectedTemplateType = detectedTemplateInfo.templateType;
+  const manualTemplateType = normalizeTemplateTypeValue(
+    pickFirstDefined(
       templateDefinition.type,
       definition.templateType,
       definition.shape,
+      null
+    )
+  );
+  const templateType = normalizeTemplateTypeValue(
+    pickFirstDefined(
+      templateDocument?.t,
+      templateTypeSource === "manual" ? manualTemplateType : detectedTemplateType,
+      manualTemplateType,
+      detectedTemplateType,
       ""
     )
-  ).toLowerCase();
+  );
+  const templateTypeOverrideApplied = templateTypeSource === "manual";
+  const templateTypeWarningReason =
+    templateTypeSource === "auto" && !detectedTemplateType && !templateDocument?.t
+      ? "auto-detection-missing"
+      : templateTypeSource === "manual" &&
+          detectedTemplateType &&
+          manualTemplateType &&
+          manualTemplateType !== detectedTemplateType
+        ? "manual-override-mismatch"
+        : detectedTemplateInfo.ambiguous
+          ? "auto-detection-ambiguous"
+          : null;
 
   const actorUuid = pickFirstDefined(
     actor?.uuid,
@@ -157,6 +269,11 @@ export function normalizeZoneDefinition(
     ).toLowerCase(),
     template: {
       type: templateType || null,
+      source: templateTypeSource,
+      detectedType: detectedTemplateType ?? null,
+      overrideType: manualTemplateType ?? null,
+      overrideApplied: templateTypeOverrideApplied,
+      warningReason: templateTypeWarningReason,
       distance: coerceNumber(
         pickFirstDefined(templateDefinition.distance, definition.distance, templateDocument?.distance),
         null
@@ -248,6 +365,24 @@ export function normalizeZoneDefinition(
       reasonsText: normalizedDefinition.variantResolution?.reasonsText ?? ""
     });
   }
+
+  debug("Resolved zone template type.", {
+    itemUuid: normalizedDefinition.itemUuid ?? null,
+    itemName: item?.name ?? normalizedDefinition.label,
+    templateTypeSource,
+    detectedTemplateTypeRaw: detectedTemplateInfo.templateTypeRaw ?? null,
+    detectedTemplateTypeMapped: detectedTemplateType ?? null,
+    detectedTemplateSource: detectedTemplateInfo.sourcePath ?? null,
+    activityId: detectedTemplateInfo.activityId ?? null,
+    effectiveTemplateType: normalizedDefinition.template.type ?? null,
+    templateTypeOverrideApplied,
+    warningReason: templateTypeWarningReason,
+    multiplePossibleSources: detectedTemplateInfo.multipleSources,
+    candidateCount: detectedTemplateInfo.candidateCount,
+    detectedSourceKind: detectedTemplateInfo.sourceKind,
+    detectedSourcePath: detectedTemplateInfo.sourcePath,
+    detectedSourceLabel: detectedTemplateInfo.sourceLabel
+  });
 
   normalizedDefinition.validation.reasons = collectValidationReasons({
     sourceDefinition,
@@ -620,6 +755,88 @@ function pickFallbackVariant(variants, {
 function normalizeTemplateTypeValue(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized || null;
+}
+
+function mapDnd5eTemplateType(rawType) {
+  const normalizedRawType = normalizeTemplateTypeValue(rawType);
+  if (!normalizedRawType) {
+    return null;
+  }
+
+  if (SUPPORTED_TEMPLATE_TYPES.includes(normalizedRawType)) {
+    return normalizedRawType;
+  }
+
+  const configuredTemplateType = normalizeTemplateTypeValue(
+    globalThis.CONFIG?.DND5E?.areaTargetTypes?.[normalizedRawType]?.template
+  );
+  if (SUPPORTED_TEMPLATE_TYPES.includes(configuredTemplateType)) {
+    return configuredTemplateType;
+  }
+
+  switch (normalizedRawType) {
+    case "cylinder":
+    case "sphere":
+    case "radius":
+      return "circle";
+    case "cube":
+    case "square":
+      return "rect";
+    case "line":
+    case "wall":
+      return "ray";
+    case "cone":
+      return "cone";
+    default:
+      return null;
+  }
+}
+
+function createTemplateTypeCandidate(rawType, metadata = {}) {
+  const templateTypeRaw = normalizeTemplateTypeValue(rawType);
+  const templateType = mapDnd5eTemplateType(templateTypeRaw);
+  if (!templateType) {
+    return null;
+  }
+
+  return {
+    templateTypeRaw,
+    templateType,
+    ...metadata
+  };
+}
+
+function getItemActivityEntries(item) {
+  const activities = item?.system?.activities;
+  if (!activities) {
+    return [];
+  }
+
+  if (typeof activities.entries === "function") {
+    return Array.from(activities.entries());
+  }
+
+  if (Array.isArray(activities)) {
+    return activities.map((entry, index) => {
+      if (Array.isArray(entry)) {
+        return entry;
+      }
+
+      return [entry?.id ?? `${index}`, entry];
+    });
+  }
+
+  if (isPlainObject(activities)) {
+    return Object.entries(activities);
+  }
+
+  return [];
+}
+
+function normalizeTemplateTypeSource(value) {
+  return String(value ?? "auto").trim().toLowerCase() === "manual"
+    ? "manual"
+    : "auto";
 }
 
 function normalizeSource(sourceDefinition) {
@@ -1467,9 +1684,19 @@ function validateZonePartConfig(part, index, reasons, {
   templateType = null,
   templateDistance = null
 } = {}) {
+  const partLabel = `Part "${part?.id ?? index + 1}"`;
+
   if (!part?.id) {
     reasons.push(`Part ${index + 1} requires an id.`);
   }
+
+  validateTriggerConfig(`${partLabel} onEnter`, part?.triggers?.onEnter ?? {}, reasons);
+  validateTriggerConfig(`${partLabel} onExit`, part?.triggers?.onExit ?? {}, reasons);
+  validateTriggerConfig(`${partLabel} onMove`, part?.triggers?.onMove ?? {}, reasons, {
+    requireDistanceStep: true
+  });
+  validateTriggerConfig(`${partLabel} onStartTurn`, part?.triggers?.onStartTurn ?? {}, reasons);
+  validateTriggerConfig(`${partLabel} onEndTurn`, part?.triggers?.onEndTurn ?? {}, reasons);
 
   const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
   if (!["template", "ring", "side-of-line", "side-of-ring"].includes(geometryType)) {
@@ -1752,7 +1979,7 @@ function findItemActivityByReference(item, {
     }
   }
 
-  const activities = Array.from(item.system.activities ?? [])
+  const activities = getItemActivityEntries(item)
     .map((entry) => Array.isArray(entry) ? entry[1] : entry)
     .filter(Boolean);
 

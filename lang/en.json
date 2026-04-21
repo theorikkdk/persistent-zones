@@ -13,8 +13,15 @@
       "NoneOption": "None",
       "Sections": {
         "Basics": "Basics",
+        "Activation": "Activation",
+        "Geometry": "Geometry",
+        "Behaviors": "Effective Part Behaviors",
+        "Triggers": "Triggers",
         "OnEnter": "On Enter",
+        "OnStartTurn": "On Start Turn",
+        "OnEndTurn": "On End Turn",
         "Validation": "Validation",
+        "AdvancedDebug": "Advanced / Debug",
         "RawDefinition": "Raw Definition",
         "NormalizedDefinition": "Normalized Definition"
       },
@@ -22,11 +29,16 @@
         "Enabled": "Persistent Zones Enabled",
         "BaseType": "Base Type",
         "SimpleTemplateType": "Template Type",
+        "TemplateTypeSource": "Template Type Source",
+        "DetectedTemplateType": "Detected Template Type",
+        "DetectedTemplateSource": "Detected Template Source",
+        "EffectiveTemplateType": "Effective Template Type",
         "SelectedVariant": "Selected Variant",
         "DefaultVariant": "Default Variant",
         "AvailableVariants": "Available Variants",
         "VariantResolutionMode": "Variant Resolution",
         "PreviewTemplateType": "Preview Template Type",
+        "TriggerMode": "Mode",
         "OnEnterEnabled": "Enable onEnter",
         "OnEnterMode": "onEnter Mode",
         "DamageFormula": "Damage Formula",
@@ -57,6 +69,21 @@
         "Ray": "Line / Ray",
         "Rect": "Rectangle"
       },
+      "TemplateTypeSources": {
+        "Auto": "Auto",
+        "Manual": "Manual",
+        "DetectedFromActivity": "Detected from activity",
+        "DetectedFromItemTarget": "Detected from Item target template",
+        "DetectedFromItemTemplate": "Detected from Item template"
+      },
+      "TemplateTypeWarnings": {
+        "AutoNotDetected": "No dnd5e template type could be detected automatically for this Item.",
+        "AutoFallback": "Preview is using a safe fallback.",
+        "AutoAmbiguous": "Multiple dnd5e template types were detected on this Item.",
+        "AutoUsingDetected": "Auto mode is using the first detected type.",
+        "ManualMismatch": "The manual template type override differs from the detected dnd5e template type.",
+        "NoDetectedSource": "No dnd5e template source detected."
+      },
       "ActivityTypes": {
         "Damage": "Damage",
         "Save": "Save",
@@ -76,6 +103,12 @@
         "MissingSaveAbility": "The activity has no target save ability.",
         "MissingSaveDc": "The activity has no resolved save DC."
       },
+      "Compatibility": {
+        "CompatibleBaseTypes": "Compatible base types",
+        "CompatibleVariants": "Compatible variants",
+        "BaseTypeFiltered": "The stored base type is incompatible with the effective template type, so the editor is using a compatible fallback.",
+        "VariantFiltered": "The stored variant is incompatible with the effective base type, so the editor is using a compatible fallback."
+      },
       "Variants": {
         "LineLeft": "Line Left",
         "LineRight": "Line Right",
@@ -87,11 +120,16 @@
         "HeatedSideLeft": "Heated Side Left",
         "HeatedSideRight": "Heated Side Right",
         "HeatedSideInner": "Heated Side Inner",
-        "HeatedSideOuter": "Heated Side Outer"
+        "HeatedSideOuter": "Heated Side Outer",
+        "HeatedZoneLeft": "Heated Zone (Left)",
+        "HeatedZoneRight": "Heated Zone (Right)",
+        "HeatedZoneInner": "Heated Zone (Inner)",
+        "HeatedZoneOuter": "Heated Zone (Outer)"
       },
       "Validation": {
         "Valid": "Valid",
         "Invalid": "Invalid",
+        "Warning": "Warning",
         "NoIssues": "No validation issues detected for the current preview."
       },
       "Actions": {
@@ -101,7 +139,9 @@
       },
       "Help": {
         "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
-        "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part."
+        "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
+        "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
+        "ActiveVariantParts": "Only the effective parts for the currently selected variant are shown here."
       },
       "Notifications": {
         "Saved": "Persistent Zones definition saved.",

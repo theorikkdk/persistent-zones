@@ -1,43 +1,61 @@
 <form class="persistent-zones-item-config">
-  <div class="persistent-zones-item-config__layout">
-    <section class="persistent-zones-item-config__card">
-      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Basics"}}</h2>
+  <div class="persistent-zones-item-config__shell">
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--primary">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Activation"}}</h2>
 
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.UI.Fields.Enabled"}}</label>
         <input type="checkbox" name="enabled" {{#if state.enabled}}checked{{/if}}>
       </div>
 
-      <div class="form-group">
+      <div class="form-group form-group--stacked">
         <label>{{localize "PERSISTENT_ZONES.UI.Fields.BaseType"}}</label>
-        <select name="baseType" data-rerender="true">
+        <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--four">
           {{#each baseTypeOptions as |option|}}
-            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+              <input type="radio" name="baseType" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+              <span>{{option.label}}</span>
+            </label>
           {{/each}}
-        </select>
-      </div>
-
-      {{#if showSimpleTemplateType}}
-        <div class="form-group">
-          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SimpleTemplateType"}}</label>
-          <select name="simpleTemplateType">
-            {{#each templateTypeOptions as |option|}}
-              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-            {{/each}}
-          </select>
         </div>
-      {{/if}}
 
-      {{#if showVariantSelect}}
-        <div class="form-group">
-          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}</label>
-          <select name="selectedVariant" data-rerender="true">
-            {{#each variantOptions as |option|}}
-              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-            {{/each}}
-          </select>
+        <p class="hint">
+          <strong>{{localize "PERSISTENT_ZONES.UI.Fields.EffectiveTemplateType"}}:</strong>
+          {{templateTypeContext.effectiveTemplateTypeLabel}}
+        </p>
+        {{#if selectionContext.compatibleBaseTypeLabels}}
+          <p class="hint">
+            <strong>{{localize "PERSISTENT_ZONES.UI.Compatibility.CompatibleBaseTypes"}}:</strong>
+            {{selectionContext.compatibleBaseTypeLabels}}
+          </p>
+        {{/if}}
+        {{#if selectionContext.baseTypeWarningReason}}
+          <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}:</strong> {{selectionContext.baseTypeWarningReason}}</p>
+        {{/if}}
+        <div class="persistent-zones-item-config__meta">
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DetectedTemplateType"}}:</strong>
+            <span>
+              {{#if templateTypeContext.detectedTemplateTypeLabel}}
+                {{templateTypeContext.detectedTemplateTypeLabel}}
+              {{else}}
+                {{localize "PERSISTENT_ZONES.UI.NoneOption"}}
+              {{/if}}
+            </span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DetectedTemplateSource"}}:</strong>
+            <span>{{templateTypeContext.detectedTemplateSourceLabel}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.EffectiveTemplateType"}}:</strong>
+            <span>{{templateTypeContext.effectiveTemplateTypeLabel}}</span>
+          </div>
         </div>
-      {{/if}}
+
+        {{#if templateTypeContext.warningReason}}
+          <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}:</strong> {{templateTypeContext.warningReason}}</p>
+        {{/if}}
 
       {{#if showWallThickness}}
         <div class="form-group">
@@ -52,116 +70,70 @@
           <input type="text" name="sideThickness" value="{{state.sideThickness}}" inputmode="decimal" placeholder="3.0">
         </div>
       {{/if}}
+      </div>
     </section>
 
-    <section class="persistent-zones-item-config__card">
-      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.OnEnter"}}</h2>
+    {{#if showVariantSelect}}
+      <section class="persistent-zones-item-config__card">
+        <h2>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}</h2>
 
-      {{#if showGlobalOnEnter}}
-        <div class="form-group">
-          <label>{{localize "PERSISTENT_ZONES.UI.Fields.OnEnterMode"}}</label>
-          <select name="onEnterMode" data-rerender="true">
-            {{#each onEnterModeOptions as |option|}}
-              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-            {{/each}}
-          </select>
+        <div class="persistent-zones-item-config__choice-group">
+          {{#each variantOptions as |option|}}
+            <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+              <input type="radio" name="selectedVariant" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+              <span>{{option.label}}</span>
+            </label>
+          {{/each}}
         </div>
 
-        {{#if showGlobalSimpleFields}}
-          <div class="form-group">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
-            <input type="text" name="damageFormula" value="{{state.damageFormula}}" placeholder="2d6">
-          </div>
-
-          <div class="form-group">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
-            <select name="damageType">
-              {{#each damageTypeOptions as |option|}}
-                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-              {{/each}}
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
-            <select name="saveAbility" data-rerender="true">
-              {{#each abilityOptions as |option|}}
-                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-              {{/each}}
-            </select>
-          </div>
-
-          {{#if showGlobalSaveDcMode}}
-            <div class="form-group">
-              <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
-              <select name="saveDcMode" data-rerender="true">
-                {{#each saveDcModeOptions as |option|}}
-                  <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-                {{/each}}
-              </select>
-            </div>
-          {{/if}}
-
-          {{#if showGlobalManualSaveDc}}
-            <div class="form-group">
-              <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
-              <input type="number" name="saveDc" value="{{state.saveDc}}" min="1" step="1">
-            </div>
-          {{else}}
-            <input type="hidden" name="saveDc" value="{{state.saveDc}}">
-          {{/if}}
-        {{else}}
-          <input type="hidden" name="saveDc" value="{{state.saveDc}}">
+        {{#if selectedVariantLabel}}
+          <p class="hint">
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
+            {{selectedVariantLabel}}
+          </p>
         {{/if}}
-
-        {{#if showGlobalActivityField}}
-          <div class="form-group">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.Activity"}}</label>
-            <select name="activityId">
-              {{#each globalActivityField.options as |option|}}
-                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.disabled}}disabled{{/if}}>{{option.label}}</option>
-              {{/each}}
-            </select>
-          </div>
-
-          <p class="hint">{{globalActivityField.helpText}}</p>
-
-          {{#if globalActivityField.noCompatibleActivitiesMessage}}
-            <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{globalActivityField.noCompatibleActivitiesMessage}}</p>
-          {{/if}}
-
-          {{#if globalActivityField.selectedActivityMessage}}
-            <p class="hint"><strong>{{globalActivityField.selectedActivityStatusLabel}}:</strong> {{globalActivityField.selectedActivityMessage}}</p>
-          {{/if}}
+        {{#if selectionContext.compatibleVariantLabels}}
+          <p class="hint">
+            <strong>{{localize "PERSISTENT_ZONES.UI.Compatibility.CompatibleVariants"}}:</strong>
+            {{selectionContext.compatibleVariantLabels}}
+          </p>
         {{/if}}
-      {{/if}}
+        {{#if selectionContext.variantWarningReason}}
+          <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}:</strong> {{selectionContext.variantWarningReason}}</p>
+        {{/if}}
+      </section>
+    {{/if}}
 
-      {{#if showCompositePartSections}}
-        <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.PartOnEnterModes"}}</p>
+    {{#if showGlobalTriggers}}
+      <section class="persistent-zones-item-config__card">
+        <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Behaviors"}}</h2>
 
-        {{#each partSections as |part|}}
+        {{#each globalTriggerSections as |triggerSection|}}
           <fieldset class="persistent-zones-item-config__part-section">
-            <legend>{{part.label}}</legend>
+            <legend>{{triggerSection.label}}</legend>
 
-            <div class="form-group">
-              <label>{{localize "PERSISTENT_ZONES.UI.Fields.OnEnterMode"}}</label>
-              <select name="partOnEnterMode__{{part.id}}" data-rerender="true">
-                {{#each part.onEnterModeOptions as |option|}}
-                  <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            <div class="form-group form-group--stacked">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
+              <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                {{#each triggerSection.modeOptions as |option|}}
+                  <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                    <input type="radio" name="{{triggerSection.modeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                    <span>{{option.label}}</span>
+                  </label>
                 {{/each}}
-              </select>
+              </div>
             </div>
 
-            {{#if part.showSimpleFields}}
+            {{#if triggerSection.showSimpleFields}}
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
-                <input type="text" name="partDamageFormula__{{part.id}}" value="{{part.state.damageFormula}}" placeholder="2d6">
+                <input type="text" name="{{triggerSection.damageFormulaFieldName}}" value="{{triggerSection.state.damageFormula}}" placeholder="2d6">
               </div>
 
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
-                <select name="partDamageType__{{part.id}}">
-                  {{#each part.damageTypeOptions as |option|}}
+                <select name="{{triggerSection.damageTypeFieldName}}">
+                  {{#each triggerSection.damageTypeOptions as |option|}}
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
                   {{/each}}
                 </select>
@@ -169,62 +141,165 @@
 
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
-                <select name="partSaveAbility__{{part.id}}" data-rerender="true">
-                  {{#each part.abilityOptions as |option|}}
+                <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
+                  {{#each triggerSection.abilityOptions as |option|}}
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
                   {{/each}}
                 </select>
               </div>
 
-              {{#if part.showSaveDcMode}}
-                <div class="form-group">
+              {{#if triggerSection.showSaveDcMode}}
+                <div class="form-group form-group--stacked">
                   <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
-                  <select name="partSaveDcMode__{{part.id}}" data-rerender="true">
-                    {{#each part.saveDcModeOptions as |option|}}
-                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                  <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                    {{#each triggerSection.saveDcModeOptions as |option|}}
+                      <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                        <input type="radio" name="{{triggerSection.saveDcModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                        <span>{{option.label}}</span>
+                      </label>
                     {{/each}}
-                  </select>
+                  </div>
                 </div>
               {{/if}}
 
-              {{#if part.showManualSaveDc}}
+              {{#if triggerSection.showManualSaveDc}}
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
-                  <input type="number" name="partSaveDc__{{part.id}}" value="{{part.state.saveDc}}" min="1" step="1">
+                  <input type="number" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}" min="1" step="1">
                 </div>
+              {{else}}
+                <input type="hidden" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}">
               {{/if}}
+            {{else}}
+              <input type="hidden" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}">
             {{/if}}
 
-            {{#if part.showActivityField}}
+            {{#if triggerSection.showActivityField}}
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.Activity"}}</label>
-                <select name="partActivityId__{{part.id}}">
-                  {{#each part.activityField.options as |option|}}
+                <select name="{{triggerSection.activityFieldName}}">
+                  {{#each triggerSection.activityField.options as |option|}}
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.disabled}}disabled{{/if}}>{{option.label}}</option>
                   {{/each}}
                 </select>
               </div>
 
-              <p class="hint">{{part.activityField.helpText}}</p>
+              <p class="hint">{{triggerSection.activityField.helpText}}</p>
 
-              {{#if part.activityField.noCompatibleActivitiesMessage}}
-                <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{part.activityField.noCompatibleActivitiesMessage}}</p>
+              {{#if triggerSection.activityField.noCompatibleActivitiesMessage}}
+                <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{triggerSection.activityField.noCompatibleActivitiesMessage}}</p>
               {{/if}}
 
-              {{#if part.activityField.selectedActivityMessage}}
-                <p class="hint"><strong>{{part.activityField.selectedActivityStatusLabel}}:</strong> {{part.activityField.selectedActivityMessage}}</p>
+              {{#if triggerSection.activityField.selectedActivityMessage}}
+                <p class="hint"><strong>{{triggerSection.activityField.selectedActivityStatusLabel}}:</strong> {{triggerSection.activityField.selectedActivityMessage}}</p>
               {{/if}}
             {{/if}}
           </fieldset>
         {{/each}}
-      {{/if}}
+      </section>
+    {{/if}}
 
-      <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.AuthoringSubset"}}</p>
-    </section>
+    {{#if showCompositePartSections}}
+      {{#each partSections as |part|}}
+        <section class="persistent-zones-item-config__card persistent-zones-item-config__card--part">
+          <h2>{{part.label}}</h2>
+
+          {{#each part.triggerSections as |triggerSection|}}
+            <fieldset class="persistent-zones-item-config__part-section">
+              <legend>{{triggerSection.label}}</legend>
+
+              <div class="form-group form-group--stacked">
+                <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
+                <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                  {{#each triggerSection.modeOptions as |option|}}
+                    <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                      <input type="radio" name="{{triggerSection.modeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                      <span>{{option.label}}</span>
+                    </label>
+                  {{/each}}
+                </div>
+              </div>
+
+              {{#if triggerSection.showSimpleFields}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+                  <input type="text" name="{{triggerSection.damageFormulaFieldName}}" value="{{triggerSection.state.damageFormula}}" placeholder="2d6">
+                </div>
+
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+                  <select name="{{triggerSection.damageTypeFieldName}}">
+                    {{#each triggerSection.damageTypeOptions as |option|}}
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+                  <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
+                    {{#each triggerSection.abilityOptions as |option|}}
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+
+                {{#if triggerSection.showSaveDcMode}}
+                  <div class="form-group form-group--stacked">
+                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
+                    <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                      {{#each triggerSection.saveDcModeOptions as |option|}}
+                        <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                          <input type="radio" name="{{triggerSection.saveDcModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                          <span>{{option.label}}</span>
+                        </label>
+                      {{/each}}
+                    </div>
+                  </div>
+                {{/if}}
+
+                {{#if triggerSection.showManualSaveDc}}
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
+                    <input type="number" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}" min="1" step="1">
+                  </div>
+                {{else}}
+                  <input type="hidden" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}">
+                {{/if}}
+              {{else}}
+                <input type="hidden" name="{{triggerSection.saveDcFieldName}}" value="{{triggerSection.state.saveDc}}">
+              {{/if}}
+
+              {{#if triggerSection.showActivityField}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.Activity"}}</label>
+                  <select name="{{triggerSection.activityFieldName}}">
+                    {{#each triggerSection.activityField.options as |option|}}
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.disabled}}disabled{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+
+                <p class="hint">{{triggerSection.activityField.helpText}}</p>
+
+                {{#if triggerSection.activityField.noCompatibleActivitiesMessage}}
+                  <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{triggerSection.activityField.noCompatibleActivitiesMessage}}</p>
+                {{/if}}
+
+                {{#if triggerSection.activityField.selectedActivityMessage}}
+                  <p class="hint"><strong>{{triggerSection.activityField.selectedActivityStatusLabel}}:</strong> {{triggerSection.activityField.selectedActivityMessage}}</p>
+                {{/if}}
+              {{/if}}
+            </fieldset>
+          {{/each}}
+        </section>
+      {{/each}}
+    {{/if}}
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--validation">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</h2>
+
       <div class="persistent-zones-item-config__validation-header">
-        <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</h2>
         <span class="persistent-zones-item-config__pill {{#if preview.isValid}}is-valid{{else}}is-invalid{{/if}}">
           {{#if preview.isValid}}
             {{localize "PERSISTENT_ZONES.UI.Validation.Valid"}}
@@ -232,30 +307,10 @@
             {{localize "PERSISTENT_ZONES.UI.Validation.Invalid"}}
           {{/if}}
         </span>
-      </div>
-
-      <div class="persistent-zones-item-config__meta">
-        <div>
-          <strong>{{localize "PERSISTENT_ZONES.UI.Fields.PreviewTemplateType"}}:</strong>
-          <span>{{preview.previewTemplateTypeLabel}}</span>
-        </div>
-        {{#if preview.normalizedDefinition.variantCount}}
-          <div>
-            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.AvailableVariants"}}:</strong>
-            <span>{{preview.normalizedDefinition.availableVariants}}</span>
-          </div>
-          <div>
-            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
-            <span>{{preview.normalizedDefinition.selectedVariantId}}</span>
-          </div>
-          <div>
-            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DefaultVariant"}}:</strong>
-            <span>{{preview.normalizedDefinition.defaultVariantId}}</span>
-          </div>
-          <div>
-            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.VariantResolutionMode"}}:</strong>
-            <span>{{preview.variantResolution.resolutionMode}}</span>
-          </div>
+        {{#if preview.warnings.length}}
+          <span class="persistent-zones-item-config__pill is-warning">
+            {{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}
+          </span>
         {{/if}}
       </div>
 
@@ -267,6 +322,14 @@
         </ul>
       {{else}}
         <p class="hint">{{localize "PERSISTENT_ZONES.UI.Validation.NoIssues"}}</p>
+      {{/if}}
+
+      {{#if preview.warnings.length}}
+        <ul class="persistent-zones-item-config__warnings">
+          {{#each preview.warnings as |warning|}}
+            <li>{{warning}}</li>
+          {{/each}}
+        </ul>
       {{/if}}
     </section>
 
@@ -286,13 +349,40 @@
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
-      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.RawDefinition"}}</h2>
-      <textarea readonly>{{preview.rawDefinitionJson}}</textarea>
-    </section>
+      <details>
+        <summary>{{localize "PERSISTENT_ZONES.UI.Sections.AdvancedDebug"}}</summary>
 
-    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
-      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.NormalizedDefinition"}}</h2>
-      <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
+        <div class="persistent-zones-item-config__meta">
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.PreviewTemplateType"}}:</strong>
+            <span>{{preview.previewTemplateTypeLabel}}</span>
+          </div>
+          {{#if preview.normalizedDefinition.variantCount}}
+            <div>
+              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.AvailableVariants"}}:</strong>
+              <span>{{preview.normalizedDefinition.availableVariants}}</span>
+            </div>
+            <div>
+              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
+              <span>{{preview.normalizedDefinition.selectedVariantId}}</span>
+            </div>
+            <div>
+              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.DefaultVariant"}}:</strong>
+              <span>{{preview.normalizedDefinition.defaultVariantId}}</span>
+            </div>
+            <div>
+              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.VariantResolutionMode"}}:</strong>
+              <span>{{preview.variantResolution.resolutionMode}}</span>
+            </div>
+          {{/if}}
+        </div>
+
+        <h3>{{localize "PERSISTENT_ZONES.UI.Sections.RawDefinition"}}</h3>
+        <textarea readonly>{{preview.rawDefinitionJson}}</textarea>
+
+        <h3>{{localize "PERSISTENT_ZONES.UI.Sections.NormalizedDefinition"}}</h3>
+        <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
+      </details>
     </section>
   </div>
 </form>

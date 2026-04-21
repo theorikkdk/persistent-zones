@@ -20,7 +20,8 @@ import {
 } from "../runtime/concentration-cleanup.mjs";
 import {
   getZoneDefinitionFromItem,
-  normalizeZoneDefinition
+  normalizeZoneDefinition,
+  resolveItemTemplateTypeDetection
 } from "../runtime/zone-definition.mjs";
 import {
   resolveZoneTriggeredActivityCompatibility,
@@ -32,6 +33,7 @@ const HEADER_BUTTON_CLASS = `${MODULE_ID}-item-config-button`;
 const DEFAULT_SAVE_DC = 13;
 const DEFAULT_SAVE_DC_MODE = "manual";
 const DEFAULT_SAVE_DC_SOURCE = "caster";
+const DEFAULT_TEMPLATE_TYPE_SOURCE = "auto";
 const DEFAULT_SIMPLE_TEMPLATE_TYPE = "circle";
 const DEFAULT_DAMAGE_TYPE = "fire";
 const DEFAULT_ON_ENTER_MODE = "none";
@@ -74,6 +76,11 @@ const AUTHORING_PART_IDS = Object.freeze([
   "heated-side-inner",
   "heated-side-outer"
 ]);
+const AUTHORING_TRIGGER_TIMINGS = Object.freeze([
+  "onEnter",
+  "onStartTurn",
+  "onEndTurn"
+]);
 
 export function registerPersistentZonesItemConfigUi() {
   Hooks.on("renderItemSheet5e", onRenderItemSheet5e);
@@ -113,8 +120,8 @@ class PersistentZonesItemConfig extends FormApplication {
       id: AUTHORING_APP_ID,
       classes: [MODULE_ID, "persistent-zones-item-config-app"],
       template: `modules/${MODULE_ID}/templates/item-zone-config.hbs`,
-      width: 860,
-      height: 860,
+      width: 760,
+      height: 880,
       resizable: true,
       submitOnChange: false,
       closeOnSubmit: false
@@ -127,60 +134,42 @@ class PersistentZonesItemConfig extends FormApplication {
 
   getData() {
     const rawDefinition = getZoneDefinitionFromItem(this.itemDocument);
-    const formState =
+    const rawFormState =
       duplicateData(this._draftState) ??
       deriveAuthoringStateFromDefinition(rawDefinition, this.itemDocument);
+    const selectionContext = resolveAuthoringSelectionContext(rawFormState, this.itemDocument);
+    const formState = selectionContext.state;
+    const templateTypeContext = resolveAuthoringTemplateTypeContext(formState, this.itemDocument);
     const draftDefinition = buildDefinitionFromAuthoringState(formState, {
       item: this.itemDocument
     });
     const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
 
     const compositeMode = isCompositeBaseType(formState.baseType);
-    const globalActivityField = buildZoneTriggerActivityFieldContext(
-      this.itemDocument,
-      formState.activityId
-    );
 
     return {
       item: this.itemDocument,
       itemName: this.itemDocument?.name ?? DEFAULT_ZONE_LABEL,
       hasStoredDefinition: Boolean(rawDefinition),
       state: formState,
-      baseTypeOptions: buildChoiceOptions(getBaseTypeChoices(), formState.baseType),
-      templateTypeOptions: buildChoiceOptions(getSimpleTemplateChoices(), formState.simpleTemplateType),
+      baseTypeOptions: buildChoiceOptions(
+        selectionContext.compatibleBaseTypeChoices,
+        selectionContext.effectiveBaseType
+      ),
+      templateTypeContext,
+      selectionContext,
       variantOptions: buildChoiceOptions(
-        getVariantChoicesForBaseType(formState.baseType),
-        formState.selectedVariant
+        selectionContext.variantChoices,
+        selectionContext.effectiveSelectedVariant
       ),
-      onEnterModeOptions: buildChoiceOptions(getOnEnterModeChoices(), formState.onEnterMode),
-      damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), formState.damageType),
-      saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), formState.saveDcMode),
-      abilityOptions: buildChoiceOptions(
-        [
-          {
-            value: "",
-            label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
-          },
-          ...getAbilityChoices()
-        ],
-        formState.saveAbility
-      ),
-      globalActivityField,
+      globalTriggerSections: buildTriggerEditorSections(formState.triggerConfigs, this.itemDocument),
       partSections: buildCompositePartSections(formState, this.itemDocument),
-      showSimpleTemplateType: formState.baseType === "simple",
-      showVariantSelect: hasVariantChoices(formState.baseType),
+      selectedVariantLabel: selectionContext.selectedVariantLabel,
+      showVariantSelect: selectionContext.variantChoices.length > 0,
       showWallThickness: ["ring", "composite-line", "composite-ring"].includes(formState.baseType),
       showSideThickness: ["composite-line", "composite-ring"].includes(formState.baseType),
-      showGlobalOnEnter: !compositeMode,
+      showGlobalTriggers: !compositeMode,
       showCompositePartSections: compositeMode,
-      showGlobalSimpleFields: !compositeMode && formState.onEnterMode === "simple",
-      showGlobalActivityField: !compositeMode && formState.onEnterMode === "activity",
-      showGlobalSaveDcMode: !compositeMode && formState.onEnterMode === "simple" && Boolean(formState.saveAbility),
-      showGlobalManualSaveDc:
-        !compositeMode &&
-        formState.onEnterMode === "simple" &&
-        Boolean(formState.saveAbility) &&
-        formState.saveDcMode === "manual",
       preview
     };
   }
@@ -195,10 +184,13 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async _updateObject(_event, formData) {
     const previousDefinition = getZoneDefinitionFromItem(this.itemDocument);
-    const formState = readAuthoringFormState(
+    const rawFormState = readAuthoringFormState(
       this.form,
-      this._draftState ?? deriveAuthoringStateFromDefinition(previousDefinition, this.itemDocument)
+      this._draftState ?? deriveAuthoringStateFromDefinition(previousDefinition, this.itemDocument),
+      this.itemDocument
     );
+    const selectionContext = resolveAuthoringSelectionContext(rawFormState, this.itemDocument);
+    const formState = selectionContext.state;
     const definition = buildDefinitionFromAuthoringState(formState, {
       item: this.itemDocument
     });
@@ -227,7 +219,14 @@ class PersistentZonesItemConfig extends FormApplication {
       itemName: this.itemDocument.name,
       previousBaseType,
       nextBaseType,
-      selectedVariant: formState.selectedVariant,
+      detectedTemplateType: selectionContext.templateTypeContext.detectedTemplateType,
+      effectiveTemplateType: selectionContext.templateTypeContext.effectiveTemplateType,
+      compatibleBaseTypes: selectionContext.compatibleBaseTypes,
+      selectedBaseType: selectionContext.selectedBaseType,
+      selectedBaseTypeCompatible: selectionContext.selectedBaseTypeCompatible,
+      compatibleVariants: selectionContext.compatibleVariants,
+      selectedVariant: selectionContext.selectedVariant,
+      selectedVariantCompatible: selectionContext.selectedVariantCompatible,
       enabled: formState.enabled,
       removedLegacyFields
     });
@@ -244,18 +243,48 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async #onPreview(html, event) {
     event.preventDefault();
-    this._draftState = readAuthoringFormState(
+    const rawFormState = readAuthoringFormState(
       html[0],
-      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument)
+      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
+      this.itemDocument
     );
+    this._draftState = resolveAuthoringSelectionContext(rawFormState, this.itemDocument).state;
     await this.render(false);
   }
 
-  async #onBaseTypeChanged(html) {
-    this._draftState = readAuthoringFormState(
+  async #onBaseTypeChanged(html, event) {
+    const rawFormState = readAuthoringFormState(
       html[0],
-      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument)
+      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
+      this.itemDocument
     );
+    const selectionContext = resolveAuthoringSelectionContext(rawFormState, this.itemDocument);
+    this._draftState = selectionContext.state;
+
+    if (["baseType", "selectedVariant"].includes(event?.currentTarget?.name ?? "")) {
+      const templateTypeContext = resolveAuthoringTemplateTypeContext(this._draftState, this.itemDocument);
+      debug("Resolved persistent-zones authoring compatibility context.", {
+        itemUuid: this.itemDocument.uuid,
+        itemName: this.itemDocument.name,
+        templateTypeSource: templateTypeContext.templateTypeSource,
+        detectedTemplateTypeRaw: templateTypeContext.detectedTemplateTypeRaw,
+        detectedTemplateTypeMapped: templateTypeContext.detectedTemplateType,
+        detectedTemplateSource: templateTypeContext.detectedTemplateSource,
+        activityId: templateTypeContext.detectedActivityId,
+        effectiveTemplateType: templateTypeContext.effectiveTemplateType,
+        compatibleBaseTypes: selectionContext.compatibleBaseTypes,
+        selectedBaseType: selectionContext.selectedBaseType,
+        selectedBaseTypeCompatible: selectionContext.selectedBaseTypeCompatible,
+        compatibleVariants: selectionContext.compatibleVariants,
+        selectedVariant: selectionContext.selectedVariant,
+        selectedVariantCompatible: selectionContext.selectedVariantCompatible,
+        templateTypeOverrideApplied: templateTypeContext.templateTypeOverrideApplied,
+        warningReason: templateTypeContext.warningReason,
+        multiplePossibleSources: templateTypeContext.multipleSources,
+        candidateCount: templateTypeContext.candidateCount
+      });
+    }
+
     await this.render(false);
   }
 
@@ -422,7 +451,9 @@ function getItemAuthoringButtonState(item) {
 }
 
 function buildDefinitionPreview(item, formState, definition) {
-  const previewTemplateDocument = buildPreviewTemplateDocument(formState);
+  const selectionContext = resolveAuthoringSelectionContext(formState, item);
+  const templateTypeContext = selectionContext.templateTypeContext;
+  const previewTemplateDocument = buildPreviewTemplateDocument(selectionContext.state, item);
 
   try {
     const normalizedDefinition = normalizeZoneDefinition(definition, {
@@ -433,76 +464,106 @@ function buildDefinitionPreview(item, formState, definition) {
     const normalizedReasons = Array.isArray(normalizedDefinition?.validation?.reasons)
       ? normalizedDefinition.validation.reasons
       : [];
-    const compatibilityIssues = collectActivityCompatibilityValidationIssues(formState, item);
+    const compatibilityIssues = collectActivityCompatibilityValidationIssues(selectionContext.state, item);
+    const templateTypeWarnings = Array.from(templateTypeContext.warnings ?? []);
+    const selectionWarnings = Array.from(selectionContext.warnings ?? []);
 
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
       previewTemplateTypeLabel: previewTemplateDocument?.t
         ? localizeTemplateType(previewTemplateDocument.t)
         : null,
+      templateTypeContext,
       rawDefinition: definition,
       rawDefinitionJson: JSON.stringify(definition, null, 2),
       normalizedDefinition,
       normalizedDefinitionJson: JSON.stringify(normalizedDefinition, null, 2),
       isValid: Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0,
-      reasons: [
-        ...normalizedReasons,
-        ...compatibilityIssues
-      ],
-      variantResolution: normalizedDefinition?.variantResolution ?? null
-    };
-  } catch (caughtError) {
+        reasons: [
+            ...normalizedReasons,
+            ...compatibilityIssues
+          ],
+        warnings: [
+          ...templateTypeWarnings,
+          ...selectionWarnings
+        ],
+        variantResolution: normalizedDefinition?.variantResolution ?? null
+      };
+    } catch (caughtError) {
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
       previewTemplateTypeLabel: previewTemplateDocument?.t
         ? localizeTemplateType(previewTemplateDocument.t)
         : null,
+      templateTypeContext,
       rawDefinition: definition,
       rawDefinitionJson: JSON.stringify(definition, null, 2),
-      normalizedDefinition: null,
-      normalizedDefinitionJson: "",
-      isValid: false,
-      reasons: [caughtError?.message ?? "Unknown preview error."],
-      variantResolution: null
-    };
+        normalizedDefinition: null,
+        normalizedDefinitionJson: "",
+        isValid: false,
+        reasons: [caughtError?.message ?? "Unknown preview error."],
+      warnings: [
+        ...Array.from(templateTypeContext.warnings ?? []),
+        ...Array.from(selectionContext.warnings ?? [])
+      ],
+        variantResolution: null
+      };
+    }
   }
-}
 
-function readAuthoringFormState(root, seedState = null) {
+function readAuthoringFormState(root, seedState = null, item = null) {
   const form = root?.querySelector?.("form") ?? root;
-  const existingState = normalizeAuthoringFormState(seedState ?? getDefaultAuthoringState());
+  const existingState = normalizeAuthoringFormState(
+    seedState ?? getDefaultAuthoringState(item),
+    {
+      item,
+      enforceTemplateCompatibility: true
+    }
+  );
 
   return normalizeAuthoringFormState({
     ...duplicateData(existingState),
     enabled: readCheckbox(form, "enabled"),
     baseType: readValue(form, "baseType"),
+    templateTypeSource: readValue(form, "templateTypeSource"),
     simpleTemplateType: readValue(form, "simpleTemplateType"),
     selectedVariant: readValue(form, "selectedVariant"),
-    onEnterMode: readOptionalValue(form, "onEnterMode", existingState.onEnterMode),
-    damageFormula: readOptionalValue(form, "damageFormula", existingState.damageFormula),
-    damageType: readOptionalValue(form, "damageType", existingState.damageType),
-    saveAbility: readOptionalValue(form, "saveAbility", existingState.saveAbility),
-    saveDcMode: readOptionalValue(form, "saveDcMode", existingState.saveDcMode),
-    saveDc: readOptionalValue(form, "saveDc", existingState.saveDc),
-    activityId: readOptionalValue(form, "activityId", existingState.activityId),
+    triggerConfigs: readTriggerAuthoringFormState(form, existingState.triggerConfigs),
     wallThickness: readOptionalValue(form, "wallThickness", existingState.wallThickness),
     sideThickness: readOptionalValue(form, "sideThickness", existingState.sideThickness),
     partConfigs: readPartAuthoringFormState(form, existingState.partConfigs)
+  }, {
+    item,
+    enforceTemplateCompatibility: true
   });
 }
 
-function normalizeAuthoringFormState(formData = {}) {
+function normalizeAuthoringFormState(formData = {}, {
+  item = null,
+  enforceTemplateCompatibility = false
+} = {}) {
   const baseType = normalizeBaseType(formData.baseType);
+  const templateTypeSource = normalizeTemplateTypeSource(formData.templateTypeSource);
   const simpleTemplateType = normalizeSimpleTemplateType(formData.simpleTemplateType);
   const selectedVariant = normalizeVariantSelection(baseType, formData.selectedVariant);
-  const triggerState = normalizeAuthoringTriggerState(formData, getDefaultTriggerAuthoringState());
+  const defaultState = getDefaultAuthoringState();
 
-  return {
+  const normalizedState = {
     enabled: coerceBoolean(formData.enabled, true) ?? true,
     baseType,
+    templateTypeSource,
     simpleTemplateType,
     selectedVariant,
-    ...triggerState,
+    triggerConfigs: normalizeAuthoringTriggerConfigs(
+      isPlainObject(formData.triggerConfigs)
+        ? formData.triggerConfigs
+        : {
+            onEnter: formData,
+            onStartTurn: safeGet(formData, ["onStartTurn"]),
+            onEndTurn: safeGet(formData, ["onEndTurn"])
+          },
+      defaultState.triggerConfigs
+    ),
     wallThickness: clampWallThickness(
       formData.wallThickness,
       getDefaultWallThicknessForBaseType(baseType)
@@ -513,15 +574,23 @@ function normalizeAuthoringFormState(formData = {}) {
     ),
     partConfigs: normalizeAuthoringPartConfigs(formData.partConfigs)
   };
+
+  if (!enforceTemplateCompatibility || !item) {
+    return normalizedState;
+  }
+
+  return resolveAuthoringSelectionContext(normalizedState, item).state;
 }
 
 function getDefaultAuthoringState(item = null) {
+  const detectedTemplateType = inferItemTemplateType(item) ?? DEFAULT_SIMPLE_TEMPLATE_TYPE;
   return {
     enabled: true,
     baseType: "simple",
-    simpleTemplateType: inferItemTemplateType(item) ?? DEFAULT_SIMPLE_TEMPLATE_TYPE,
+    templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+    simpleTemplateType: detectedTemplateType,
     selectedVariant: DEFAULT_VARIANT_BY_BASE_TYPE["composite-line"],
-    ...getDefaultTriggerAuthoringState(),
+    triggerConfigs: buildDefaultAuthoringTriggerConfigs(),
     wallThickness: getDefaultWallThicknessForBaseType("simple"),
     sideThickness: getDefaultSideThicknessForBaseType("simple"),
     partConfigs: buildDefaultPartAuthoringConfigs()
@@ -542,22 +611,27 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
     templateDocument: previewTemplateDocument
   });
   const baseType = detectAuthoringBaseType(effectiveDefinition, normalizedDefinition);
-  const rootOnEnterConfig = isCompositeBaseType(baseType)
-    ? {}
-    : resolveAuthoringOnEnterTrigger(normalizedDefinition, baseType);
-  const rootTriggerState = normalizeAuthoringTriggerState(rootOnEnterConfig, fallbackState);
+  const rootTriggerConfigs = isCompositeBaseType(baseType)
+    ? buildDefaultAuthoringTriggerConfigs()
+    : buildAuthoringTriggerConfigsFromDefinition(normalizedDefinition?.triggers ?? {});
+  const templateTypeContext = resolveTemplateTypeContext(
+    {
+      templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+      manualTemplateType: pickFirstDefined(
+        safeGet(effectiveDefinition, ["template", "type"]),
+        normalizedDefinition?.template?.overrideType,
+        normalizedDefinition?.template?.type,
+        fallbackState.simpleTemplateType
+      )
+    },
+    item
+  );
 
   return {
     enabled: coerceBoolean(rawDefinition.enabled, true) ?? true,
     baseType,
-    simpleTemplateType:
-      normalizeSimpleTemplateType(
-        pickFirstDefined(
-          safeGet(effectiveDefinition, ["template", "type"]),
-          normalizedDefinition?.template?.type,
-          fallbackState.simpleTemplateType
-        )
-      ),
+    templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+    simpleTemplateType: templateTypeContext.effectiveTemplateType,
     selectedVariant: normalizeVariantSelection(
       baseType,
       pickFirstDefined(
@@ -568,7 +642,10 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         fallbackState.selectedVariant
       )
     ),
-    ...rootTriggerState,
+    triggerConfigs: normalizeAuthoringTriggerConfigs(
+      rootTriggerConfigs,
+      fallbackState.triggerConfigs
+    ),
     wallThickness: deriveAuthoringWallThickness(effectiveDefinition, normalizedDefinition, baseType),
     sideThickness: deriveCompositeSideThickness(effectiveDefinition, normalizedDefinition, baseType),
     partConfigs: buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition)
@@ -626,9 +703,9 @@ function collectRemovedLegacyDefinitionFields(previousDefinition, nextDefinition
   });
 }
 
-function getDefaultTriggerAuthoringState(overrides = {}) {
+function getDefaultTriggerAuthoringConfig(overrides = {}) {
   return {
-    onEnterMode: DEFAULT_ON_ENTER_MODE,
+    mode: DEFAULT_ON_ENTER_MODE,
     damageFormula: "2d6",
     damageType: DEFAULT_DAMAGE_TYPE,
     saveAbility: "",
@@ -639,10 +716,18 @@ function getDefaultTriggerAuthoringState(overrides = {}) {
   };
 }
 
+function buildDefaultAuthoringTriggerConfigs(overridesByTiming = {}) {
+  return AUTHORING_TRIGGER_TIMINGS.reduce((configs, timing) => {
+    configs[timing] = getDefaultTriggerAuthoringConfig(overridesByTiming?.[timing] ?? {});
+    return configs;
+  }, {});
+}
+
 function getDefaultPartAuthoringConfig(partId = null) {
-  return getDefaultTriggerAuthoringState({
-    partId
-  });
+  return {
+    partId,
+    triggerConfigs: buildDefaultAuthoringTriggerConfigs()
+  };
 }
 
 function buildDefaultPartAuthoringConfigs() {
@@ -652,60 +737,61 @@ function buildDefaultPartAuthoringConfigs() {
   }, {});
 }
 
-function normalizeAuthoringTriggerState(triggerLike = {}, fallbackState = {}) {
+function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
   const fallback = {
-    ...getDefaultTriggerAuthoringState(),
+    ...getDefaultTriggerAuthoringConfig(),
     ...duplicateData(fallbackState ?? {})
   };
+  const definition = isPlainObject(triggerLike) ? triggerLike : {};
   const explicitEnabled = coerceBoolean(
-    pickFirstDefined(triggerLike.enabled, triggerLike.active),
+    pickFirstDefined(definition.enabled, definition.active),
     null
   );
   const activityId = normalizeAuthoringActivityId(
-    extractActivityIdFromTriggerConfig(triggerLike) ?? fallback.activityId
+    extractActivityIdFromTriggerConfig(definition) ?? fallback.activityId
   );
   const saveAbility = normalizeAbilityId(
     pickFirstDefined(
-      triggerLike.saveAbility,
-      safeGet(triggerLike, ["save", "ability"]),
-      safeGet(triggerLike, ["save", "abilityId"]),
+      definition.saveAbility,
+      safeGet(definition, ["save", "ability"]),
+      safeGet(definition, ["save", "abilityId"]),
       fallback.saveAbility
     )
   );
   const saveDcMode = normalizeSaveDcMode(
     pickFirstDefined(
-      triggerLike.saveDcMode,
-      safeGet(triggerLike, ["save", "dcMode"]),
-      safeGet(triggerLike, ["save", "dcSource"]) ? "auto" : null,
+      definition.saveDcMode,
+      safeGet(definition, ["save", "dcMode"]),
+      safeGet(definition, ["save", "dcSource"]) ? "auto" : null,
       fallback.saveDcMode
     )
   );
 
   return {
-    onEnterMode: normalizeTriggerEffectMode(
+    mode: normalizeTriggerEffectMode(
       pickFirstDefined(
-        triggerLike.onEnterMode,
-        triggerLike.mode,
+        definition.onEnterMode,
+        definition.mode,
         explicitEnabled === false ? "none" : null,
         activityId ? "activity" : null,
-        hasSimpleTriggerConfiguration(triggerLike) ? "simple" : null,
-        fallback.onEnterMode
+        hasSimpleTriggerConfiguration(definition) ? "simple" : null,
+        fallback.mode
       ),
-      fallback.onEnterMode
+      fallback.mode
     ),
     damageFormula: String(
       pickFirstDefined(
-        triggerLike.damageFormula,
-        safeGet(triggerLike, ["damage", "formula"]),
-        safeGet(triggerLike, ["damage", "roll"]),
+        definition.damageFormula,
+        safeGet(definition, ["damage", "formula"]),
+        safeGet(definition, ["damage", "roll"]),
         fallback.damageFormula,
         ""
       )
     ).trim(),
     damageType: normalizeDamageType(
       pickFirstDefined(
-        triggerLike.damageType,
-        safeGet(triggerLike, ["damage", "type"]),
+        definition.damageType,
+        safeGet(definition, ["damage", "type"]),
         fallback.damageType
       )
     ),
@@ -714,8 +800,8 @@ function normalizeAuthoringTriggerState(triggerLike = {}, fallbackState = {}) {
     saveDc: Math.max(
       coerceNumber(
         pickFirstDefined(
-          triggerLike.saveDc,
-          safeGet(triggerLike, ["save", "dc"]),
+          definition.saveDc,
+          safeGet(definition, ["save", "dc"]),
           fallback.saveDc
         ),
         DEFAULT_SAVE_DC
@@ -726,44 +812,162 @@ function normalizeAuthoringTriggerState(triggerLike = {}, fallbackState = {}) {
   };
 }
 
+function normalizeAuthoringTriggerConfigs(triggerConfigs = {}, fallbackConfigs = {}) {
+  const fallback = buildDefaultAuthoringTriggerConfigs(fallbackConfigs);
+  const sourceConfigs = isPlainObject(triggerConfigs) ? triggerConfigs : {};
+
+  return AUTHORING_TRIGGER_TIMINGS.reduce((configs, timing) => {
+    configs[timing] = normalizeAuthoringTriggerConfig(
+      sourceConfigs?.[timing] ?? {},
+      fallback?.[timing] ?? getDefaultTriggerAuthoringConfig()
+    );
+    return configs;
+  }, {});
+}
+
+function buildAuthoringTriggerConfigsFromDefinition(triggerDefinitions = {}) {
+  return normalizeAuthoringTriggerConfigs(
+    isPlainObject(triggerDefinitions) ? triggerDefinitions : {},
+    buildDefaultAuthoringTriggerConfigs()
+  );
+}
+
 function normalizeAuthoringPartConfigs(partConfigs = {}) {
   return AUTHORING_PART_IDS.reduce((configs, partId) => {
-    configs[partId] = normalizeAuthoringTriggerState(
-      partConfigs?.[partId] ?? {},
-      getDefaultPartAuthoringConfig(partId)
-    );
+    const partLike = partConfigs?.[partId] ?? {};
+    const fallbackPartConfig = getDefaultPartAuthoringConfig(partId);
+    configs[partId] = {
+      partId,
+      triggerConfigs: normalizeAuthoringTriggerConfigs(
+        isPlainObject(partLike?.triggerConfigs)
+          ? partLike.triggerConfigs
+          : {
+              onEnter: partLike
+            },
+        fallbackPartConfig.triggerConfigs
+      )
+    };
     return configs;
   }, {});
 }
 
 function buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition) {
   const partConfigs = buildDefaultPartAuthoringConfigs();
-  const applyPartConfig = (partId, triggerConfig) => {
+  const applyPartConfig = (partId, triggerConfigs) => {
     if (!partId || !(partId in partConfigs)) {
       return;
     }
 
-    partConfigs[partId] = normalizeAuthoringTriggerState(
-      triggerConfig,
-      partConfigs[partId]
-    );
+    partConfigs[partId] = {
+      ...partConfigs[partId],
+      triggerConfigs: normalizeAuthoringTriggerConfigs(
+        triggerConfigs,
+        partConfigs[partId]?.triggerConfigs
+      )
+    };
   };
 
   for (const part of Array.from(rawDefinition?.parts ?? rawDefinition?.zones ?? [])) {
-    applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers?.onEnter ?? {});
+    applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers ?? {});
   }
 
   for (const variant of Array.from(rawDefinition?.variants ?? [])) {
     for (const part of Array.from(variant?.parts ?? variant?.zones ?? [])) {
-      applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers?.onEnter ?? {});
+      applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers ?? {});
     }
   }
 
   for (const part of Array.from(normalizedDefinition?.parts ?? [])) {
-    applyPartConfig(part?.id ?? null, part?.triggers?.onEnter ?? {});
+    applyPartConfig(part?.id ?? null, part?.triggers ?? {});
   }
 
   return partConfigs;
+}
+
+function getTriggerFieldName(fieldKey, timing, {
+  partId = null
+} = {}) {
+  const fieldBaseName = getTriggerFieldBaseName(fieldKey, timing);
+  if (!partId) {
+    return fieldBaseName;
+  }
+
+  return `part${capitalizeFirst(fieldBaseName)}__${partId}`;
+}
+
+function getTriggerFieldBaseName(fieldKey, timing) {
+  const normalizedTiming = normalizeAuthoringTriggerTiming(timing);
+  const timingPrefix = normalizedTiming === "onEnter" ? "" : normalizedTiming;
+
+  switch (fieldKey) {
+    case "mode":
+      return normalizedTiming === "onEnter" ? "onEnterMode" : `${timingPrefix}Mode`;
+    case "damageFormula":
+      return normalizedTiming === "onEnter" ? "damageFormula" : `${timingPrefix}DamageFormula`;
+    case "damageType":
+      return normalizedTiming === "onEnter" ? "damageType" : `${timingPrefix}DamageType`;
+    case "saveAbility":
+      return normalizedTiming === "onEnter" ? "saveAbility" : `${timingPrefix}SaveAbility`;
+    case "saveDcMode":
+      return normalizedTiming === "onEnter" ? "saveDcMode" : `${timingPrefix}SaveDcMode`;
+    case "saveDc":
+      return normalizedTiming === "onEnter" ? "saveDc" : `${timingPrefix}SaveDc`;
+    case "activityId":
+      return normalizedTiming === "onEnter" ? "activityId" : `${timingPrefix}ActivityId`;
+    default:
+      return normalizedTiming === "onEnter" ? fieldKey : `${timingPrefix}${capitalizeFirst(fieldKey)}`;
+  }
+}
+
+function getTriggerTimingLabel(timing) {
+  switch (normalizeAuthoringTriggerTiming(timing)) {
+    case "onStartTurn":
+      return localize("PERSISTENT_ZONES.UI.Sections.OnStartTurn", "On Start Turn");
+    case "onEndTurn":
+      return localize("PERSISTENT_ZONES.UI.Sections.OnEndTurn", "On End Turn");
+    case "onEnter":
+    default:
+      return localize("PERSISTENT_ZONES.UI.Sections.OnEnter", "On Enter");
+  }
+}
+
+function normalizeAuthoringTriggerTiming(value) {
+  switch (String(value ?? "").trim()) {
+    case "onStartTurn":
+      return "onStartTurn";
+    case "onEndTurn":
+      return "onEndTurn";
+    case "onEnter":
+    default:
+      return "onEnter";
+  }
+}
+
+function capitalizeFirst(value) {
+  const normalized = String(value ?? "");
+  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : normalized;
+}
+
+function readTriggerAuthoringFormState(form, existingTriggerConfigs = {}, {
+  partId = null
+} = {}) {
+  const triggerConfigs = normalizeAuthoringTriggerConfigs(existingTriggerConfigs);
+
+  for (const timing of AUTHORING_TRIGGER_TIMINGS) {
+    const existingConfig = triggerConfigs[timing] ?? getDefaultTriggerAuthoringConfig();
+
+    triggerConfigs[timing] = {
+      mode: readOptionalValue(form, getTriggerFieldName("mode", timing, { partId }), existingConfig.mode),
+      damageFormula: readOptionalValue(form, getTriggerFieldName("damageFormula", timing, { partId }), existingConfig.damageFormula),
+      damageType: readOptionalValue(form, getTriggerFieldName("damageType", timing, { partId }), existingConfig.damageType),
+      saveAbility: readOptionalValue(form, getTriggerFieldName("saveAbility", timing, { partId }), existingConfig.saveAbility),
+      saveDcMode: readOptionalValue(form, getTriggerFieldName("saveDcMode", timing, { partId }), existingConfig.saveDcMode),
+      saveDc: readOptionalValue(form, getTriggerFieldName("saveDc", timing, { partId }), existingConfig.saveDc),
+      activityId: readOptionalValue(form, getTriggerFieldName("activityId", timing, { partId }), existingConfig.activityId)
+    };
+  }
+
+  return triggerConfigs;
 }
 
 function readPartAuthoringFormState(form, existingPartConfigs = {}) {
@@ -773,13 +977,12 @@ function readPartAuthoringFormState(form, existingPartConfigs = {}) {
     const existingConfig = partConfigs[partId] ?? getDefaultPartAuthoringConfig(partId);
 
     partConfigs[partId] = {
-      onEnterMode: readOptionalValue(form, `partOnEnterMode__${partId}`, existingConfig.onEnterMode),
-      damageFormula: readOptionalValue(form, `partDamageFormula__${partId}`, existingConfig.damageFormula),
-      damageType: readOptionalValue(form, `partDamageType__${partId}`, existingConfig.damageType),
-      saveAbility: readOptionalValue(form, `partSaveAbility__${partId}`, existingConfig.saveAbility),
-      saveDcMode: readOptionalValue(form, `partSaveDcMode__${partId}`, existingConfig.saveDcMode),
-      saveDc: readOptionalValue(form, `partSaveDc__${partId}`, existingConfig.saveDc),
-      activityId: readOptionalValue(form, `partActivityId__${partId}`, existingConfig.activityId)
+      partId,
+      triggerConfigs: readTriggerAuthoringFormState(
+        form,
+        existingConfig.triggerConfigs,
+        { partId }
+      )
     };
   }
 
@@ -789,7 +992,11 @@ function readPartAuthoringFormState(form, existingPartConfigs = {}) {
 function buildDefinitionFromAuthoringState(formState, {
   item = null
 } = {}) {
-  const state = normalizeAuthoringFormState(formState);
+  const state = normalizeAuthoringFormState(formState, {
+    item,
+    enforceTemplateCompatibility: true
+  });
+  const templateTypeContext = resolveAuthoringTemplateTypeContext(state, item);
   const commonDefinition = {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
@@ -817,7 +1024,7 @@ function buildDefinitionFromAuthoringState(formState, {
         template: {
           type: "circle"
         },
-        triggers: buildRootOnEnterTriggers(state),
+        triggers: buildConfiguredRootTriggers(state.triggerConfigs),
         parts: [
           {
             id: "wall-body",
@@ -863,23 +1070,33 @@ function buildDefinitionFromAuthoringState(formState, {
         ]
       };
 
-    case "simple":
-    default:
-      return {
-        ...commonDefinition,
-        template: {
-          type: state.simpleTemplateType
-        },
-        triggers: buildRootOnEnterTriggers(state)
-      };
+      case "simple":
+      default:
+        return {
+          ...commonDefinition,
+          template: {
+            typeSource: templateTypeContext.templateTypeSource,
+            ...(templateTypeContext.templateTypeSource === "manual"
+              ? {
+                  type: templateTypeContext.manualTemplateType
+                }
+              : {})
+          },
+          triggers: buildConfiguredRootTriggers(state.triggerConfigs)
+        };
+    }
   }
-}
 
-function buildRootOnEnterTriggers(state) {
-  return {
-    ...buildDisabledTriggers(),
-    onEnter: buildOnEnterTriggerConfig(state)
-  };
+function buildConfiguredRootTriggers(triggerConfigs = {}) {
+  const configuredTriggers = buildDisabledTriggers();
+
+  for (const timing of AUTHORING_TRIGGER_TIMINGS) {
+    configuredTriggers[timing] = buildConfiguredTriggerDefinition(
+      triggerConfigs?.[timing] ?? {}
+    );
+  }
+
+  return configuredTriggers;
 }
 
 function buildDisabledTriggers() {
@@ -892,14 +1109,15 @@ function buildDisabledTriggers() {
   };
 }
 
-function buildOnEnterTriggerConfig(state) {
-  const mode = normalizeTriggerEffectMode(state.onEnterMode, DEFAULT_ON_ENTER_MODE);
-  const damageFormula = String(state.damageFormula ?? "").trim();
-  const saveAbility = normalizeAbilityId(state.saveAbility);
-  const saveDcMode = normalizeSaveDcMode(state.saveDcMode);
-  const activityId = normalizeAuthoringActivityId(state.activityId);
+function buildConfiguredTriggerDefinition(triggerConfig = {}) {
+  const config = normalizeAuthoringTriggerConfig(triggerConfig);
+  const mode = normalizeTriggerEffectMode(config.mode, DEFAULT_ON_ENTER_MODE);
+  const damageFormula = String(config.damageFormula ?? "").trim();
+  const saveAbility = normalizeAbilityId(config.saveAbility);
+  const saveDcMode = normalizeSaveDcMode(config.saveDcMode);
+  const activityId = normalizeAuthoringActivityId(config.activityId);
   const saveDc = saveAbility && saveDcMode === "manual"
-    ? Math.max(coerceNumber(state.saveDc, DEFAULT_SAVE_DC), 1)
+    ? Math.max(coerceNumber(config.saveDc, DEFAULT_SAVE_DC), 1)
     : null;
 
   return {
@@ -908,7 +1126,7 @@ function buildOnEnterTriggerConfig(state) {
     damage: {
       enabled: mode === "simple" && Boolean(damageFormula),
       formula: damageFormula || null,
-      type: normalizeDamageType(state.damageType)
+      type: normalizeDamageType(config.damageType)
     },
     save: {
       enabled: mode === "simple" && Boolean(saveAbility),
@@ -945,9 +1163,7 @@ function buildCompositeLineVariantDefinition(side, state) {
         geometry: {
           type: "template"
         },
-        triggers: {
-          onEnter: buildOnEnterTriggerConfig(wallBodyConfig)
-        }
+        triggers: buildConfiguredRootTriggers(wallBodyConfig.triggerConfigs)
       },
       {
         id: `heated-side-${normalizedSide}`,
@@ -964,9 +1180,7 @@ function buildCompositeLineVariantDefinition(side, state) {
           offsetStart: 0,
           offsetEnd: state.sideThickness
         },
-        triggers: {
-          onEnter: buildOnEnterTriggerConfig(heatedSideConfig)
-        }
+        triggers: buildConfiguredRootTriggers(heatedSideConfig.triggerConfigs)
       }
     ]
   };
@@ -995,9 +1209,7 @@ function buildCompositeRingVariantDefinition(side, state) {
           thickness: state.wallThickness,
           segments: 24
         },
-        triggers: {
-          onEnter: buildOnEnterTriggerConfig(wallBodyConfig)
-        }
+        triggers: buildConfiguredRootTriggers(wallBodyConfig.triggerConfigs)
       },
       {
         id: `heated-side-${normalizedSide}`,
@@ -1016,9 +1228,7 @@ function buildCompositeRingVariantDefinition(side, state) {
           offsetEnd: state.sideThickness,
           segments: 24
         },
-        triggers: {
-          onEnter: buildOnEnterTriggerConfig(heatedSideConfig)
-        }
+        triggers: buildConfiguredRootTriggers(heatedSideConfig.triggerConfigs)
       }
     ]
   };
@@ -1035,8 +1245,12 @@ function buildVariantDefinitionEntry(variantId, definition) {
   };
 }
 
-function buildPreviewTemplateDocument(formState) {
-  switch (formState.baseType) {
+function buildPreviewTemplateDocument(formState, item = null) {
+  const normalizedState = normalizeAuthoringFormState(formState, {
+    item,
+    enforceTemplateCompatibility: true
+  });
+  switch (normalizedState.baseType) {
     case "ring":
     case "composite-ring":
       return {
@@ -1047,17 +1261,17 @@ function buildPreviewTemplateDocument(formState) {
       };
 
     case "composite-line":
-      return {
-        t: "ray",
-        distance: 30,
-        width: formState.wallThickness,
-        direction: 0,
-        elevation: 0
-      };
+        return {
+          t: "ray",
+          distance: 30,
+          width: normalizedState.wallThickness,
+          direction: 0,
+          elevation: 0
+        };
 
     case "simple":
     default: {
-      const templateType = normalizeSimpleTemplateType(formState.simpleTemplateType);
+      const templateType = resolveAuthoringTemplateTypeContext(normalizedState, item).effectiveTemplateType;
       return {
         t: templateType,
         distance: ["circle", "cone"].includes(templateType) ? 20 : 30,
@@ -1094,13 +1308,24 @@ function buildPreviewTemplateDocumentFromDefinition(rawDefinition, effectiveDefi
       };
   }
 
-  const inferredTemplateType = normalizeSimpleTemplateType(
+  const templateTypeSource = normalizeTemplateTypeSource(
     pickFirstDefined(
-      safeGet(effectiveDefinition, ["template", "type"]),
-      inferItemTemplateType(item),
-      DEFAULT_SIMPLE_TEMPLATE_TYPE
+      safeGet(effectiveDefinition, ["template", "typeSource"]),
+      safeGet(rawDefinition, ["template", "typeSource"]),
+      safeGet(effectiveDefinition, ["template", "type"]) !== undefined ? "manual" : null,
+      DEFAULT_TEMPLATE_TYPE_SOURCE
     )
   );
+  const inferredTemplateType = resolveTemplateTypeContext(
+    {
+      templateTypeSource,
+      manualTemplateType: pickFirstDefined(
+        safeGet(effectiveDefinition, ["template", "type"]),
+        DEFAULT_SIMPLE_TEMPLATE_TYPE
+      )
+    },
+    item
+  ).effectiveTemplateType;
 
   return {
     t: inferredTemplateType,
@@ -1135,25 +1360,6 @@ function detectAuthoringBaseType(effectiveDefinition, normalizedDefinition = nul
   }
 
   return "simple";
-}
-
-function resolveAuthoringOnEnterTrigger(normalizedDefinition, baseType) {
-  if (!normalizedDefinition) {
-    return buildOnEnterTriggerConfig(getDefaultAuthoringState());
-  }
-
-  if (["composite-line", "composite-ring"].includes(baseType)) {
-    const partTrigger = normalizedDefinition.parts?.find((part) => {
-      const geometryType = String(part?.geometry?.type ?? "").toLowerCase();
-      return geometryType === "side-of-line" || geometryType === "side-of-ring";
-    })?.triggers?.onEnter;
-
-    if (partTrigger) {
-      return partTrigger;
-    }
-  }
-
-  return normalizedDefinition.triggers?.onEnter ?? { enabled: false };
 }
 
 function deriveAuthoringWallThickness(effectiveDefinition, normalizedDefinition, baseType) {
@@ -1339,24 +1545,10 @@ function findVariantDefinitionById(variants, variantId) {
 }
 
 function inferItemTemplateType(item) {
-  const activityTemplates = Array.from(item?.system?.activities ?? []).map((entry) => {
-    const activity = Array.isArray(entry) ? entry[1] : entry;
-    return (
-      safeGet(activity, ["target", "template", "type"]) ??
-      safeGet(activity, ["template", "type"]) ??
-      safeGet(activity, ["activation", "template", "type"]) ??
-      null
-    );
-  }).filter(Boolean);
-
-  const inferredType = pickFirstDefined(
-    activityTemplates[0],
-    safeGet(item, ["system", "target", "template", "type"]),
-    safeGet(item, ["system", "template", "type"]),
-    null
-  );
-
-  return normalizeSimpleTemplateType(inferredType);
+  const detectedTemplateType = resolveItemTemplateTypeDetection(item).templateType;
+  return detectedTemplateType
+    ? normalizeSimpleTemplateType(detectedTemplateType)
+    : null;
 }
 
 function buildChoiceOptions(choices, selectedValue) {
@@ -1387,6 +1579,45 @@ function getBaseTypeChoices() {
       value: "composite-ring",
       label: localize("PERSISTENT_ZONES.UI.BaseTypes.CompositeRing", "Composite Ring")
     }
+    ];
+}
+
+function getCompatibleBaseTypeChoices(templateType) {
+  const normalizedTemplateType = normalizeTemplateTypeValueForAuthoring(templateType);
+  const allowedBaseTypes = getCompatibleBaseTypesForTemplateType(normalizedTemplateType);
+  const choices = getBaseTypeChoices();
+
+  if (!allowedBaseTypes.length) {
+    return choices;
+  }
+
+  return choices.filter((choice) => allowedBaseTypes.includes(choice.value));
+}
+
+function getCompatibleBaseTypesForTemplateType(templateType) {
+  switch (normalizeTemplateTypeValueForAuthoring(templateType)) {
+    case "circle":
+      return ["simple", "ring", "composite-ring"];
+    case "ray":
+      return ["simple", "composite-line"];
+    case "cone":
+    case "rect":
+      return ["simple"];
+    default:
+      return getBaseTypeChoices().map((choice) => choice.value);
+  }
+}
+
+function getTemplateTypeSourceChoices() {
+  return [
+    {
+      value: "auto",
+      label: localize("PERSISTENT_ZONES.UI.TemplateTypeSources.Auto", "Auto")
+    },
+    {
+      value: "manual",
+      label: localize("PERSISTENT_ZONES.UI.TemplateTypeSources.Manual", "Manual")
+    }
   ];
 }
 
@@ -1395,6 +1626,210 @@ function getSimpleTemplateChoices() {
     value: templateType,
     label: localizeTemplateType(templateType)
   }));
+}
+
+function resolveTemplateTypeContext(
+  {
+    templateTypeSource = DEFAULT_TEMPLATE_TYPE_SOURCE,
+    manualTemplateType = DEFAULT_SIMPLE_TEMPLATE_TYPE
+  } = {},
+  item = null
+) {
+  const normalizedSource = normalizeTemplateTypeSource(templateTypeSource);
+  const normalizedManualTemplateType = normalizeSimpleTemplateType(manualTemplateType);
+  const detectedTemplateInfo = resolveItemTemplateTypeDetection(item);
+  const detectedTemplateType = normalizeTemplateTypeValueForAuthoring(detectedTemplateInfo.templateType);
+  const effectiveTemplateType = normalizeSimpleTemplateType(
+    normalizedSource === "manual"
+      ? normalizedManualTemplateType
+      : detectedTemplateType ?? DEFAULT_SIMPLE_TEMPLATE_TYPE
+  );
+  const warnings = [];
+
+  if (normalizedSource === "auto" && !detectedTemplateType) {
+    warnings.push(
+      `${localize(
+        "PERSISTENT_ZONES.UI.TemplateTypeWarnings.AutoNotDetected",
+        "No dnd5e template type could be detected automatically for this Item."
+      )} ${localize(
+        "PERSISTENT_ZONES.UI.TemplateTypeWarnings.AutoFallback",
+        "Preview is using a safe fallback."
+      )}`
+    );
+  }
+
+  if (normalizedSource === "auto" && detectedTemplateInfo.ambiguous) {
+    warnings.push(
+      `${localize(
+        "PERSISTENT_ZONES.UI.TemplateTypeWarnings.AutoAmbiguous",
+        "Multiple dnd5e template types were detected on this Item."
+      )} ${localize(
+        "PERSISTENT_ZONES.UI.TemplateTypeWarnings.AutoUsingDetected",
+        "Auto mode is using the first detected type."
+      )}`
+    );
+  }
+
+  if (
+    normalizedSource === "manual" &&
+    detectedTemplateType &&
+    normalizedManualTemplateType !== detectedTemplateType
+  ) {
+    warnings.push(
+      `${localize(
+        "PERSISTENT_ZONES.UI.TemplateTypeWarnings.ManualMismatch",
+        "The manual template type override differs from the detected dnd5e template type."
+      )}`
+    );
+  }
+
+  return {
+    templateTypeSource: normalizedSource,
+    templateTypeSourceLabel: getTemplateTypeSourceLabel(normalizedSource),
+    detectedTemplateTypeRaw: detectedTemplateInfo.templateTypeRaw ?? null,
+    detectedTemplateType,
+    detectedTemplateTypeLabel: detectedTemplateType ? localizeTemplateType(detectedTemplateType) : null,
+    detectedTemplateSource: detectedTemplateInfo.sourcePath ?? null,
+    detectedTemplateSourceLabel: getDetectedTemplateSourceLabel(detectedTemplateInfo),
+    detectedActivityId: detectedTemplateInfo.activityId ?? null,
+    effectiveTemplateType,
+    effectiveTemplateTypeLabel: localizeTemplateType(effectiveTemplateType),
+    manualTemplateType: normalizedManualTemplateType,
+    manualTemplateTypeLabel: localizeTemplateType(normalizedManualTemplateType),
+    detectionFound: Boolean(detectedTemplateType),
+    templateTypeOverrideApplied: normalizedSource === "manual",
+    warningReason: warnings[0] ?? null,
+    warnings,
+    multipleSources: Boolean(detectedTemplateInfo.multipleSources),
+    candidateCount: detectedTemplateInfo.candidateCount ?? 0
+  };
+}
+
+function resolveAuthoringTemplateTypeContext(formState, item = null) {
+  const normalizedState = normalizeAuthoringFormState(formState);
+  return resolveTemplateTypeContext(
+    {
+      templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+      manualTemplateType: normalizedState.simpleTemplateType
+    },
+    item
+  );
+}
+
+function resolveAuthoringSelectionContext(formState, item = null) {
+  const normalizedState = normalizeAuthoringFormState(formState);
+  const templateTypeContext = resolveTemplateTypeContext(
+    {
+      templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+      manualTemplateType: normalizedState.simpleTemplateType
+    },
+    item
+  );
+  const compatibleBaseTypeChoices = getCompatibleBaseTypeChoices(
+    templateTypeContext.effectiveTemplateType
+  );
+  const compatibleBaseTypes = compatibleBaseTypeChoices.map((choice) => choice.value);
+  const selectedBaseType = normalizeBaseType(normalizedState.baseType);
+  const selectedBaseTypeCompatible = compatibleBaseTypes.includes(selectedBaseType);
+  const effectiveBaseType = selectedBaseTypeCompatible
+    ? selectedBaseType
+    : (compatibleBaseTypes[0] ?? "simple");
+  const variantChoices = getVariantChoicesForBaseType(effectiveBaseType);
+  const compatibleVariants = variantChoices.map((choice) => choice.value);
+  const selectedVariant = String(normalizedState.selectedVariant ?? "").trim().toLowerCase();
+  const selectedVariantCompatible = !variantChoices.length || compatibleVariants.includes(selectedVariant);
+  const effectiveSelectedVariant = normalizeVariantSelection(
+    effectiveBaseType,
+    selectedVariant
+  );
+  const warnings = [];
+
+  if (!selectedBaseTypeCompatible) {
+    warnings.push(
+      localize(
+        "PERSISTENT_ZONES.UI.Compatibility.BaseTypeFiltered",
+        "The currently stored base type is incompatible with the effective template type, so the UI is using a compatible fallback."
+      )
+    );
+  }
+
+  if (!selectedVariantCompatible && variantChoices.length) {
+    warnings.push(
+      localize(
+        "PERSISTENT_ZONES.UI.Compatibility.VariantFiltered",
+        "The currently stored variant is incompatible with the effective base type, so the UI is using a compatible fallback."
+      )
+    );
+  }
+
+  return {
+    state: {
+      ...normalizedState,
+      templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
+      simpleTemplateType: templateTypeContext.effectiveTemplateType,
+      baseType: effectiveBaseType,
+      selectedVariant: effectiveSelectedVariant
+    },
+    templateTypeContext,
+    compatibleBaseTypeChoices,
+    compatibleBaseTypes,
+    compatibleBaseTypeLabels: compatibleBaseTypeChoices.map((choice) => choice.label).join(", "),
+    selectedBaseType,
+    selectedBaseTypeCompatible,
+    effectiveBaseType,
+    variantChoices,
+    compatibleVariants,
+    compatibleVariantLabels: variantChoices.map((choice) => choice.label).join(", "),
+    selectedVariant,
+    selectedVariantCompatible,
+    effectiveSelectedVariant,
+    selectedVariantLabel: getSelectedChoiceLabel(variantChoices, effectiveSelectedVariant),
+    baseTypeWarningReason: !selectedBaseTypeCompatible ? warnings[0] ?? null : null,
+    variantWarningReason:
+      !selectedVariantCompatible && variantChoices.length
+        ? warnings[warnings.length - 1] ?? null
+        : null,
+    warningReason: warnings[0] ?? null,
+    warnings
+  };
+}
+
+function getTemplateTypeSourceLabel(source) {
+  return normalizeTemplateTypeSource(source) === "manual"
+    ? localize("PERSISTENT_ZONES.UI.TemplateTypeSources.Manual", "Manual")
+    : localize("PERSISTENT_ZONES.UI.TemplateTypeSources.Auto", "Auto");
+}
+
+function getDetectedTemplateSourceLabel(detectedTemplateInfo = {}) {
+  if (!detectedTemplateInfo?.templateType) {
+    return localize(
+      "PERSISTENT_ZONES.UI.TemplateTypeWarnings.NoDetectedSource",
+      "No dnd5e template source detected."
+    );
+  }
+
+  if (detectedTemplateInfo.sourceKind === "activity") {
+    return `${localize(
+      "PERSISTENT_ZONES.UI.TemplateTypeSources.DetectedFromActivity",
+      "Detected from activity"
+    )}: ${detectedTemplateInfo.sourceLabel ?? detectedTemplateInfo.activityId ?? "?"}`;
+  }
+
+  if (detectedTemplateInfo.sourceKind === "item-target") {
+    return localize(
+      "PERSISTENT_ZONES.UI.TemplateTypeSources.DetectedFromItemTarget",
+      "Detected from Item target template"
+    );
+  }
+
+  if (detectedTemplateInfo.sourceKind === "item-template") {
+    return localize(
+      "PERSISTENT_ZONES.UI.TemplateTypeSources.DetectedFromItemTemplate",
+      "Detected from Item template"
+    );
+  }
+
+  return detectedTemplateInfo.sourceLabel ?? detectedTemplateInfo.sourcePath ?? "";
 }
 
 function getVariantChoicesForBaseType(baseType) {
@@ -1432,21 +1867,29 @@ function hasVariantChoices(baseType) {
   return getVariantChoicesForBaseType(baseType).length > 0;
 }
 
-function buildCompositePartSections(formState, item) {
-  return getPartIdsForBaseType(formState.baseType).map((partId) => {
-    const partState = normalizeAuthoringTriggerState(
-      formState.partConfigs?.[partId] ?? {},
-      getDefaultPartAuthoringConfig(partId)
-    );
-    const activityField = buildZoneTriggerActivityFieldContext(item, partState.activityId);
+function buildTriggerEditorSections(triggerConfigs, item, {
+  partId = null
+} = {}) {
+  const normalizedConfigs = normalizeAuthoringTriggerConfigs(triggerConfigs);
+
+  return AUTHORING_TRIGGER_TIMINGS.map((timing) => {
+    const triggerState = normalizedConfigs[timing] ?? getDefaultTriggerAuthoringConfig();
+    const activityField = buildZoneTriggerActivityFieldContext(item, triggerState.activityId);
 
     return {
-      id: partId,
-      label: getAuthoringPartLabel(partId),
-      state: partState,
-      onEnterModeOptions: buildChoiceOptions(getOnEnterModeChoices(), partState.onEnterMode),
-      damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), partState.damageType),
-      saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), partState.saveDcMode),
+      timing,
+      label: getTriggerTimingLabel(timing),
+      state: triggerState,
+      modeFieldName: getTriggerFieldName("mode", timing, { partId }),
+      damageFormulaFieldName: getTriggerFieldName("damageFormula", timing, { partId }),
+      damageTypeFieldName: getTriggerFieldName("damageType", timing, { partId }),
+      saveAbilityFieldName: getTriggerFieldName("saveAbility", timing, { partId }),
+      saveDcModeFieldName: getTriggerFieldName("saveDcMode", timing, { partId }),
+      saveDcFieldName: getTriggerFieldName("saveDc", timing, { partId }),
+      activityFieldName: getTriggerFieldName("activityId", timing, { partId }),
+      modeOptions: buildChoiceOptions(getTriggerModeChoices(), triggerState.mode),
+      damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), triggerState.damageType),
+      saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), triggerState.saveDcMode),
       abilityOptions: buildChoiceOptions(
         [
           {
@@ -1455,16 +1898,37 @@ function buildCompositePartSections(formState, item) {
           },
           ...getAbilityChoices()
         ],
-        partState.saveAbility
+        triggerState.saveAbility
       ),
       activityField,
-      showSimpleFields: partState.onEnterMode === "simple",
-      showActivityField: partState.onEnterMode === "activity",
-      showSaveDcMode: partState.onEnterMode === "simple" && Boolean(partState.saveAbility),
+      showSimpleFields: triggerState.mode === "simple",
+      showActivityField: triggerState.mode === "activity",
+      showSaveDcMode: triggerState.mode === "simple" && Boolean(triggerState.saveAbility),
       showManualSaveDc:
-        partState.onEnterMode === "simple" &&
-        Boolean(partState.saveAbility) &&
-        partState.saveDcMode === "manual"
+        triggerState.mode === "simple" &&
+        Boolean(triggerState.saveAbility) &&
+        triggerState.saveDcMode === "manual"
+    };
+  });
+}
+
+function buildCompositePartSections(formState, item) {
+  const normalizedPartConfigs = normalizeAuthoringPartConfigs(formState.partConfigs);
+  const effectivePartIds = getEffectivePartIdsForBaseType(
+    formState.baseType,
+    formState.selectedVariant
+  );
+
+  return effectivePartIds.map((partId) => {
+    const partConfig = normalizedPartConfigs?.[partId] ??
+      getDefaultPartAuthoringConfig(partId);
+
+    return {
+      id: partId,
+      label: getEffectiveAuthoringPartLabel(partId, formState.baseType, formState.selectedVariant),
+      triggerSections: buildTriggerEditorSections(partConfig.triggerConfigs, item, {
+        partId
+      })
     };
   });
 }
@@ -1498,7 +1962,7 @@ function getSaveDcModeChoices() {
   ];
 }
 
-function getOnEnterModeChoices() {
+function getTriggerModeChoices() {
   return [
     {
       value: "none",
@@ -1603,11 +2067,16 @@ function collectActivityCompatibilityValidationIssues(formState, item) {
   const normalizedState = normalizeAuthoringFormState(formState);
 
   if (!isCompositeBaseType(normalizedState.baseType)) {
-    if (normalizedState.onEnterMode === "activity") {
+    for (const timing of AUTHORING_TRIGGER_TIMINGS) {
+      const triggerConfig = normalizedState.triggerConfigs?.[timing] ?? {};
+      if (triggerConfig.mode !== "activity") {
+        continue;
+      }
+
       const issue = buildZoneTriggerActivityValidationIssue(
         item,
-        normalizedState.activityId,
-        localize("PERSISTENT_ZONES.UI.Sections.OnEnter", "On Enter")
+        triggerConfig.activityId,
+        getTriggerTimingLabel(timing)
       );
       if (issue) {
         issues.push(issue);
@@ -1617,23 +2086,27 @@ function collectActivityCompatibilityValidationIssues(formState, item) {
     return issues;
   }
 
-  for (const partId of getPartIdsForBaseType(normalizedState.baseType)) {
-    const partState = normalizeAuthoringTriggerState(
-      normalizedState.partConfigs?.[partId] ?? {},
+  for (const partId of getEffectivePartIdsForBaseType(
+    normalizedState.baseType,
+    normalizedState.selectedVariant
+  )) {
+    const partState = normalizeAuthoringPartConfigs(normalizedState.partConfigs)?.[partId] ??
       getDefaultPartAuthoringConfig(partId)
-    );
 
-    if (partState.onEnterMode !== "activity") {
-      continue;
-    }
+    for (const timing of AUTHORING_TRIGGER_TIMINGS) {
+      const triggerConfig = partState.triggerConfigs?.[timing] ?? {};
+      if (triggerConfig.mode !== "activity") {
+        continue;
+      }
 
-    const issue = buildZoneTriggerActivityValidationIssue(
-      item,
-      partState.activityId,
-      getAuthoringPartLabel(partId)
-    );
-    if (issue) {
-      issues.push(issue);
+      const issue = buildZoneTriggerActivityValidationIssue(
+        item,
+        triggerConfig.activityId,
+        `${getEffectiveAuthoringPartLabel(partId, normalizedState.baseType, normalizedState.selectedVariant)} - ${getTriggerTimingLabel(timing)}`
+      );
+      if (issue) {
+        issues.push(issue);
+      }
     }
   }
 
@@ -1790,6 +2263,24 @@ function getPartIdsForBaseType(baseType) {
   }
 }
 
+function getEffectivePartIdsForBaseType(baseType, selectedVariant) {
+  const normalizedBaseType = normalizeBaseType(baseType);
+  const normalizedVariant = normalizeVariantSelection(normalizedBaseType, selectedVariant);
+
+  switch (normalizedBaseType) {
+    case "composite-line":
+      return normalizedVariant === "line-right"
+        ? ["wall-body", "heated-side-right"]
+        : ["wall-body", "heated-side-left"];
+    case "composite-ring":
+      return normalizedVariant === "ring-outer"
+        ? ["wall-body", "heated-side-outer"]
+        : ["wall-body", "heated-side-inner"];
+    default:
+      return getPartIdsForBaseType(normalizedBaseType);
+  }
+}
+
 function getAuthoringPartLabel(partId) {
   switch (String(partId ?? "").toLowerCase()) {
     case "heated-side-left":
@@ -1806,6 +2297,28 @@ function getAuthoringPartLabel(partId) {
   }
 }
 
+function getEffectiveAuthoringPartLabel(partId, baseType, selectedVariant) {
+  const normalizedPartId = String(partId ?? "").toLowerCase();
+
+  if (normalizedPartId === "wall-body") {
+    return getAuthoringPartLabel(partId);
+  }
+
+  if (normalizeBaseType(baseType) === "composite-line") {
+    return String(selectedVariant ?? "").toLowerCase() === "line-right"
+      ? localize("PERSISTENT_ZONES.UI.Parts.HeatedZoneRight", "Heated Zone (Right)")
+      : localize("PERSISTENT_ZONES.UI.Parts.HeatedZoneLeft", "Heated Zone (Left)");
+  }
+
+  if (normalizeBaseType(baseType) === "composite-ring") {
+    return String(selectedVariant ?? "").toLowerCase() === "ring-outer"
+      ? localize("PERSISTENT_ZONES.UI.Parts.HeatedZoneOuter", "Heated Zone (Outer)")
+      : localize("PERSISTENT_ZONES.UI.Parts.HeatedZoneInner", "Heated Zone (Inner)");
+  }
+
+  return getAuthoringPartLabel(partId);
+}
+
 function getVariantLabel(variantId) {
   switch (String(variantId ?? "").toLowerCase()) {
     case "line-right":
@@ -1818,6 +2331,12 @@ function getVariantLabel(variantId) {
     default:
       return localize("PERSISTENT_ZONES.UI.Variants.LineLeft", "Line Left");
   }
+}
+
+function getSelectedChoiceLabel(choices, selectedValue) {
+  const choice = Array.from(choices ?? [])
+    .find((candidate) => String(candidate?.value ?? "") === String(selectedValue ?? ""));
+  return choice?.label ?? null;
 }
 
 function localizeTemplateType(templateType) {
@@ -1880,6 +2399,17 @@ function normalizeBaseType(value) {
   return ["simple", "ring", "composite-line", "composite-ring"].includes(normalized)
     ? normalized
     : "simple";
+}
+
+function normalizeTemplateTypeSource(value) {
+  return String(value ?? DEFAULT_TEMPLATE_TYPE_SOURCE).trim().toLowerCase() === "manual"
+    ? "manual"
+    : "auto";
+}
+
+function normalizeTemplateTypeValueForAuthoring(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return SUPPORTED_TEMPLATE_TYPES.includes(normalized) ? normalized : null;
 }
 
 function normalizeSimpleTemplateType(value) {
@@ -2025,12 +2555,29 @@ function readCheckbox(form, name) {
 }
 
 function readValue(form, name) {
-  return form?.querySelector?.(`[name="${name}"]`)?.value ?? "";
+  const fields = Array.from(form?.querySelectorAll?.(`[name="${name}"]`) ?? []);
+  if (!fields.length) {
+    return "";
+  }
+
+  if (fields.some((field) => field?.type === "radio")) {
+    return fields.find((field) => field?.checked)?.value ?? "";
+  }
+
+  return fields[0]?.value ?? "";
 }
 
 function readOptionalValue(form, name, fallback = "") {
-  const field = form?.querySelector?.(`[name="${name}"]`);
-  return field ? field.value : fallback;
+  const fields = Array.from(form?.querySelectorAll?.(`[name="${name}"]`) ?? []);
+  if (!fields.length) {
+    return fallback;
+  }
+
+  if (fields.some((field) => field?.type === "radio")) {
+    return fields.find((field) => field?.checked)?.value ?? fallback;
+  }
+
+  return fields[0]?.value ?? fallback;
 }
 
 function canConfigurePersistentZonesItem(item) {
