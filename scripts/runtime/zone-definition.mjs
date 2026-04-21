@@ -315,7 +315,8 @@ export function normalizeZoneDefinition(
     variantResolution: duplicateData(variantSelection.resolution),
     targeting: normalizeTargeting(definition.targeting),
     triggers: normalizeTriggers(triggerDefinition, dc, {
-      item
+      item,
+      scene: templateDocument?.parent ?? canvas?.scene ?? null
     }),
     geometry: normalizeGeometryDefinition(null, {
       templateDocument,
@@ -952,7 +953,8 @@ function normalizeLinkedLight(linkedLightDefinition, {
 }
 
 function normalizeTriggers(triggerDefinition, dc, {
-  item = null
+  item = null,
+  scene = null
 } = {}) {
   const startTurnDefinition = pickFirstDefined(
     triggerDefinition.onStartTurn,
@@ -969,19 +971,24 @@ function normalizeTriggers(triggerDefinition, dc, {
 
   return {
     onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc, {
-      item
+      item,
+      scene
     }),
     onExit: normalizeTriggerConfig(triggerDefinition.onExit, dc, {
-      item
+      item,
+      scene
     }),
     onMove: normalizeTriggerConfig(moveDefinition, dc, {
-      item
+      item,
+      scene
     }),
     onStartTurn: normalizeTriggerConfig(startTurnDefinition, dc, {
-      item
+      item,
+      scene
     }),
     onEndTurn: normalizeTriggerConfig(endTurnDefinition, dc, {
-      item
+      item,
+      scene
     })
   };
 }
@@ -1098,7 +1105,8 @@ function normalizeZonePart(partLikeDefinition, index, {
       )
     }),
     triggers: normalizeTriggers(mergedTriggerDefinition, dc, {
-      item
+      item,
+      scene: templateDocument?.parent ?? canvas?.scene ?? null
     })
   };
 }
@@ -1472,7 +1480,8 @@ function normalizeRingSegmentCount(value) {
 }
 
 function normalizeTriggerConfig(triggerLikeDefinition, dc, {
-  item = null
+  item = null,
+  scene = null
 } = {}) {
   const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
@@ -1498,6 +1507,31 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     saveDefinition,
     activity
   });
+  const explicitStepMode = normalizeTriggerStepMode(
+    pickFirstDefined(
+      definition.stepMode,
+      definition.moveStepMode,
+      null
+    ),
+    null
+  );
+  const hasExplicitCellStep = pickFirstDefined(
+    definition.cellStep,
+    definition.stepCells,
+    definition.gridCellStep,
+    definition.cellCount
+  ) !== undefined;
+  const hasExplicitDistanceStep = pickFirstDefined(
+    definition.distanceStep,
+    definition.stepDistance,
+    definition.distanceEvery
+  ) !== undefined;
+  const stepMode = explicitStepMode ??
+    (hasExplicitCellStep
+      ? "grid-cell"
+      : hasExplicitDistanceStep
+        ? "distance"
+        : getDefaultOnMoveStepMode(scene));
   const mode = normalizeTriggerEffectMode(definition.mode, inferredMode);
   const enabled = coerceBoolean(
     pickFirstDefined(definition.enabled, definition.active, mode !== "none"),
@@ -1507,17 +1541,33 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
   return {
     enabled,
     mode: enabled ? mode : "none",
+    stepMode,
+    cellStep: stepMode === "grid-cell"
+      ? normalizeMoveCellStep(
+        pickFirstDefined(
+          definition.cellStep,
+          definition.stepCells,
+          definition.gridCellStep,
+          definition.cellCount,
+          1
+        ),
+        1
+      )
+      : null,
     movementMode: normalizeMovementMode(
       pickFirstDefined(definition.movementMode, "any")
     ),
-    distanceStep: coerceNumber(
-      pickFirstDefined(
-        definition.distanceStep,
-        definition.stepDistance,
-        definition.distanceEvery
-      ),
-      null
-    ),
+    distanceStep: stepMode === "distance"
+      ? coerceNumber(
+        pickFirstDefined(
+          definition.distanceStep,
+          definition.stepDistance,
+          definition.distanceEvery,
+          getDefaultOnMoveDistanceStep(scene)
+        ),
+        null
+      )
+      : null,
     stopMovementOnTrigger: coerceBoolean(
       pickFirstDefined(
         definition.stopMovementOnTrigger,
@@ -1851,8 +1901,12 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
   }
 
   if (requireDistanceStep) {
-    if (triggerConfig.distanceStep === null || triggerConfig.distanceStep <= 0) {
-      reasons.push(`${triggerName} requires a positive distanceStep.`);
+    if (triggerConfig.stepMode === "grid-cell") {
+      if (triggerConfig.cellStep === null || triggerConfig.cellStep <= 0) {
+        reasons.push(`${triggerName} requires a positive cellStep when stepMode is "grid-cell".`);
+      }
+    } else if (triggerConfig.distanceStep === null || triggerConfig.distanceStep <= 0) {
+      reasons.push(`${triggerName} requires a positive distanceStep when stepMode is "distance".`);
     }
   }
 
@@ -2016,6 +2070,50 @@ function normalizeSaveDcSource(value) {
 function normalizeMovementMode(value) {
   const normalized = String(value ?? "any").toLowerCase();
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
+}
+
+function normalizeTriggerStepMode(value, fallback = "distance") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["grid-cell", "distance"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function normalizeMoveCellStep(value, fallback = 1) {
+  return Math.max(Math.round(coerceNumber(value, fallback)), 1);
+}
+
+function getDefaultOnMoveStepMode(scene = canvas?.scene ?? null) {
+  return isSquareGridOnMoveStepModeAvailable(scene) ? "grid-cell" : "distance";
+}
+
+function getDefaultOnMoveDistanceStep(scene = canvas?.scene ?? null) {
+  const normalizedUnits = String(scene?.grid?.units ?? canvas?.scene?.grid?.units ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizedUnits === "ft" || normalizedUnits.includes("foot") || normalizedUnits.includes("feet") || normalizedUnits.includes("pied")) {
+    return 5;
+  }
+
+  if (normalizedUnits === "m" || normalizedUnits.includes("meter") || normalizedUnits.includes("metre") || normalizedUnits.includes("mètre")) {
+    return 1.5;
+  }
+
+  const sceneDistance = coerceNumber(scene?.grid?.distance, null);
+  return sceneDistance && sceneDistance > 0 ? sceneDistance : 5;
+}
+
+function isSquareGridOnMoveStepModeAvailable(scene = canvas?.scene ?? null) {
+  const grid = canvas?.grid ?? null;
+  return Boolean(
+    grid &&
+    !grid.isGridless &&
+    grid.isSquare &&
+    coerceNumber(scene?.grid?.size, coerceNumber(grid?.size, 0)) > 0
+  );
 }
 
 function normalizeDirectionalSide(value) {

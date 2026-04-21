@@ -121,8 +121,23 @@
 .persistent-zones-item-config select {
   appearance: auto;
   -webkit-appearance: menulist;
+  color-scheme: dark;
   padding-right: 1.8rem;
   font-weight: 600;
+}
+
+.persistent-zones-item-config select,
+.persistent-zones-item-config select optgroup,
+.persistent-zones-item-config select option {
+  background-color: rgba(22, 18, 16, 0.98) !important;
+  color: var(--pz-text) !important;
+}
+
+.persistent-zones-item-config select option:checked,
+.persistent-zones-item-config select option:hover,
+.persistent-zones-item-config select option:focus {
+  background: rgba(95, 68, 40, 0.98) !important;
+  color: #fff2dc !important;
 }
 
 .persistent-zones-item-config input[type="checkbox"] {

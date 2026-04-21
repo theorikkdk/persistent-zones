@@ -124,6 +124,34 @@
               </div>
             </div>
 
+            {{#if triggerSection.showStepMode}}
+              <div class="form-group form-group--stacked">
+                <label>{{localize "PERSISTENT_ZONES.UI.Fields.StepMode"}}</label>
+                <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                  {{#each triggerSection.stepModeOptions as |option|}}
+                    <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                      <input type="radio" name="{{triggerSection.stepModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                      <span>{{option.label}}</span>
+                    </label>
+                  {{/each}}
+                </div>
+              </div>
+            {{/if}}
+
+            {{#if triggerSection.showCellStep}}
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.UI.Fields.CellStep"}}</label>
+                <input type="number" name="{{triggerSection.cellStepFieldName}}" value="{{triggerSection.state.cellStep}}" min="1" step="1">
+              </div>
+            {{/if}}
+
+            {{#if triggerSection.showDistanceStep}}
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.UI.Fields.DistanceStep"}}</label>
+                <input type="text" name="{{triggerSection.distanceStepFieldName}}" value="{{triggerSection.state.distanceStep}}" inputmode="decimal" placeholder="5.0">
+              </div>
+            {{/if}}
+
             {{#if triggerSection.showSimpleFields}}
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
@@ -219,6 +247,34 @@
                   {{/each}}
                 </div>
               </div>
+
+              {{#if triggerSection.showStepMode}}
+                <div class="form-group form-group--stacked">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.StepMode"}}</label>
+                  <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                    {{#each triggerSection.stepModeOptions as |option|}}
+                      <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                        <input type="radio" name="{{triggerSection.stepModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                        <span>{{option.label}}</span>
+                      </label>
+                    {{/each}}
+                  </div>
+                </div>
+              {{/if}}
+
+              {{#if triggerSection.showCellStep}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.CellStep"}}</label>
+                  <input type="number" name="{{triggerSection.cellStepFieldName}}" value="{{triggerSection.state.cellStep}}" min="1" step="1">
+                </div>
+              {{/if}}
+
+              {{#if triggerSection.showDistanceStep}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.DistanceStep"}}</label>
+                  <input type="text" name="{{triggerSection.distanceStepFieldName}}" value="{{triggerSection.state.distanceStep}}" inputmode="decimal" placeholder="5.0">
+                </div>
+              {{/if}}
 
               {{#if triggerSection.showSimpleFields}}
                 <div class="form-group">

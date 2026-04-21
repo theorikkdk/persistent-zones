@@ -596,7 +596,14 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     const onEnter = normalizedDefinition?.triggers?.onEnter ?? {};
     const onExit = normalizedDefinition?.triggers?.onExit ?? {};
     const onMove = normalizedDefinition?.triggers?.onMove ?? {};
-    const stepDistance = coerceNumber(onMove.distanceStep, null);
+    const stepMode = resolveOnMoveStepMode(onMove, scene);
+    const cellStep = stepMode === "grid-cell"
+      ? normalizeOnMoveCellStep(onMove.cellStep, 1)
+      : null;
+    const stepDistance = stepMode === "distance"
+      ? coerceNumber(onMove.distanceStep, getDefaultOnMoveDistanceStep(scene))
+      : null;
+    const configuredStep = stepMode === "grid-cell" ? cellStep : stepDistance;
     const stepDistancePixels = stepDistance === null ? null : distanceToPixels(stepDistance, scene);
     const insideStateKey = buildInsideStateKey(tokenDocument, regionDocument);
     const cachedFromInside = regionInsideStates.get(insideStateKey) ?? null;
@@ -613,6 +620,7 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
         sawExit: false,
         pathLengthPixels: 0,
         insideDistancePixels: 0,
+        insideCellCount: 0,
         firstEntryState: toInside ? lastPathState : null,
         firstEntryPathDistancePixels: toInside ? 0 : null,
         firstEntrySegmentIndex: 1,
@@ -624,14 +632,20 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
         firstInsideStepSegmentIndex: 1,
         firstMoveTriggerState: null,
         firstMoveTriggerPathDistancePixels: null,
-        firstMoveTriggerSegmentIndex: null
+        firstMoveTriggerSegmentIndex: null,
+        firstGridMoveTriggerState: null,
+        firstGridMoveTriggerPathDistancePixels: null,
+        firstGridMoveTriggerSegmentIndex: null
       }
       : analyzeMovementAcrossRegion(
         tokenDocument,
         regionDocument,
         states,
         fromInside,
-        { stepDistancePixels }
+        {
+          stepDistancePixels,
+          gridCellStep: cellStep
+        }
       );
     const enterDetected = moveSource === "createToken"
       ? toInside
@@ -641,7 +655,14 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
       : fromInside && !toInside && movementAnalysis.sawExit;
     const pathLength = pixelsToDistance(movementAnalysis.pathLengthPixels, scene);
     const insideDistance = pixelsToDistance(movementAnalysis.insideDistancePixels, scene);
-    const moveTriggerCount = calculateMoveTriggerCount(insideDistance, stepDistance);
+    const insideCellCount = movementAnalysis.insideCellCount ?? 0;
+    const moveTriggerCount = calculateMoveTriggerCount({
+      stepMode,
+      insideDistance,
+      stepDistance,
+      insideCellCount,
+      cellStep
+    });
     const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
     const exitMovementModeMatched = movementModeMatches(movementMode, onExit.movementMode);
     const moveMovementModeMatched = movementModeMatches(movementMode, onMove.movementMode);
@@ -662,6 +683,10 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
       movementAnalysis,
       pathLength,
       insideDistance,
+      insideCellCount,
+      stepMode,
+      configuredStep,
+      cellStep,
       stepDistance,
       moveTriggerCount,
       enterDetected,
@@ -698,6 +723,10 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     movementAnalysis,
     pathLength,
     insideDistance,
+    insideCellCount,
+    stepMode,
+    configuredStep,
+    cellStep,
     stepDistance,
     moveTriggerCount,
     enterDetected,
@@ -727,7 +756,11 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     : buildGridCellPayload(movementAnalysis.firstInsideCellState);
   const onMoveThresholdPoint = stopHandledByRegion
     ? buildSimplePositionPayload(stopDecision.onMoveThresholdState)
-    : buildSimplePositionPayload(movementAnalysis.firstMoveTriggerState);
+    : buildSimplePositionPayload(
+      stepMode === "grid-cell"
+        ? movementAnalysis.firstGridMoveTriggerState ?? movementAnalysis.firstInsideCellState
+        : movementAnalysis.firstMoveTriggerState
+    );
 
   if (!normalizedDefinition?.enabled) {
     debug("Skipped managed Region effect because the normalized definition is disabled.", {
@@ -742,8 +775,12 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
       moveSource,
+      stepMode,
+      configuredStep: roundDistanceValue(configuredStep),
+      computedSteps: moveTriggerCount,
       pathLength: roundDistanceValue(pathLength),
       insideDistance: roundDistanceValue(insideDistance),
+      insideCellCount,
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: moveTriggerCount
     });
@@ -772,6 +809,9 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         moveSource,
         movementMode,
         moveTriggerCount,
+        stepMode,
+        configuredStep,
+        insideCellCount,
         moveMovementModeMatched,
         fromState,
         toState,
@@ -813,6 +853,10 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     exitMovementModeMatched,
     moveRequiredMovementMode: onMove.movementMode ?? "any",
     moveMovementModeMatched,
+    moveStepMode: stepMode,
+    moveConfiguredStep: roundDistanceValue(configuredStep),
+    moveInsideCellCount: insideCellCount,
+    computedSteps: moveTriggerCount,
     onEnterStopMovementOnTrigger: onEnter.stopMovementOnTrigger ?? false,
     onMoveStopMovementOnTrigger: onMove.stopMovementOnTrigger ?? false,
     fromX: fromState?.position?.x ?? null,
@@ -913,6 +957,9 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   moveSource,
   movementMode,
   moveTriggerCount,
+  stepMode,
+  configuredStep,
+  insideCellCount,
   moveMovementModeMatched,
   fromState,
   toState,
@@ -924,6 +971,19 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   stopHandledByRegion,
   stopDecision
 }) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const partId =
+    runtime?.partId ??
+    runtime?.part?.id ??
+    runtime?.normalizedDefinition?.part?.id ??
+    null;
+  const triggerTiming = "onMove";
+  const triggerMode = String(onMove?.mode ?? "none");
+  const selectedActivity =
+    onMove?.activity?.id ??
+    onMove?.activityId ??
+    null;
+
   if (moveTriggerCount <= 0) {
     return false;
   }
@@ -931,15 +991,43 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   const effectiveTriggerCount = moveTriggerCount;
 
   if (!onMove.enabled) {
-    debug("Skipped managed Region effect because onMove is disabled.", {
-      tokenId: tokenDocument.id,
-      regionId: regionDocument.id,
-      moveSource,
-      pathLength: roundDistanceValue(pathLength),
-      insideDistance: roundDistanceValue(insideDistance),
-      stepDistance: roundDistanceValue(stepDistance),
-      triggerCount: effectiveTriggerCount
-    });
+    if (triggerMode === "none") {
+      debug("Skipped managed Region onMove effect because mode = none.", {
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId,
+        triggerTiming,
+        triggerMode,
+        selectedActivity,
+        stepMode,
+        configuredStep: roundDistanceValue(configuredStep),
+        computedSteps: effectiveTriggerCount,
+        moveSource,
+        pathLength: roundDistanceValue(pathLength),
+        insideDistance: roundDistanceValue(insideDistance),
+        insideCellCount,
+        stepDistance: roundDistanceValue(stepDistance),
+        triggerCount: effectiveTriggerCount
+      });
+    } else {
+      debug("Skipped managed Region effect because onMove is disabled.", {
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId,
+        triggerTiming,
+        triggerMode,
+        selectedActivity,
+        stepMode,
+        configuredStep: roundDistanceValue(configuredStep),
+        computedSteps: effectiveTriggerCount,
+        moveSource,
+        pathLength: roundDistanceValue(pathLength),
+        insideDistance: roundDistanceValue(insideDistance),
+        insideCellCount,
+        stepDistance: roundDistanceValue(stepDistance),
+        triggerCount: effectiveTriggerCount
+      });
+    }
     return false;
   }
 
@@ -947,13 +1035,21 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     debug("Skipped managed Region effect because movement mode did not match.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
+      partId,
       trigger: "onMove",
+      triggerTiming,
+      triggerMode,
+      selectedActivity,
+      stepMode,
+      configuredStep: roundDistanceValue(configuredStep),
+      computedSteps: effectiveTriggerCount,
       moveSource,
       movementMode,
       requiredMovementMode: onMove.movementMode ?? "any",
       movementModeMatched: false,
       pathLength: roundDistanceValue(pathLength),
       insideDistance: roundDistanceValue(insideDistance),
+      insideCellCount,
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: effectiveTriggerCount
     });
@@ -967,14 +1063,27 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     fromState,
     toState,
     effectiveTriggerCount,
-    insideDistance
+    insideDistance,
+    {
+      stepMode,
+      configuredStep,
+      insideCellCount
+    }
   )) {
     debug("Skipped managed Region effect because the onMove trigger was deduplicated.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id,
+      partId,
+      triggerTiming,
+      triggerMode,
+      selectedActivity,
+      stepMode,
+      configuredStep: roundDistanceValue(configuredStep),
+      computedSteps: effectiveTriggerCount,
       moveSource,
       pathLength: roundDistanceValue(pathLength),
       insideDistance: roundDistanceValue(insideDistance),
+      insideCellCount,
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: effectiveTriggerCount
     });
@@ -982,6 +1091,9 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   }
 
   let appliedCount = 0;
+  let activityFound = null;
+  let activityTriggered = false;
+  let simpleEffectApplied = false;
 
   for (let index = 0; index < effectiveTriggerCount; index += 1) {
     const application = await applyConfiguredTriggerEffect({
@@ -994,11 +1106,30 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     if (application.applied && !application.skipped) {
       appliedCount += 1;
     }
+
+    if (application.activityFound !== undefined) {
+      activityFound = application.activityFound;
+    }
+
+    if (application.activityTriggered === true) {
+      activityTriggered = true;
+    }
+
+    if (triggerMode === "simple" && application.applied && !application.skipped) {
+      simpleEffectApplied = true;
+    }
   }
 
   debug("Managed Region onMove effect completed.", {
     tokenId: tokenDocument.id,
     regionId: regionDocument.id,
+    partId,
+    triggerTiming,
+    triggerMode,
+    selectedActivity,
+    stepMode,
+    configuredStep: roundDistanceValue(configuredStep),
+    computedSteps: effectiveTriggerCount,
     moveSource,
     movementMode,
     requiredMovementMode: onMove.movementMode ?? "any",
@@ -1008,8 +1139,12 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     stopReason: stopHandledByRegion ? stopDecision?.stopReason ?? null : null,
     onMoveThresholdPoint,
     movementInterrupted: stopHandledByRegion && stopDecision.trigger === "onMove",
+    activityFound,
+    activityTriggered,
+    simpleEffectApplied,
     pathLength: roundDistanceValue(pathLength),
     insideDistance: roundDistanceValue(insideDistance),
+    insideCellCount,
     stepDistance: roundDistanceValue(stepDistance),
     triggerCount: effectiveTriggerCount,
     appliedCount,
@@ -2781,7 +2916,8 @@ function compactStatePath(states) {
 }
 
 function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside, {
-  stepDistancePixels = null
+  stepDistancePixels = null,
+  gridCellStep = null
 } = {}) {
   const states = compactStatePath(pathStates);
   if (!states.length) {
@@ -2791,6 +2927,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       sawExit: false,
       pathLengthPixels: 0,
       insideDistancePixels: 0,
+      insideCellCount: 0,
       firstEntryState: null,
       firstEntryPathDistancePixels: null,
       firstEntrySegmentIndex: null,
@@ -2802,7 +2939,10 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       firstInsideStepSegmentIndex: null,
       firstMoveTriggerState: null,
       firstMoveTriggerPathDistancePixels: null,
-      firstMoveTriggerSegmentIndex: null
+      firstMoveTriggerSegmentIndex: null,
+      firstGridMoveTriggerState: null,
+      firstGridMoveTriggerPathDistancePixels: null,
+      firstGridMoveTriggerSegmentIndex: null
     };
   }
 
@@ -2812,6 +2952,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let sawExit = false;
   let pathLengthPixels = 0;
   let insideDistancePixels = 0;
+  let insideCellCount = 0;
   let firstEntryState = null;
   let firstEntryPathDistancePixels = null;
   let firstEntrySegmentIndex = null;
@@ -2824,6 +2965,9 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let firstMoveTriggerState = null;
   let firstMoveTriggerPathDistancePixels = null;
   let firstMoveTriggerSegmentIndex = null;
+  let firstGridMoveTriggerState = null;
+  let firstGridMoveTriggerPathDistancePixels = null;
+  let firstGridMoveTriggerSegmentIndex = null;
   let gridPathDistancePixels = 0;
 
   for (let index = 1; index < states.length; index += 1) {
@@ -2838,6 +2982,21 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
         firstInsideCellState = gridState;
         firstInsideCellPathDistancePixels = gridPathDistancePixels;
         firstInsideCellSegmentIndex = index;
+      }
+
+      if (gridInside) {
+        insideCellCount += 1;
+
+        if (
+          !firstGridMoveTriggerState &&
+          gridCellStep !== null &&
+          gridCellStep > 0 &&
+          insideCellCount >= gridCellStep
+        ) {
+          firstGridMoveTriggerState = gridState;
+          firstGridMoveTriggerPathDistancePixels = gridPathDistancePixels;
+          firstGridMoveTriggerSegmentIndex = index;
+        }
       }
 
       previousGridState = gridState;
@@ -2897,6 +3056,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     sawExit,
     pathLengthPixels,
     insideDistancePixels,
+    insideCellCount,
     firstEntryState,
     firstEntryPathDistancePixels,
     firstEntrySegmentIndex,
@@ -2908,7 +3068,10 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     firstInsideStepSegmentIndex,
     firstMoveTriggerState,
     firstMoveTriggerPathDistancePixels,
-    firstMoveTriggerSegmentIndex
+    firstMoveTriggerSegmentIndex,
+    firstGridMoveTriggerState,
+    firstGridMoveTriggerPathDistancePixels,
+    firstGridMoveTriggerSegmentIndex
   };
 }
 
@@ -3135,7 +3298,11 @@ function clearHandledMovementInterruptionsForToken(tokenDocument) {
   }
 }
 
-function isDuplicateOnMoveTrigger(regionDocument, tokenDocument, moveSource, fromState, toState, triggerCount, insideDistance) {
+function isDuplicateOnMoveTrigger(regionDocument, tokenDocument, moveSource, fromState, toState, triggerCount, insideDistance, {
+  stepMode = "distance",
+  configuredStep = null,
+  insideCellCount = 0
+} = {}) {
   return checkOnMoveTriggerDedup(
     regionDocument,
     tokenDocument,
@@ -3144,11 +3311,20 @@ function isDuplicateOnMoveTrigger(regionDocument, tokenDocument, moveSource, fro
     toState,
     triggerCount,
     insideDistance,
+    {
+      stepMode,
+      configuredStep,
+      insideCellCount
+    },
     { record: true }
   );
 }
 
 function checkOnMoveTriggerDedup(regionDocument, tokenDocument, moveSource, fromState, toState, triggerCount, insideDistance, {
+  stepMode = "distance",
+  configuredStep = null,
+  insideCellCount = 0
+} = {}, {
   record = true
 } = {}) {
   cleanupExpiredDedupEntries(recentOnMoveEvents);
@@ -3157,7 +3333,11 @@ function checkOnMoveTriggerDedup(regionDocument, tokenDocument, moveSource, from
   const regionKey = regionDocument?.uuid ?? regionDocument?.id ?? "region";
   const fromKey = buildPointKey(fromState?.center);
   const toKey = buildPointKey(toState?.center);
-  const distanceKey = roundDistanceValue(insideDistance, 2);
+  const stepModeKey = normalizeOnMoveStepMode(stepMode);
+  const configuredStepKey = roundDistanceValue(configuredStep, 2);
+  const insideMetricKey = stepModeKey === "grid-cell"
+    ? Math.max(Math.round(coerceNumber(insideCellCount, 0)), 0)
+    : roundDistanceValue(insideDistance, 2);
   const key = [
     "move",
     regionKey,
@@ -3165,8 +3345,10 @@ function checkOnMoveTriggerDedup(regionDocument, tokenDocument, moveSource, from
     moveSource,
     fromKey,
     toKey,
+    stepModeKey,
+    configuredStepKey,
     triggerCount,
-    distanceKey
+    insideMetricKey
   ].join("|");
 
   const lastSeen = recentOnMoveEvents.get(key) ?? 0;
@@ -3242,7 +3424,68 @@ function normalizeMovementMode(movementMode) {
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
 }
 
-function calculateMoveTriggerCount(insideDistance, stepDistance) {
+function normalizeOnMoveStepMode(stepMode, fallback = "distance") {
+  const normalized = String(stepMode ?? "").trim().toLowerCase();
+  if (["grid-cell", "distance"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function normalizeOnMoveCellStep(cellStep, fallback = 1) {
+  return Math.max(Math.round(coerceNumber(cellStep, fallback)), 1);
+}
+
+function resolveOnMoveStepMode(onMove = {}, scene = canvas?.scene ?? null) {
+  const requestedMode = normalizeOnMoveStepMode(
+    onMove?.stepMode,
+    isSquareGridOnMoveStepModeAvailable(scene) ? "grid-cell" : "distance"
+  );
+
+  if (requestedMode === "grid-cell" && !isSquareGridOnMoveStepModeAvailable(scene)) {
+    return "distance";
+  }
+
+  return requestedMode;
+}
+
+function getDefaultOnMoveDistanceStep(scene = canvas?.scene ?? null) {
+  const normalizedUnits = String(scene?.grid?.units ?? canvas?.scene?.grid?.units ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizedUnits === "ft" || normalizedUnits.includes("foot") || normalizedUnits.includes("feet") || normalizedUnits.includes("pied")) {
+    return 5;
+  }
+
+  if (normalizedUnits === "m" || normalizedUnits.includes("meter") || normalizedUnits.includes("metre") || normalizedUnits.includes("mètre")) {
+    return 1.5;
+  }
+
+  const sceneDistance = coerceNumber(scene?.grid?.distance, null);
+  return sceneDistance && sceneDistance > 0 ? sceneDistance : 5;
+}
+
+function isSquareGridOnMoveStepModeAvailable(scene = canvas?.scene ?? null) {
+  return isSquareGridStopModeAvailable(scene);
+}
+
+function calculateMoveTriggerCount({
+  stepMode = "distance",
+  insideDistance = 0,
+  stepDistance = null,
+  insideCellCount = 0,
+  cellStep = null
+} = {}) {
+  if (normalizeOnMoveStepMode(stepMode) === "grid-cell") {
+    if (cellStep === null || cellStep <= 0 || insideCellCount <= 0) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((insideCellCount + 0.0001) / cellStep));
+  }
+
   if (stepDistance === null || stepDistance <= 0 || insideDistance <= 0) {
     return 0;
   }

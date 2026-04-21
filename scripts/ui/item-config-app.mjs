@@ -37,6 +37,7 @@ const DEFAULT_TEMPLATE_TYPE_SOURCE = "auto";
 const DEFAULT_SIMPLE_TEMPLATE_TYPE = "circle";
 const DEFAULT_DAMAGE_TYPE = "fire";
 const DEFAULT_ON_ENTER_MODE = "none";
+const DEFAULT_MOVE_DISTANCE_STEP = 5;
 const DEFAULT_LINE_TEMPLATE_WIDTH = 5;
 const DEFAULT_RING_WALL_THICKNESS = 5;
 const DEFAULT_COMPOSITE_WALL_THICKNESS = 1;
@@ -79,6 +80,7 @@ const AUTHORING_PART_IDS = Object.freeze([
 const AUTHORING_TRIGGER_TIMINGS = Object.freeze([
   "onEnter",
   "onExit",
+  "onMove",
   "onStartTurn",
   "onEndTurn"
 ]);
@@ -712,6 +714,11 @@ function getDefaultTriggerAuthoringConfig(overrides = {}) {
     saveAbility: "",
     saveDcMode: DEFAULT_SAVE_DC_MODE,
     saveDc: DEFAULT_SAVE_DC,
+    stepMode: getDefaultOnMoveStepMode(),
+    cellStep: 1,
+    movementMode: "any",
+    distanceStep: getDefaultOnMoveDistanceStep(),
+    stopMovementOnTrigger: false,
     activityId: "",
     ...(duplicateData(overrides) ?? {})
   };
@@ -767,6 +774,37 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
       fallback.saveDcMode
     )
   );
+  const explicitStepMode = normalizeOnMoveStepMode(
+    pickFirstDefined(
+      definition.stepMode,
+      definition.moveStepMode,
+      null
+    ),
+    null
+  );
+  const hasExplicitCellStep = pickFirstDefined(
+    definition.cellStep,
+    definition.stepCells,
+    definition.gridCellStep,
+    definition.cellCount
+  ) !== undefined;
+  const hasExplicitDistanceStep = pickFirstDefined(
+    definition.distanceStep,
+    definition.stepDistance,
+    definition.distanceEvery
+  ) !== undefined;
+  const movementMode = normalizeAuthoringMovementMode(
+    pickFirstDefined(
+      definition.movementMode,
+      fallback.movementMode
+    )
+  );
+  const stepMode = explicitStepMode ??
+    (hasExplicitCellStep
+      ? "grid-cell"
+      : hasExplicitDistanceStep
+        ? "distance"
+        : normalizeOnMoveStepMode(fallback.stepMode, getDefaultOnMoveStepMode()));
 
   return {
     mode: normalizeTriggerEffectMode(
@@ -808,6 +846,35 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
         DEFAULT_SAVE_DC
       ),
       1
+    ),
+    stepMode,
+    cellStep: clampMoveCellStep(
+      pickFirstDefined(
+        definition.cellStep,
+        definition.stepCells,
+        definition.gridCellStep,
+        definition.cellCount,
+        fallback.cellStep
+      ),
+      fallback.cellStep
+    ),
+    movementMode,
+    distanceStep: clampTriggerDistanceStep(
+      pickFirstDefined(
+        definition.distanceStep,
+        definition.stepDistance,
+        definition.distanceEvery,
+        fallback.distanceStep
+      ),
+      fallback.distanceStep
+    ),
+    stopMovementOnTrigger: coerceBoolean(
+      pickFirstDefined(
+        definition.stopMovementOnTrigger,
+        definition.stopOnTrigger,
+        fallback.stopMovementOnTrigger
+      ),
+      fallback.stopMovementOnTrigger
     ),
     activityId
   };
@@ -913,6 +980,12 @@ function getTriggerFieldBaseName(fieldKey, timing) {
       return normalizedTiming === "onEnter" ? "saveDcMode" : `${timingPrefix}SaveDcMode`;
     case "saveDc":
       return normalizedTiming === "onEnter" ? "saveDc" : `${timingPrefix}SaveDc`;
+    case "stepMode":
+      return normalizedTiming === "onEnter" ? "stepMode" : `${timingPrefix}StepMode`;
+    case "cellStep":
+      return normalizedTiming === "onEnter" ? "cellStep" : `${timingPrefix}CellStep`;
+    case "distanceStep":
+      return normalizedTiming === "onEnter" ? "distanceStep" : `${timingPrefix}DistanceStep`;
     case "activityId":
       return normalizedTiming === "onEnter" ? "activityId" : `${timingPrefix}ActivityId`;
     default:
@@ -924,6 +997,8 @@ function getTriggerTimingLabel(timing) {
   switch (normalizeAuthoringTriggerTiming(timing)) {
     case "onExit":
       return localize("PERSISTENT_ZONES.UI.Sections.OnExit", "On Exit");
+    case "onMove":
+      return localize("PERSISTENT_ZONES.UI.Sections.OnMove", "On Move");
     case "onStartTurn":
       return localize("PERSISTENT_ZONES.UI.Sections.OnStartTurn", "On Start Turn");
     case "onEndTurn":
@@ -938,6 +1013,8 @@ function normalizeAuthoringTriggerTiming(value) {
   switch (String(value ?? "").trim()) {
     case "onExit":
       return "onExit";
+    case "onMove":
+      return "onMove";
     case "onStartTurn":
       return "onStartTurn";
     case "onEndTurn":
@@ -968,6 +1045,11 @@ function readTriggerAuthoringFormState(form, existingTriggerConfigs = {}, {
       saveAbility: readOptionalValue(form, getTriggerFieldName("saveAbility", timing, { partId }), existingConfig.saveAbility),
       saveDcMode: readOptionalValue(form, getTriggerFieldName("saveDcMode", timing, { partId }), existingConfig.saveDcMode),
       saveDc: readOptionalValue(form, getTriggerFieldName("saveDc", timing, { partId }), existingConfig.saveDc),
+      stepMode: readOptionalValue(form, getTriggerFieldName("stepMode", timing, { partId }), existingConfig.stepMode),
+      cellStep: readOptionalValue(form, getTriggerFieldName("cellStep", timing, { partId }), existingConfig.cellStep),
+      distanceStep: readOptionalValue(form, getTriggerFieldName("distanceStep", timing, { partId }), existingConfig.distanceStep),
+      movementMode: existingConfig.movementMode,
+      stopMovementOnTrigger: existingConfig.stopMovementOnTrigger,
       activityId: readOptionalValue(form, getTriggerFieldName("activityId", timing, { partId }), existingConfig.activityId)
     };
   }
@@ -1097,7 +1179,8 @@ function buildConfiguredRootTriggers(triggerConfigs = {}) {
 
   for (const timing of AUTHORING_TRIGGER_TIMINGS) {
     configuredTriggers[timing] = buildConfiguredTriggerDefinition(
-      triggerConfigs?.[timing] ?? {}
+      triggerConfigs?.[timing] ?? {},
+      timing
     );
   }
 
@@ -1114,13 +1197,24 @@ function buildDisabledTriggers() {
   };
 }
 
-function buildConfiguredTriggerDefinition(triggerConfig = {}) {
+function buildConfiguredTriggerDefinition(triggerConfig = {}, timing = "onEnter") {
   const config = normalizeAuthoringTriggerConfig(triggerConfig);
+  const normalizedTiming = normalizeAuthoringTriggerTiming(timing);
   const mode = normalizeTriggerEffectMode(config.mode, DEFAULT_ON_ENTER_MODE);
   const damageFormula = String(config.damageFormula ?? "").trim();
   const saveAbility = normalizeAbilityId(config.saveAbility);
   const saveDcMode = normalizeSaveDcMode(config.saveDcMode);
   const activityId = normalizeAuthoringActivityId(config.activityId);
+  const movementMode = normalizeAuthoringMovementMode(config.movementMode);
+  const stepMode = normalizedTiming === "onMove"
+    ? normalizeOnMoveStepMode(config.stepMode, getDefaultOnMoveStepMode())
+    : null;
+  const cellStep = normalizedTiming === "onMove" && mode !== "none" && stepMode === "grid-cell"
+    ? clampMoveCellStep(config.cellStep, 1)
+    : null;
+  const distanceStep = normalizedTiming === "onMove" && mode !== "none" && stepMode === "distance"
+    ? clampTriggerDistanceStep(config.distanceStep, getDefaultOnMoveDistanceStep())
+    : null;
   const saveDc = saveAbility && saveDcMode === "manual"
     ? Math.max(coerceNumber(config.saveDc, DEFAULT_SAVE_DC), 1)
     : null;
@@ -1128,6 +1222,13 @@ function buildConfiguredTriggerDefinition(triggerConfig = {}) {
   return {
     enabled: mode !== "none",
     mode,
+    stepMode,
+    cellStep,
+    movementMode,
+    distanceStep,
+    stopMovementOnTrigger: normalizedTiming === "onMove"
+      ? false
+      : coerceBoolean(config.stopMovementOnTrigger, false),
     damage: {
       enabled: mode === "simple" && Boolean(damageFormula),
       formula: damageFormula || null,
@@ -1891,8 +1992,12 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       saveAbilityFieldName: getTriggerFieldName("saveAbility", timing, { partId }),
       saveDcModeFieldName: getTriggerFieldName("saveDcMode", timing, { partId }),
       saveDcFieldName: getTriggerFieldName("saveDc", timing, { partId }),
+      stepModeFieldName: getTriggerFieldName("stepMode", timing, { partId }),
+      cellStepFieldName: getTriggerFieldName("cellStep", timing, { partId }),
+      distanceStepFieldName: getTriggerFieldName("distanceStep", timing, { partId }),
       activityFieldName: getTriggerFieldName("activityId", timing, { partId }),
       modeOptions: buildChoiceOptions(getTriggerModeChoices(), triggerState.mode),
+      stepModeOptions: buildChoiceOptions(getOnMoveStepModeChoices(), triggerState.stepMode),
       damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), triggerState.damageType),
       saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), triggerState.saveDcMode),
       abilityOptions: buildChoiceOptions(
@@ -1908,6 +2013,15 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       activityField,
       showSimpleFields: triggerState.mode === "simple",
       showActivityField: triggerState.mode === "activity",
+      showStepMode: timing === "onMove" && triggerState.mode !== "none",
+      showCellStep:
+        timing === "onMove" &&
+        triggerState.mode !== "none" &&
+        triggerState.stepMode === "grid-cell",
+      showDistanceStep:
+        timing === "onMove" &&
+        triggerState.mode !== "none" &&
+        triggerState.stepMode === "distance",
       showSaveDcMode: triggerState.mode === "simple" && Boolean(triggerState.saveAbility),
       showManualSaveDc:
         triggerState.mode === "simple" &&
@@ -1963,6 +2077,19 @@ function getSaveDcModeChoices() {
     {
       value: "manual",
       label: localize("PERSISTENT_ZONES.UI.Fields.SaveDcModeManual", "Manual")
+    }
+  ];
+}
+
+function getOnMoveStepModeChoices() {
+  return [
+    {
+      value: "grid-cell",
+      label: localize("PERSISTENT_ZONES.UI.OnMoveStepModes.GridCell", "By Cell")
+    },
+    {
+      value: "distance",
+      label: localize("PERSISTENT_ZONES.UI.OnMoveStepModes.Distance", "By Distance")
     }
   ];
 }
@@ -2460,8 +2587,30 @@ function normalizeTriggerEffectMode(value, fallback = DEFAULT_ON_ENTER_MODE) {
   return fallback;
 }
 
+function normalizeOnMoveStepMode(value, fallback = "distance") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["grid-cell", "distance"].includes(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function normalizeAuthoringMovementMode(value) {
+  const normalized = String(value ?? "any").trim().toLowerCase();
+  return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
+}
+
 function normalizeAuthoringActivityId(value) {
   return String(value ?? "").trim();
+}
+
+function clampMoveCellStep(value, fallback = 1) {
+  return Math.max(Math.round(coerceLocalizedNumber(value, fallback)), 1);
+}
+
+function clampTriggerDistanceStep(value, fallback = DEFAULT_MOVE_DISTANCE_STEP) {
+  return Math.max(coerceLocalizedNumber(value, fallback), MIN_THICKNESS);
 }
 
 function extractActivityIdFromTriggerConfig(triggerLike = {}) {
@@ -2523,6 +2672,37 @@ function normalizeLineVariantSide(value) {
 
 function normalizeRingVariantSide(value) {
   return String(value ?? "").toLowerCase() === "outer" ? "outer" : "inner";
+}
+
+function isGridMoveStepModeAvailable(scene = canvas?.scene ?? null) {
+  const grid = canvas?.grid ?? null;
+  return Boolean(
+    grid &&
+    !grid.isGridless &&
+    grid.isSquare &&
+    coerceNumber(scene?.grid?.size, coerceNumber(grid?.size, 0)) > 0
+  );
+}
+
+function getDefaultOnMoveStepMode(scene = canvas?.scene ?? null) {
+  return isGridMoveStepModeAvailable(scene) ? "grid-cell" : "distance";
+}
+
+function getDefaultOnMoveDistanceStep(scene = canvas?.scene ?? null) {
+  const normalizedUnits = String(scene?.grid?.units ?? canvas?.scene?.grid?.units ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizedUnits === "ft" || normalizedUnits.includes("foot") || normalizedUnits.includes("feet") || normalizedUnits.includes("pied")) {
+    return 5;
+  }
+
+  if (normalizedUnits === "m" || normalizedUnits.includes("meter") || normalizedUnits.includes("metre") || normalizedUnits.includes("mètre")) {
+    return 1.5;
+  }
+
+  const sceneDistance = coerceLocalizedNumber(scene?.grid?.distance, null);
+  return sceneDistance && sceneDistance > 0 ? sceneDistance : DEFAULT_MOVE_DISTANCE_STEP;
 }
 
 function clampWallThickness(value, fallback = DEFAULT_RING_WALL_THICKNESS) {

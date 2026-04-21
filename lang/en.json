@@ -19,6 +19,7 @@
         "Triggers": "Triggers",
         "OnEnter": "On Enter",
         "OnExit": "On Exit",
+        "OnMove": "On Move",
         "OnStartTurn": "On Start Turn",
         "OnEndTurn": "On End Turn",
         "Validation": "Validation",
@@ -40,6 +41,9 @@
         "VariantResolutionMode": "Variant Resolution",
         "PreviewTemplateType": "Preview Template Type",
         "TriggerMode": "Mode",
+        "StepMode": "Step Mode",
+        "CellStep": "Cell Count",
+        "DistanceStep": "Distance Step",
         "OnEnterEnabled": "Enable onEnter",
         "OnEnterMode": "onEnter Mode",
         "DamageFormula": "Damage Formula",
@@ -57,6 +61,10 @@
         "None": "None",
         "Simple": "Simple",
         "Activity": "Activity"
+      },
+      "OnMoveStepModes": {
+        "GridCell": "By Cell",
+        "Distance": "By Distance"
       },
       "BaseTypes": {
         "Simple": "Simple",

@@ -19,6 +19,7 @@
         "Triggers": "Triggers",
         "OnEnter": "\u00c0 l'entr\u00e9e",
         "OnExit": "\u00c0 la sortie",
+        "OnMove": "Pendant le d\u00e9placement",
         "OnStartTurn": "Au d\u00e9but du tour",
         "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",
@@ -40,6 +41,9 @@
         "VariantResolutionMode": "R\u00e9solution de variante",
         "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
         "TriggerMode": "Mode",
+        "StepMode": "Mode de pas",
+        "CellStep": "Nombre de cases",
+        "DistanceStep": "Distance par d\u00e9clenchement",
         "OnEnterEnabled": "Activer onEnter",
         "OnEnterMode": "Mode onEnter",
         "DamageFormula": "Formule de d\u00e9g\u00e2ts",
@@ -57,6 +61,10 @@
         "None": "Aucun",
         "Simple": "Simple",
         "Activity": "Activit\u00e9"
+      },
+      "OnMoveStepModes": {
+        "GridCell": "Par case",
+        "Distance": "Par distance"
       },
       "BaseTypes": {
         "Simple": "Simple",
