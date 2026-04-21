@@ -118,11 +118,21 @@
           <div class="form-group">
             <label>{{localize "PERSISTENT_ZONES.UI.Fields.Activity"}}</label>
             <select name="activityId">
-              {{#each activityOptions as |option|}}
-                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+              {{#each globalActivityField.options as |option|}}
+                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.disabled}}disabled{{/if}}>{{option.label}}</option>
               {{/each}}
             </select>
           </div>
+
+          <p class="hint">{{globalActivityField.helpText}}</p>
+
+          {{#if globalActivityField.noCompatibleActivitiesMessage}}
+            <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{globalActivityField.noCompatibleActivitiesMessage}}</p>
+          {{/if}}
+
+          {{#if globalActivityField.selectedActivityMessage}}
+            <p class="hint"><strong>{{globalActivityField.selectedActivityStatusLabel}}:</strong> {{globalActivityField.selectedActivityMessage}}</p>
+          {{/if}}
         {{/if}}
       {{/if}}
 
@@ -189,11 +199,21 @@
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.Activity"}}</label>
                 <select name="partActivityId__{{part.id}}">
-                  {{#each part.activityOptions as |option|}}
-                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                  {{#each part.activityField.options as |option|}}
+                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.disabled}}disabled{{/if}}>{{option.label}}</option>
                   {{/each}}
                 </select>
               </div>
+
+              <p class="hint">{{part.activityField.helpText}}</p>
+
+              {{#if part.activityField.noCompatibleActivitiesMessage}}
+                <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible"}}:</strong> {{part.activityField.noCompatibleActivitiesMessage}}</p>
+              {{/if}}
+
+              {{#if part.activityField.selectedActivityMessage}}
+                <p class="hint"><strong>{{part.activityField.selectedActivityStatusLabel}}:</strong> {{part.activityField.selectedActivityMessage}}</p>
+              {{/if}}
             {{/if}}
           </fieldset>
         {{/each}}

@@ -57,6 +57,25 @@
         "Ray": "Ligne / Rayon",
         "Rect": "Rectangle"
       },
+      "ActivityTypes": {
+        "Damage": "D\u00e9g\u00e2ts",
+        "Save": "Save",
+        "Unknown": "Inconnue"
+      },
+      "ActivityCompatibility": {
+        "Compatible": "Compatible zone-trigger",
+        "Incompatible": "Incompatible",
+        "OnlyCompatibleListed": "Seules les activit\u00e9s compatibles zone-trigger sont list\u00e9es dans ce s\u00e9lecteur.",
+        "SupportedTypes": "Types pris en charge",
+        "CurrentIncompatibleSelection": "S\u00e9lection incompatible actuelle",
+        "NoCompatibleActivities": "Aucune activit\u00e9 compatible zone-trigger n'a \u00e9t\u00e9 trouv\u00e9e sur cet objet.",
+        "SelectedMissing": "L'activit\u00e9 s\u00e9lectionn\u00e9e est introuvable sur cet objet.",
+        "SelectedIncompatible": "L'activit\u00e9 s\u00e9lectionn\u00e9e est incompatible avec le mode zone-trigger.",
+        "UnsupportedType": "Type d'activit\u00e9 non pris en charge",
+        "MissingDamageParts": "L'activit\u00e9 n'a aucune partie de d\u00e9g\u00e2ts.",
+        "MissingSaveAbility": "L'activit\u00e9 n'a pas de caract\u00e9ristique de save cible.",
+        "MissingSaveDc": "L'activit\u00e9 n'a pas de DD de save r\u00e9solu."
+      },
       "Variants": {
         "LineLeft": "Ligne gauche",
         "LineRight": "Ligne droite",

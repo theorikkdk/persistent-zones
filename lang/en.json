@@ -57,6 +57,25 @@
         "Ray": "Line / Ray",
         "Rect": "Rectangle"
       },
+      "ActivityTypes": {
+        "Damage": "Damage",
+        "Save": "Save",
+        "Unknown": "Unknown"
+      },
+      "ActivityCompatibility": {
+        "Compatible": "Compatible zone-trigger",
+        "Incompatible": "Incompatible",
+        "OnlyCompatibleListed": "Only zone-trigger compatible activities are listed in this selector.",
+        "SupportedTypes": "Supported types",
+        "CurrentIncompatibleSelection": "Current incompatible selection",
+        "NoCompatibleActivities": "No compatible zone-trigger activities were found on this Item.",
+        "SelectedMissing": "The selected activity could not be found on this Item.",
+        "SelectedIncompatible": "The selected activity is incompatible with zone-trigger mode.",
+        "UnsupportedType": "Unsupported activity type",
+        "MissingDamageParts": "The activity has no damage parts.",
+        "MissingSaveAbility": "The activity has no target save ability.",
+        "MissingSaveDc": "The activity has no resolved save DC."
+      },
       "Variants": {
         "LineLeft": "Line Left",
         "LineRight": "Line Right",

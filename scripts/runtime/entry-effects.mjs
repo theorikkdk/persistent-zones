@@ -6,6 +6,10 @@ import {
   getRegionRuntimeFlags,
   pickFirstDefined
 } from "./utils.mjs";
+import {
+  normalizeZoneTriggerActivityType,
+  resolveZoneTriggeredActivityCompatibility
+} from "./activity-compatibility.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -342,54 +346,6 @@ async function applyActivityTriggerEffect({
   }
 }
 
-function resolveZoneTriggeredActivityCompatibility(activity) {
-  const activityType = normalizeActivityType(activity?.type ?? activity?.metadata?.type);
-  const saveAbility = resolveActivitySaveAbility(activity);
-  const saveDc = coerceNumber(activity?.save?.dc?.value, null);
-  const damagePartCount = getActivityDamagePartCount(activity);
-  const effectCount = getActivityEffectCount(activity);
-  const targetTemplateType = String(activity?.target?.template?.type ?? "").trim().toLowerCase() || null;
-  const reasons = [];
-
-  if (!["damage", "save"].includes(activityType)) {
-    reasons.push(`Activity type "${activityType || "unknown"}" is not supported by zone-trigger activity mode.`);
-  }
-
-  if (activityType === "damage" && damagePartCount < 1) {
-    reasons.push("Damage activity has no damage parts to resolve.");
-  }
-
-  if (activityType === "save") {
-    if (!saveAbility) {
-      reasons.push("Save activity has no target save ability.");
-    }
-
-    if (saveDc === null) {
-      reasons.push("Save activity has no resolved save DC.");
-    }
-  }
-
-  return {
-    supported: reasons.length === 0,
-    code: reasons.length === 0
-      ? `${activityType || "unknown"}-targeted`
-      : `unsupported-${activityType || "unknown"}`,
-    reasons,
-    reasonsText: reasons.join(" | "),
-    activityType,
-    saveAbility,
-    saveDc,
-    damagePartCount,
-    effectCount,
-    activityEffectsIgnored: effectCount > 0,
-    targetTemplateType,
-    usedFullActivityFlow: false,
-    templateCreationPrevented: Boolean(targetTemplateType),
-    consumptionPrevented: true,
-    concentrationPrevented: true
-  };
-}
-
 async function executeZoneTriggeredActivity({
   activity,
   item,
@@ -587,7 +543,7 @@ async function rollZoneTriggeredActivityDamage({
     itemUuid: item?.uuid ?? null,
     timing,
     triggerMode: "activity",
-    activityType: normalizeActivityType(activity?.type ?? activity?.metadata?.type),
+    activityType: normalizeZoneTriggerActivityType(activity?.type ?? activity?.metadata?.type),
     rollCount: Array.isArray(rolls) ? rolls.length : 0
   });
 
@@ -661,34 +617,6 @@ async function applyDamageEntriesToActor(actor, damages) {
 
   await applyDamageToActor(actor, Math.max(appliedDamage, 0));
   return appliedDamage;
-}
-
-function resolveActivitySaveAbility(activity) {
-  const abilities = Array.from(activity?.save?.ability ?? [])
-    .map((ability) => String(ability ?? "").trim().toLowerCase())
-    .filter(Boolean);
-
-  return abilities[0] ?? null;
-}
-
-function getActivityDamagePartCount(activity) {
-  return Array.isArray(activity?.damage?.parts) ? activity.damage.parts.length : 0;
-}
-
-function getActivityEffectCount(activity) {
-  if (Array.isArray(activity?.effects)) {
-    return activity.effects.length;
-  }
-
-  if (typeof activity?.effects?.size === "number") {
-    return activity.effects.size;
-  }
-
-  return Array.from(activity?.effects ?? []).filter(Boolean).length;
-}
-
-function normalizeActivityType(value) {
-  return String(value ?? "").trim().toLowerCase();
 }
 
 async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument, timing = "custom") {

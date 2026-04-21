@@ -22,6 +22,10 @@ import {
   getZoneDefinitionFromItem,
   normalizeZoneDefinition
 } from "../runtime/zone-definition.mjs";
+import {
+  resolveZoneTriggeredActivityCompatibility,
+  ZONE_TRIGGER_SUPPORTED_ACTIVITY_TYPES
+} from "../runtime/activity-compatibility.mjs";
 
 const AUTHORING_APP_ID = `${MODULE_ID}-item-config`;
 const HEADER_BUTTON_CLASS = `${MODULE_ID}-item-config-button`;
@@ -132,13 +136,10 @@ class PersistentZonesItemConfig extends FormApplication {
     const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
 
     const compositeMode = isCompositeBaseType(formState.baseType);
-    const activityChoices = [
-      {
-        value: "",
-        label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
-      },
-      ...getItemActivityChoices(this.itemDocument)
-    ];
+    const globalActivityField = buildZoneTriggerActivityFieldContext(
+      this.itemDocument,
+      formState.activityId
+    );
 
     return {
       item: this.itemDocument,
@@ -164,7 +165,7 @@ class PersistentZonesItemConfig extends FormApplication {
         ],
         formState.saveAbility
       ),
-      activityOptions: buildChoiceOptions(activityChoices, formState.activityId),
+      globalActivityField,
       partSections: buildCompositePartSections(formState, this.itemDocument),
       showSimpleTemplateType: formState.baseType === "simple",
       showVariantSelect: hasVariantChoices(formState.baseType),
@@ -429,6 +430,10 @@ function buildDefinitionPreview(item, formState, definition) {
       actor: item?.actor ?? null,
       templateDocument: previewTemplateDocument
     });
+    const normalizedReasons = Array.isArray(normalizedDefinition?.validation?.reasons)
+      ? normalizedDefinition.validation.reasons
+      : [];
+    const compatibilityIssues = collectActivityCompatibilityValidationIssues(formState, item);
 
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
@@ -439,10 +444,11 @@ function buildDefinitionPreview(item, formState, definition) {
       rawDefinitionJson: JSON.stringify(definition, null, 2),
       normalizedDefinition,
       normalizedDefinitionJson: JSON.stringify(normalizedDefinition, null, 2),
-      isValid: normalizedDefinition?.validation?.isValid ?? false,
-      reasons: Array.isArray(normalizedDefinition?.validation?.reasons)
-        ? normalizedDefinition.validation.reasons
-        : [],
+      isValid: Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0,
+      reasons: [
+        ...normalizedReasons,
+        ...compatibilityIssues
+      ],
       variantResolution: normalizedDefinition?.variantResolution ?? null
     };
   } catch (caughtError) {
@@ -1355,8 +1361,10 @@ function inferItemTemplateType(item) {
 
 function buildChoiceOptions(choices, selectedValue) {
   return Array.from(choices ?? []).map((choice) => ({
+    ...choice,
     value: choice.value,
     label: choice.label,
+    disabled: Boolean(choice.disabled),
     selected: String(choice.value ?? "") === String(selectedValue ?? "")
   }));
 }
@@ -1425,19 +1433,12 @@ function hasVariantChoices(baseType) {
 }
 
 function buildCompositePartSections(formState, item) {
-  const activityChoices = [
-    {
-      value: "",
-      label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
-    },
-    ...getItemActivityChoices(item)
-  ];
-
   return getPartIdsForBaseType(formState.baseType).map((partId) => {
     const partState = normalizeAuthoringTriggerState(
       formState.partConfigs?.[partId] ?? {},
       getDefaultPartAuthoringConfig(partId)
     );
+    const activityField = buildZoneTriggerActivityFieldContext(item, partState.activityId);
 
     return {
       id: partId,
@@ -1456,7 +1457,7 @@ function buildCompositePartSections(formState, item) {
         ],
         partState.saveAbility
       ),
-      activityOptions: buildChoiceOptions(activityChoices, partState.activityId),
+      activityField,
       showSimpleFields: partState.onEnterMode === "simple",
       showActivityField: partState.onEnterMode === "activity",
       showSaveDcMode: partState.onEnterMode === "simple" && Boolean(partState.saveAbility),
@@ -1514,16 +1515,268 @@ function getOnEnterModeChoices() {
   ];
 }
 
-function getItemActivityChoices(item) {
+function getItemZoneTriggerActivities(item) {
   return Array.from(item?.system?.activities ?? [])
     .map((entry) => Array.isArray(entry) ? entry[1] : entry)
     .filter(Boolean)
-    .map((activity) => ({
-      value: String(activity?.id ?? "").trim(),
-      label: String(activity?.name ?? activity?.id ?? "").trim()
-    }))
+    .map((activity) => {
+      const value = String(activity?.id ?? "").trim();
+      const label = String(activity?.name ?? activity?.id ?? "").trim();
+      const compatibility = resolveZoneTriggeredActivityCompatibility(activity);
+
+      return {
+        value,
+        label,
+        compatibility,
+        compatibilityReasonLabel: localizeActivityCompatibilityReason(compatibility)
+      };
+    })
     .filter((choice) => choice.value && choice.label)
     .sort((left, right) => left.label.localeCompare(right.label, game.i18n?.lang ?? "en"));
+}
+
+function buildZoneTriggerActivityFieldContext(item, selectedActivityId = "") {
+  const normalizedSelectedActivityId = normalizeAuthoringActivityId(selectedActivityId);
+  const allActivities = getItemZoneTriggerActivities(item);
+  const compatibleActivities = allActivities.filter((activity) => activity.compatibility?.supported);
+  const selectedActivity = allActivities.find((activity) => activity.value === normalizedSelectedActivityId) ?? null;
+  const options = [
+    {
+      value: "",
+      label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+    }
+  ];
+
+  if (selectedActivity && !selectedActivity.compatibility?.supported) {
+    options.push({
+      value: selectedActivity.value,
+      label: `${selectedActivity.label} - ${localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.CurrentIncompatibleSelection",
+        "Current incompatible selection"
+      )}`
+    });
+  }
+
+  options.push(...compatibleActivities.map((activity) => ({
+    value: activity.value,
+    label: activity.label
+  })));
+
+  return {
+    options: buildChoiceOptions(options, normalizedSelectedActivityId),
+    selectedActivityCompatible:
+      normalizedSelectedActivityId
+        ? Boolean(selectedActivity?.compatibility?.supported)
+        : null,
+    selectedActivityLabel: selectedActivity?.label ?? null,
+    selectedActivityMessage: resolveSelectedZoneTriggerActivityMessage(
+      normalizedSelectedActivityId,
+      selectedActivity
+    ),
+    selectedActivityStatusLabel: resolveSelectedZoneTriggerActivityStatusLabel(
+      normalizedSelectedActivityId,
+      selectedActivity
+    ),
+    hasCompatibleActivities: compatibleActivities.length > 0,
+    noCompatibleActivitiesMessage:
+      compatibleActivities.length > 0
+        ? null
+        : localize(
+          "PERSISTENT_ZONES.UI.ActivityCompatibility.NoCompatibleActivities",
+          "No compatible zone-trigger activities were found on this Item."
+        ),
+    helpText: [
+      localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.OnlyCompatibleListed",
+        "Only zone-trigger compatible activities are listed in this selector."
+      ),
+      buildSupportedZoneTriggerActivityTypesText()
+    ].filter(Boolean).join(" "),
+    activityCompatibility: selectedActivity?.compatibility ?? null,
+    allActivities,
+    compatibleActivities
+  };
+}
+
+function collectActivityCompatibilityValidationIssues(formState, item) {
+  const issues = [];
+  const normalizedState = normalizeAuthoringFormState(formState);
+
+  if (!isCompositeBaseType(normalizedState.baseType)) {
+    if (normalizedState.onEnterMode === "activity") {
+      const issue = buildZoneTriggerActivityValidationIssue(
+        item,
+        normalizedState.activityId,
+        localize("PERSISTENT_ZONES.UI.Sections.OnEnter", "On Enter")
+      );
+      if (issue) {
+        issues.push(issue);
+      }
+    }
+
+    return issues;
+  }
+
+  for (const partId of getPartIdsForBaseType(normalizedState.baseType)) {
+    const partState = normalizeAuthoringTriggerState(
+      normalizedState.partConfigs?.[partId] ?? {},
+      getDefaultPartAuthoringConfig(partId)
+    );
+
+    if (partState.onEnterMode !== "activity") {
+      continue;
+    }
+
+    const issue = buildZoneTriggerActivityValidationIssue(
+      item,
+      partState.activityId,
+      getAuthoringPartLabel(partId)
+    );
+    if (issue) {
+      issues.push(issue);
+    }
+  }
+
+  return issues;
+}
+
+function buildZoneTriggerActivityValidationIssue(item, activityId, contextLabel) {
+  const normalizedActivityId = normalizeAuthoringActivityId(activityId);
+  if (!normalizedActivityId) {
+    return null;
+  }
+
+  const selectedActivity = getItemZoneTriggerActivities(item)
+    .find((activity) => activity.value === normalizedActivityId) ?? null;
+
+  if (!selectedActivity) {
+    return `${contextLabel}: ${localize(
+      "PERSISTENT_ZONES.UI.ActivityCompatibility.SelectedMissing",
+      "The selected activity could not be found on this Item."
+    )}`;
+  }
+
+  if (selectedActivity.compatibility?.supported) {
+    return null;
+  }
+
+  return `${contextLabel}: ${localize(
+    "PERSISTENT_ZONES.UI.ActivityCompatibility.SelectedIncompatible",
+    "The selected activity is incompatible with zone-trigger mode."
+  )} ${selectedActivity.label} (${selectedActivity.compatibilityReasonLabel})`;
+}
+
+function resolveSelectedZoneTriggerActivityMessage(selectedActivityId, selectedActivity) {
+  if (!selectedActivityId) {
+    return null;
+  }
+
+  if (!selectedActivity) {
+    return localize(
+      "PERSISTENT_ZONES.UI.ActivityCompatibility.SelectedMissing",
+      "The selected activity could not be found on this Item."
+    );
+  }
+
+  if (selectedActivity.compatibility?.supported) {
+    return null;
+  }
+
+  return [
+    localize(
+      "PERSISTENT_ZONES.UI.ActivityCompatibility.SelectedIncompatible",
+      "The selected activity is incompatible with zone-trigger mode."
+    ),
+    selectedActivity.compatibilityReasonLabel
+  ].filter(Boolean).join(" ");
+}
+
+function resolveSelectedZoneTriggerActivityStatusLabel(selectedActivityId, selectedActivity) {
+  if (!selectedActivityId) {
+    return null;
+  }
+
+  if (!selectedActivity || !selectedActivity.compatibility?.supported) {
+    return localize(
+      "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible",
+      "Incompatible"
+    );
+  }
+
+  return localize(
+    "PERSISTENT_ZONES.UI.ActivityCompatibility.Compatible",
+    "Compatible zone-trigger"
+  );
+}
+
+function localizeActivityCompatibilityReason(compatibility = {}) {
+  const primaryReason = Array.isArray(compatibility?.reasonCodes)
+    ? compatibility.reasonCodes[0]
+    : null;
+
+  switch (primaryReason?.code) {
+    case "unsupported-type":
+      return `${localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.UnsupportedType",
+        "Unsupported activity type"
+      )}: ${formatActivityTypeLabel(primaryReason?.activityType)}`;
+
+    case "missing-damage-parts":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.MissingDamageParts",
+        "The activity has no damage parts."
+      );
+
+    case "missing-save-ability":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.MissingSaveAbility",
+        "The activity has no target save ability."
+      );
+
+    case "missing-save-dc":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.MissingSaveDc",
+        "The activity has no resolved save DC."
+      );
+
+    default:
+      return compatibility?.reasonsText || localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible",
+        "Incompatible"
+      );
+  }
+}
+
+function buildSupportedZoneTriggerActivityTypesText() {
+  const typeLabels = ZONE_TRIGGER_SUPPORTED_ACTIVITY_TYPES.map((type) => formatActivityTypeLabel(type));
+  const supportedTypesLabel = localize(
+    "PERSISTENT_ZONES.UI.ActivityCompatibility.SupportedTypes",
+    "Supported types"
+  );
+
+  return `${supportedTypesLabel}: ${typeLabels.join(", ")}.`;
+}
+
+function formatActivityTypeLabel(activityType) {
+  switch (String(activityType ?? "").trim().toLowerCase()) {
+    case "damage":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityTypes.Damage",
+        "Damage"
+      );
+
+    case "save":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityTypes.Save",
+        "Save"
+      );
+
+    default:
+      return String(activityType ?? "unknown").trim() || localize(
+        "PERSISTENT_ZONES.UI.ActivityTypes.Unknown",
+        "Unknown"
+      );
+  }
 }
 
 function getPartIdsForBaseType(baseType) {
