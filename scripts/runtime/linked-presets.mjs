@@ -7,7 +7,6 @@ import {
 } from "./utils.mjs";
 
 const DEFAULT_LINKED_WALL_SEGMENTS = 24;
-const DEFAULT_LINKED_LIGHT_RADIUS_MULTIPLIER = 1;
 const DEFAULT_LINKED_LIGHT_COLOR = "#fff4b0";
 const DEFAULT_LINKED_LIGHT_ALPHA = 0.15;
 const DEFAULT_LINKED_LIGHT_LUMINOSITY = 0.5;
@@ -52,7 +51,6 @@ const LINKED_LIGHT_PRESETS = Object.freeze({
   glow: Object.freeze({
     bright: 8,
     dim: 18,
-    radiusMultiplier: DEFAULT_LINKED_LIGHT_RADIUS_MULTIPLIER,
     color: "#ffd88a",
     alpha: 0.2,
     luminosity: 0.5,
@@ -70,7 +68,6 @@ const LINKED_LIGHT_PRESETS = Object.freeze({
   moonlight: Object.freeze({
     bright: 12,
     dim: 32,
-    radiusMultiplier: 1.5,
     color: "#b8ccff",
     alpha: 0.24,
     luminosity: 0.28,
@@ -88,7 +85,6 @@ const LINKED_LIGHT_PRESETS = Object.freeze({
   fire: Object.freeze({
     bright: 12,
     dim: 24,
-    radiusMultiplier: 1,
     color: "#ff9b42",
     alpha: 0.24,
     luminosity: 0.65,
@@ -106,7 +102,6 @@ const LINKED_LIGHT_PRESETS = Object.freeze({
   holy: Object.freeze({
     bright: 16,
     dim: 34,
-    radiusMultiplier: 1.5,
     color: "#fff4b8",
     alpha: 0.26,
     luminosity: 0.75,
@@ -118,6 +113,23 @@ const LINKED_LIGHT_PRESETS = Object.freeze({
       type: "pulse",
       speed: 3,
       intensity: 2,
+      reverse: false
+    })
+  }),
+  darkness: Object.freeze({
+    bright: 0,
+    dim: 18,
+    color: "#24143d",
+    alpha: 0.4,
+    luminosity: -0.85,
+    angle: 360,
+    walls: false,
+    vision: false,
+    hidden: false,
+    animation: Object.freeze({
+      type: "pulse",
+      speed: 1,
+      intensity: 1,
       reverse: false
     })
   })

@@ -615,11 +615,6 @@
 
             <div class="persistent-zones-item-config__metric-grid">
               <div class="form-group form-group--stacked form-group--compact">
-                <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedLightRange"}}</label>
-                <input type="number" name="linkedLightRadius" value="{{state.linkedLightRadius}}" min="0" step="any">
-              </div>
-
-              <div class="form-group form-group--stacked form-group--compact">
                 <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedLightBright"}}</label>
                 <input type="number" name="linkedLightBright" value="{{state.linkedLightBright}}" min="0" step="any">
               </div>
@@ -629,6 +624,8 @@
                 <input type="number" name="linkedLightDim" value="{{state.linkedLightDim}}" min="0" step="any">
               </div>
             </div>
+
+            <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.LinkedLightRangesHint"}}</p>
           {{/if}}
         </div>
       </details>

@@ -372,7 +372,6 @@ class PersistentZonesItemConfig extends FormApplication {
       wallHeightSupported: isWallHeightSupported(),
       linkedLightsEnabled: formState.linkedLightEnabled,
       linkedLightPreset: formState.linkedLightPreset,
-      linkedLightRange: formState.linkedLightRadius,
       linkedLightBright: formState.linkedLightBright,
       linkedLightDim: formState.linkedLightDim,
       difficultTerrainEnabled: formState.difficultTerrainEnabled,
@@ -1377,10 +1376,6 @@ function buildStructuredDebugInspector({
           : localize("PERSISTENT_ZONES.UI.NoneOption", "None")
       ),
       buildDebugInspectorRow(
-        localize("PERSISTENT_ZONES.UI.Fields.LinkedLightRange", "Linked Light Range"),
-        effectiveState.linkedLightRadius ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
-      ),
-      buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.LinkedLightBright", "Linked Light Bright"),
         effectiveState.linkedLightBright ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
       ),
@@ -1577,7 +1572,6 @@ function readAuthoringFormState(root, seedState = null, item = null) {
     linkedWallHeight: readOptionalValue(form, "linkedWallHeight", existingState.linkedWallHeight),
     linkedLightEnabled: readCheckbox(form, "linkedLightEnabled"),
     linkedLightPreset: readOptionalValue(form, "linkedLightPreset", existingState.linkedLightPreset),
-    linkedLightRadius: readOptionalValue(form, "linkedLightRadius", existingState.linkedLightRadius),
     linkedLightBright: readOptionalValue(form, "linkedLightBright", existingState.linkedLightBright),
     linkedLightDim: readOptionalValue(form, "linkedLightDim", existingState.linkedLightDim),
     partConfigs: readPartAuthoringFormState(form, existingState.partConfigs)
@@ -1628,7 +1622,6 @@ function normalizeAuthoringFormState(formData = {}, {
     linkedWallHeight: normalizeOptionalLinkedMetric(formData.linkedWallHeight),
     linkedLightEnabled: coerceBoolean(formData.linkedLightEnabled, false) ?? false,
     linkedLightPreset: normalizeLinkedLightPreset(formData.linkedLightPreset),
-    linkedLightRadius: normalizeOptionalLinkedMetric(formData.linkedLightRadius),
     linkedLightBright: normalizeOptionalLinkedMetric(formData.linkedLightBright),
     linkedLightDim: normalizeOptionalLinkedMetric(formData.linkedLightDim),
     partConfigs: normalizeAuthoringPartConfigs(formData.partConfigs)
@@ -1659,7 +1652,6 @@ function getDefaultAuthoringState(item = null) {
     linkedWallHeight: null,
     linkedLightEnabled: false,
     linkedLightPreset: DEFAULT_LINKED_LIGHT_PRESET,
-    linkedLightRadius: null,
     linkedLightBright: null,
     linkedLightDim: null,
     partConfigs: buildDefaultPartAuthoringConfigs()
@@ -1785,19 +1777,14 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         fallbackState.linkedLightPreset
       )
     ),
-    linkedLightRadius: normalizeOptionalLinkedMetric(
-      pickFirstDefined(
-        safeGet(effectiveDefinition, ["linkedLight", "radius"]),
-        safeGet(rawDefinition, ["linkedLight", "radius"]),
-        safeGet(rawDefinition, ["linkedLights", "radius"]),
-        fallbackState.linkedLightRadius
-      )
-    ),
     linkedLightBright: normalizeOptionalLinkedMetric(
       pickFirstDefined(
         safeGet(effectiveDefinition, ["linkedLight", "bright"]),
         safeGet(rawDefinition, ["linkedLight", "bright"]),
         safeGet(rawDefinition, ["linkedLights", "bright"]),
+        safeGet(effectiveDefinition, ["linkedLight", "radius"]),
+        safeGet(rawDefinition, ["linkedLight", "radius"]),
+        safeGet(rawDefinition, ["linkedLights", "radius"]),
         fallbackState.linkedLightBright
       )
     ),
@@ -1806,6 +1793,9 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         safeGet(effectiveDefinition, ["linkedLight", "dim"]),
         safeGet(rawDefinition, ["linkedLight", "dim"]),
         safeGet(rawDefinition, ["linkedLights", "dim"]),
+        deriveLegacyLinkedLightDimFromRadius(safeGet(effectiveDefinition, ["linkedLight", "radius"])),
+        deriveLegacyLinkedLightDimFromRadius(safeGet(rawDefinition, ["linkedLight", "radius"])),
+        deriveLegacyLinkedLightDimFromRadius(safeGet(rawDefinition, ["linkedLights", "radius"])),
         fallbackState.linkedLightDim
       )
     ),
@@ -2364,10 +2354,6 @@ function buildAuthoringLinkedLightDefinition(state = {}) {
     enabled: state.linkedLightEnabled,
     preset: state.linkedLightPreset
   };
-
-  if (state.linkedLightRadius !== null) {
-    definition.radius = state.linkedLightRadius;
-  }
 
   if (state.linkedLightBright !== null) {
     definition.bright = state.linkedLightBright;
@@ -3629,6 +3615,10 @@ function getLinkedLightPresetChoices() {
     {
       value: "holy",
       label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Holy", "Holy")
+    },
+    {
+      value: "darkness",
+      label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Darkness", "Darkness")
     }
   ];
 }
@@ -3672,12 +3662,6 @@ function buildLinksTerrainContext(formState = {}) {
         state.linkedLightPreset
       )
     ];
-
-    if (state.linkedLightRadius !== null) {
-      lightSummaryParts.push(
-        `${localize("PERSISTENT_ZONES.UI.Fields.LinkedLightRange", "Linked Light Range")}: ${state.linkedLightRadius}`
-      );
-    }
 
     if (state.linkedLightBright !== null) {
       lightSummaryParts.push(
@@ -4386,6 +4370,11 @@ function clampTriggerDistanceStep(value, fallback = DEFAULT_MOVE_DISTANCE_STEP) 
 function normalizeOptionalLinkedMetric(value) {
   const numericValue = coerceLocalizedNumber(value, null);
   return numericValue === null ? null : Math.max(numericValue, 0);
+}
+
+function deriveLegacyLinkedLightDimFromRadius(value) {
+  const numericValue = coerceLocalizedNumber(value, null);
+  return numericValue === null ? undefined : Math.max(numericValue * 2, 0);
 }
 
 function extractActivityIdFromTriggerConfig(triggerLike = {}) {

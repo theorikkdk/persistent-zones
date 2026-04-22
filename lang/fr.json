@@ -115,7 +115,8 @@
         "Glow": "Lueur",
         "Moonlight": "Clair de lune",
         "Fire": "Feu",
-        "Holy": "Sacr\u00e9"
+        "Holy": "Sacr\u00e9",
+        "Darkness": "Obscurit\u00e9"
       },
       "OnEnterModes": {
         "None": "Aucun",
@@ -250,6 +251,7 @@
         "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
         "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
         "ActiveVariantParts": "Seules les parts effectives de la variante actuellement s\u00e9lectionn\u00e9e sont affich\u00e9es ici.",
+        "LinkedLightRangesHint": "Utilisez les port\u00e9es vive et tamis\u00e9e pour r\u00e9gler la lumi\u00e8re li\u00e9e. Laissez un champ vide pour conserver la valeur du preset.",
         "ProfileSection": "Chargez un profil r\u00e9utilisable int\u00e9gr\u00e9 ou utilisateur dans le draft actuel de l'\u00e9diteur.",
         "ProfileSaveHint": "Laissez le nom vide pour utiliser le nom sugg\u00e9r\u00e9. Seules les d\u00e9finitions valides peuvent \u00eatre enregistr\u00e9es."
       },

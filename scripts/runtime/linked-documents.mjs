@@ -413,9 +413,9 @@ function buildLinkedLightData({
     templateId: templateDocument?.id ?? null,
     regionId: regionDocument?.id ?? null,
     linkedDocumentKind: "light",
-    linkedLightRange: radius,
     linkedLightBright: bright,
-    linkedLightDim: dim
+    linkedLightDim: dim,
+    linkedLightLuminosity: coerceNumber(linkedLight?.luminosity, DEFAULT_LINKED_LIGHT_LUMINOSITY)
   });
 
   return {

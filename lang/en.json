@@ -80,8 +80,8 @@
         "LinkedLight": "Linked Light",
         "LinkedLightPreset": "Linked Light Preset",
         "LinkedLightRange": "Linked Light Range",
-        "LinkedLightBright": "Linked Light Bright",
-        "LinkedLightDim": "Linked Light Dim",
+        "LinkedLightBright": "Bright Range",
+        "LinkedLightDim": "Dim Range",
         "WallThickness": "Wall Thickness",
         "SideThickness": "Heated Side Thickness"
       },
@@ -115,7 +115,8 @@
         "Glow": "Glow",
         "Moonlight": "Moonlight",
         "Fire": "Fire",
-        "Holy": "Holy"
+        "Holy": "Holy",
+        "Darkness": "Darkness"
       },
       "OnEnterModes": {
         "None": "None",
@@ -250,6 +251,7 @@
         "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
         "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
         "ActiveVariantParts": "Only the effective parts for the currently selected variant are shown here.",
+        "LinkedLightRangesHint": "Use the bright and dim ranges to shape the linked light. Leave a field empty to keep the preset default.",
         "ProfileSection": "Load a reusable built-in or user profile into the current editor draft.",
         "ProfileSaveHint": "Leave the name blank to use the suggested profile name. Only valid definitions can be saved."
       },
