@@ -1,55 +1,242 @@
 # persistent-zones
 
-FoundryVTT module dedicated to persistent zones runtime.
+`persistent-zones` is an autonomous Foundry VTT module for persistent template-driven zones.
 
-## Scope
+It owns its own data contract, runtime behaviors, and Item authoring UI. Other modules can integrate with it without knowing the internal runtime implementation details.
 
-`persistent-zones` is autonomous.
+## Core Contract
 
-- It owns its runtime data contract.
-- Compatible modules should write zone data to `flags["persistent-zones"].definition` on the source `Item`.
-- Variant-capable definitions can expose `variants[]`, an explicit `selectedVariant`, and an optional `defaultVariant`.
-- Runtime metadata is stored on created `Region` documents in `flags["persistent-zones"].runtime`.
-- Linked walls and linked lights can be configured either directly or through reusable `preset` keys on `linkedWalls` and `linkedLight`, with explicit fields overriding preset defaults.
+- Source Item data lives on `flags["persistent-zones"].definition`.
+- Runtime Region metadata lives on `flags["persistent-zones"].runtime`.
+- The public API is exposed on `game.persistentZones`.
 
-## Current MVP
+## Supported Zone Shapes
 
-- Creates a managed `Region` from a qualifying `MeasuredTemplate`.
-- Can create a managed Region group when one template expands into multiple logical parts.
-- Supports explicit variant selection when one logical definition exposes multiple alternative zone compositions.
-- Resolves variants with a stable fallback order: `selectedVariant`, then `defaultVariant`, then single-option, then deterministic fallback.
-- Includes a first Item authoring UI for writing compatible `flags["persistent-zones"].definition` data without using only debug console helpers.
-- Supports a first composite geometry mode for annulus / ring-style parts.
-- Supports ring wall-body geometry with explicit `thickness`, anchored to the outer edge of the template circle and extending inward.
-- Supports a first directional geometry mode for `side-of-line` parts on ray-like templates.
-- Supports a first directional annular geometry mode for `side-of-ring` parts around ring body parts.
-- Stores normalized runtime metadata on the `Region`.
-- Can create simple linked `Wall` and `AmbientLight` documents that follow the managed zone.
-- Cleans stale managed Regions when the source template, item, or concentration state becomes invalid.
-- Detects token entry into managed Regions.
-- Applies simple entry damage, with optional save handling when configured.
-- Applies simple start-of-turn and end-of-turn effects during Foundry combat, with optional save handling when configured.
+- `simple`
+  A single zone matching the detected Item template.
 
-## Debug / Dev
+- `ring`
+  An annulus / wall-body zone built from a circle template.
 
-- As GM, apply a debug definition to an existing item with `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "basic")`.
-- For first-pass authoring, open an Item sheet and use the `Persistent Zones` header button, or call `await game.persistentZones.openItemConfig(itemOrUuid)`.
-- For entry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "entry-damage-save")`.
-- For turn testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "turn-damage-save")`.
-- For linked light testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light")`.
-- For linked moonlight testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light-moonlight")`.
-- For linked fire light testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-light-fire")`.
-- For linked walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls")`.
-- For linked solid walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-solid")`.
-- For linked terrain walls testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "linked-walls-terrain")`.
-- For ring geometry testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-basic")`.
-- For directional side-of-line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "line-side-right")`.
-- For composite wall plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "wall-heated-right")`.
-- For composite ring plus heated side testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-heated-outer")`.
-- For canonical ring wall-body testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-wall-inner-heat")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "ring-wall-outer-heat")`.
-- For variant selection testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "variant-line-left")`, `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "variant-line-right")`, `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "variant-ring-inner")`, or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "variant-ring-outer")`.
-- To inspect the effective variant resolution, use `await game.persistentZones.debug.inspectSelectedVariant(itemOrUuid)` or `await game.persistentZones.debug.inspectSelectedVariant(itemOrUuid, { templateType: "circle" })`.
-- For fire-wall-like line testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-left")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-line-right")`.
-- For fire-wall-like ring testing, use `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-inner")` or `await game.persistentZones.debug.applyTestDefinitionToItem(itemOrUuid, "fire-wall-ring-outer")`.
-- Remove the test definition with `await game.persistentZones.debug.clearTestDefinitionFromItem(itemOrUuid)`.
-- Create or move the template in Foundry to verify that the Region, linked light, and linked walls stay synchronized, then delete the template to confirm cleanup.
+- `composite line`
+  A multi-part line-based zone, typically a wall body plus one heated side.
+
+- `composite ring`
+  A multi-part ring-based zone, typically a wall body plus an inner or outer heated side.
+
+## Parts And Variants
+
+- `parts`
+  A single logical definition can expand into multiple Region parts. Each part can carry its own triggers and behaviors.
+
+- `variants`
+  A definition can expose multiple alternative layouts through `variants[]`, an explicit `selectedVariant`, and an optional `defaultVariant`.
+
+Typical examples:
+
+- `line-left` / `line-right`
+- `ring-inner` / `ring-outer`
+
+## Public API
+
+The public entry point is `game.persistentZones`.
+
+### Main Helpers
+
+- `await game.persistentZones.openItemConfig(itemOrUuid)`
+  Open the Item authoring popup.
+
+- `await game.persistentZones.getZoneDefinitionFromItem(itemOrUuid)`
+  Read the raw stored definition from the Item flag.
+
+- `await game.persistentZones.getNormalizedZoneDefinitionFromItem(itemOrUuid, options?)`
+  Read and normalize the effective definition for the Item.
+
+- `await game.persistentZones.setZoneDefinitionOnItem(itemOrUuid, definition)`
+  Replace the Item definition with a new one.
+
+- `await game.persistentZones.clearZoneDefinitionFromItem(itemOrUuid, options?)`
+  Remove the Item definition and cleanup active managed Regions for that Item.
+
+- `await game.persistentZones.validateDefinition(definition, context?)`
+  Normalize and validate an arbitrary definition object.
+
+- `await game.persistentZones.getCompatibleBaseTypes(itemOrUuid, options?)`
+  Return the base types compatible with the detected or effective template type.
+
+- `await game.persistentZones.getCompatibleVariants(itemOrUuid, options?)`
+  Return the variant choices compatible with the Item and its effective template type.
+
+- `await game.persistentZones.cleanupRegionsForItem(itemOrUuid, options?)`
+  Delete active managed Regions currently linked to the Item.
+
+- `await game.persistentZones.inspectSelectedVariant(itemOrUuid, options?)`
+  Inspect the selected variant, effective variant, and variant resolution metadata.
+
+### Existing Runtime Helpers Still Exposed
+
+- `game.persistentZones.normalizeZoneDefinition(rawDefinition, options?)`
+- `await game.persistentZones.createRegionFromTemplate(templateDocument, options?)`
+- `await game.persistentZones.cleanupSceneRegions(scene, options?)`
+- `await game.persistentZones.cleanupWorldRegions(options?)`
+- `game.persistentZones.getRegionRuntime(regionDocument)`
+- `game.persistentZones.debug`
+
+## Minimal Definition Example
+
+```js
+const definition = {
+  enabled: true,
+  label: "Moonbeam",
+  triggers: {
+    onEnter: {
+      mode: "simple",
+      damage: {
+        enabled: true,
+        formula: "2d10",
+        type: "radiant"
+      },
+      save: {
+        enabled: true,
+        ability: "con",
+        dcMode: "auto",
+        onSuccess: "half"
+      }
+    }
+  }
+};
+
+await game.persistentZones.setZoneDefinitionOnItem(item, definition);
+```
+
+## Variant Example
+
+```js
+const definition = {
+  enabled: true,
+  label: "Wall Of Fire Like",
+  selectedVariant: "line-left",
+  defaultVariant: "line-left",
+  variants: [
+    {
+      id: "line-left",
+      parts: [
+        { id: "wall-body" },
+        {
+          id: "heated-side-left",
+          geometry: {
+            type: "side-of-line",
+            side: "left",
+            offsetReference: "body-edge",
+            offsetStart: 0,
+            offsetEnd: 15
+          },
+          triggers: {
+            onEnter: {
+              mode: "simple",
+              movementMode: "any",
+              damage: { enabled: true, formula: "5d8", type: "fire" },
+              save: { enabled: true, ability: "dex", dcMode: "auto", onSuccess: "half" }
+            }
+          }
+        }
+      ]
+    },
+    {
+      id: "line-right",
+      parts: [
+        { id: "wall-body" },
+        {
+          id: "heated-side-right",
+          geometry: {
+            type: "side-of-line",
+            side: "right",
+            offsetReference: "body-edge",
+            offsetStart: 0,
+            offsetEnd: 15
+          }
+        }
+      ]
+    }
+  ]
+};
+
+const result = await game.persistentZones.validateDefinition(definition, {
+  item,
+  templateType: "ray"
+});
+
+if (result.isValid) {
+  await game.persistentZones.setZoneDefinitionOnItem(item, definition);
+}
+```
+
+## Cleanup Example
+
+```js
+await game.persistentZones.cleanupRegionsForItem(item);
+```
+
+Or remove the definition and cleanup in one step:
+
+```js
+await game.persistentZones.clearZoneDefinitionFromItem(item);
+```
+
+## Compatibility Query Examples
+
+```js
+const baseTypes = await game.persistentZones.getCompatibleBaseTypes(item);
+console.log(baseTypes.compatibleBaseTypes);
+```
+
+```js
+const variants = await game.persistentZones.getCompatibleVariants(item);
+console.log(variants.compatibleVariants);
+```
+
+## Macro Snippet Example
+
+Open the authoring UI for the currently controlled Item:
+
+```js
+const item = actor?.items?.getName("Moonbeam");
+if (!item) return ui.notifications.warn("Item not found.");
+
+await game.persistentZones.openItemConfig(item);
+```
+
+Validate then store a small persistent-zone definition:
+
+```js
+const item = actor?.items?.getName("Moonbeam");
+if (!item) return ui.notifications.warn("Item not found.");
+
+const definition = {
+  enabled: true,
+  triggers: {
+    onEnter: {
+      mode: "simple",
+      damage: { enabled: true, formula: "2d10", type: "radiant" }
+    }
+  }
+};
+
+const validation = await game.persistentZones.validateDefinition(definition, {
+  item,
+  templateType: "circle"
+});
+
+if (!validation.isValid) {
+  return ui.notifications.error(validation.reasons.join(" | "));
+}
+
+await game.persistentZones.setZoneDefinitionOnItem(item, definition);
+ui.notifications.info("Persistent Zones definition saved.");
+```
+
+## Notes
+
+- The recommended integration path is to use the public API rather than writing flags manually.
+- The Item editor remains the easiest way to author compatible definitions by hand.
+- Movement stop is still intentionally disabled in the current stable runtime.
