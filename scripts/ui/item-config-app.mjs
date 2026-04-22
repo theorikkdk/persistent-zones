@@ -19,6 +19,12 @@ import {
   cleanupRegionsForItem
 } from "../runtime/concentration-cleanup.mjs";
 import {
+  evaluatePersistentZoneProfileCompatibility,
+  getPersistentZoneProfile,
+  getPersistentZoneProfiles,
+  saveUserPersistentZoneProfile
+} from "../profiles.mjs";
+import {
   getZoneDefinitionFromItem,
   normalizeZoneDefinition,
   resolveItemTemplateTypeDetection
@@ -116,6 +122,8 @@ class PersistentZonesItemConfig extends FormApplication {
     super(item, options);
     this.itemDocument = item;
     this._draftState = duplicateData(options.formState) ?? null;
+    this._selectedProfileId = String(options.profileId ?? "").trim();
+    this._profileNameDraft = String(options.profileName ?? "").trim();
   }
 
   static get defaultOptions() {
@@ -147,6 +155,11 @@ class PersistentZonesItemConfig extends FormApplication {
       item: this.itemDocument
     });
     const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
+    const profileOptions = buildProfileChoiceOptions(this._selectedProfileId);
+    const selectedProfileContext = buildProfileSelectionContext(
+      this._selectedProfileId,
+      templateTypeContext.effectiveTemplateType
+    );
 
     const compositeMode = isCompositeBaseType(formState.baseType);
 
@@ -155,6 +168,11 @@ class PersistentZonesItemConfig extends FormApplication {
       itemName: this.itemDocument?.name ?? DEFAULT_ZONE_LABEL,
       hasStoredDefinition: Boolean(rawDefinition),
       state: formState,
+      profileNameDraft: this._profileNameDraft,
+      suggestedProfileName: suggestUserProfileName(formState, this.itemDocument),
+      canSaveProfile: preview.isValid,
+      profileOptions,
+      selectedProfileContext,
       baseTypeOptions: buildChoiceOptions(
         selectionContext.compatibleBaseTypeChoices,
         selectionContext.effectiveBaseType
@@ -182,7 +200,11 @@ class PersistentZonesItemConfig extends FormApplication {
 
     html.find("[data-action='preview']").on("click", this.#onPreview.bind(this, html));
     html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
+    html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this));
+    html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
+    html.find("[data-action='save-profile']").on("click", this.#onSaveProfile.bind(this, html));
     html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
+    html.find("[name='profileName']").on("input", this.#onProfileNameChanged.bind(this));
   }
 
   async _updateObject(_event, formData) {
@@ -287,6 +309,193 @@ class PersistentZonesItemConfig extends FormApplication {
         candidateCount: templateTypeContext.candidateCount
       });
     }
+
+    await this.render(false);
+  }
+
+  async #onProfileSelectionChanged(event) {
+    this._selectedProfileId = String(event?.currentTarget?.value ?? "").trim();
+    await this.render(false);
+  }
+
+  #onProfileNameChanged(event) {
+    this._profileNameDraft = String(event?.currentTarget?.value ?? "");
+  }
+
+  async #onApplyProfile(html, event) {
+    event.preventDefault();
+
+    const selectedProfileId = String(
+      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      this._selectedProfileId ??
+      ""
+    ).trim();
+    this._selectedProfileId = selectedProfileId;
+
+    const selectedProfile = getPersistentZoneProfile(selectedProfileId);
+    const currentRawState =
+      this._draftState ??
+      deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument);
+    const selectionContext = resolveAuthoringSelectionContext(currentRawState, this.itemDocument);
+    const compatibility = buildProfileSelectionContext(
+      selectedProfileId,
+      selectionContext.templateTypeContext.effectiveTemplateType
+    );
+
+    debug("Evaluated persistent-zones profile compatibility.", {
+      itemUuid: this.itemDocument.uuid,
+      itemName: this.itemDocument.name,
+      profileId: selectedProfileId,
+      profileFound: compatibility.profileFound,
+      profileLoaded: Boolean(selectedProfile),
+      profileApplied: false,
+      profileCompatibility: compatibility.compatibilityStatus,
+      effectiveTemplateType: compatibility.effectiveTemplateType,
+      profileTemplateType: compatibility.profileTemplateType,
+      profileBaseType: compatibility.profileBaseType,
+      profileSelectedVariant: compatibility.profileSelectedVariant,
+      compatibleBaseTypes: compatibility.compatibleBaseTypes,
+      reason: compatibility.compatibilityMessage
+    });
+
+    if (!selectedProfile) {
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+          "The selected profile could not be found."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    debug("Loaded persistent-zones profile.", {
+      itemUuid: this.itemDocument.uuid,
+      itemName: this.itemDocument.name,
+      profileLoaded: true,
+      profileId: selectedProfile.id,
+      profileLabel: selectedProfile.label,
+      profileScope: selectedProfile.scope
+    });
+
+    if (!compatibility.canApply) {
+      ui.notifications?.warn?.(
+        compatibility.compatibilityMessage ||
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfileIncompatible",
+            "This profile is incompatible with the current detected template."
+          )
+      );
+      await this.render(false);
+      return;
+    }
+
+    this._draftState = deriveAuthoringStateFromDefinition(selectedProfile.definition, this.itemDocument);
+
+    debug("Applied persistent-zones profile.", {
+      itemUuid: this.itemDocument.uuid,
+      itemName: this.itemDocument.name,
+      profileLoaded: true,
+      profileApplied: true,
+      profileId: selectedProfile.id,
+      profileLabel: selectedProfile.label,
+      profileScope: selectedProfile.scope,
+      profileCompatibility: compatibility.compatibilityStatus,
+      effectiveTemplateType: compatibility.effectiveTemplateType,
+      profileTemplateType: compatibility.profileTemplateType,
+      profileBaseType: compatibility.profileBaseType,
+      profileSelectedVariant: compatibility.profileSelectedVariant
+    });
+
+    ui.notifications?.info?.(
+      localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileApplied",
+        "Persistent Zones profile applied to the editor."
+      )
+    );
+
+    await this.render(false);
+  }
+
+  async #onSaveProfile(html, event) {
+    event.preventDefault();
+
+    const rawFormState = readAuthoringFormState(
+      html[0],
+      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
+      this.itemDocument
+    );
+    const selectionContext = resolveAuthoringSelectionContext(rawFormState, this.itemDocument);
+    const formState = selectionContext.state;
+    const definition = buildDefinitionFromAuthoringState(formState, {
+      item: this.itemDocument
+    });
+    const preview = buildDefinitionPreview(this.itemDocument, formState, definition);
+
+    this._draftState = formState;
+
+    if (!preview.isValid) {
+      debug("Skipped persistent-zones profile save because the current draft is invalid.", {
+        itemUuid: this.itemDocument.uuid,
+        itemName: this.itemDocument.name,
+        profileSaved: false,
+        reasons: preview.reasons
+      });
+
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileSaveInvalid",
+          "Only a valid Persistent Zones definition can be saved as a profile."
+        )
+      );
+
+      await this.render(false);
+      return;
+    }
+
+    const explicitProfileName = String(
+      html?.[0]?.querySelector?.("[name='profileName']")?.value ??
+      this._profileNameDraft ??
+      ""
+    ).trim();
+    const profileName = explicitProfileName || suggestUserProfileName(formState, this.itemDocument);
+    const saveResult = await saveUserPersistentZoneProfile({
+      name: profileName,
+      definition
+    });
+
+    if (!saveResult.ok || !saveResult.profile) {
+      ui.notifications?.warn?.(
+        saveResult.error ||
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfileSaveInvalid",
+            "Only a valid Persistent Zones definition can be saved as a profile."
+          )
+      );
+      await this.render(false);
+      return;
+    }
+
+    this._selectedProfileId = saveResult.profile.id;
+    this._profileNameDraft = "";
+
+    debug("Saved persistent-zones profile from item config.", {
+      itemUuid: this.itemDocument.uuid,
+      itemName: this.itemDocument.name,
+      profileSaved: true,
+      profileId: saveResult.profile.id,
+      profileLabel: saveResult.profile.label,
+      profileScope: saveResult.profile.scope,
+      profileCompatibility: "saved",
+      overwritten: saveResult.overwritten
+    });
+
+    ui.notifications?.info?.(
+      localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileSaved",
+        "Persistent Zones profile saved."
+      )
+    );
 
     await this.render(false);
   }
@@ -1931,6 +2140,113 @@ function getChoiceLabelByValue(choices, selectedValue, fallbackValue = "") {
   return Array.from(choices ?? [])
     .find((choice) => String(choice?.value ?? "") === String(selectedValue ?? ""))
     ?.label ?? fallbackValue;
+}
+
+function buildProfileChoiceOptions(selectedProfileId = "") {
+  const profileChoices = getPersistentZoneProfiles().map((profile) => ({
+    value: profile.id,
+    label: `${profile.label} (${getProfileScopeLabel(profile.scope)})`
+  }));
+
+  return buildChoiceOptions(
+    [
+      {
+        value: "",
+        label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      },
+      ...profileChoices
+    ],
+    selectedProfileId
+  );
+}
+
+function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
+  const normalizedProfileId = String(profileId ?? "").trim();
+  if (!normalizedProfileId) {
+    return {
+      hasSelection: false,
+      profileFound: false,
+      canApply: false,
+      compatibilityStatus: "none",
+      compatibilityLabel: localize("PERSISTENT_ZONES.UI.NoneOption", "None"),
+      compatibilityMessage: null,
+      profileLabel: null,
+      profileScopeLabel: null,
+      profileBaseTypeLabel: null,
+      profileTemplateTypeLabel: null,
+      effectiveTemplateType: normalizeTemplateTypeValueForAuthoring(effectiveTemplateType),
+      profileTemplateType: null,
+      profileBaseType: null,
+      profileSelectedVariant: null,
+      compatibleBaseTypes: []
+    };
+  }
+
+  const profile = getPersistentZoneProfile(normalizedProfileId);
+  const compatibility = evaluatePersistentZoneProfileCompatibility(profile ?? normalizedProfileId, {
+    templateType: effectiveTemplateType
+  });
+  const compatibilityStatus = compatibility.profileCompatibility ?? "missing";
+  const compatibilityLabel = compatibility.profileFound
+    ? compatibility.compatible
+      ? localize("PERSISTENT_ZONES.UI.ProfileCompatibility.Compatible", "Compatible")
+      : localize("PERSISTENT_ZONES.UI.ProfileCompatibility.Incompatible", "Incompatible")
+    : localize("PERSISTENT_ZONES.UI.ProfileCompatibility.NotFoundShort", "Missing");
+
+  return {
+    hasSelection: true,
+    profileFound: compatibility.profileFound,
+    canApply: Boolean(compatibility.compatible && profile),
+    compatibilityStatus,
+    compatibilityLabel,
+    compatibilityMessage: compatibility.reason,
+    profileLabel: profile?.label ?? null,
+    profileScopeLabel: profile ? getProfileScopeLabel(profile.scope) : null,
+    profileBaseTypeLabel: profile
+      ? getSelectedChoiceLabel(getBaseTypeChoices(), profile.baseType, profile.baseType)
+      : null,
+    profileTemplateTypeLabel: profile ? localizeProfileTemplateLabel(profile.templateType ?? null) : null,
+    effectiveTemplateType: compatibility.effectiveTemplateType,
+    profileTemplateType: compatibility.profileTemplateType,
+    profileBaseType: compatibility.profileBaseType,
+    profileSelectedVariant: compatibility.profileSelectedVariant,
+    compatibleBaseTypes: compatibility.compatibleBaseTypes
+  };
+}
+
+function suggestUserProfileName(formState, item = null) {
+  const baseTypeLabel = getSelectedChoiceLabel(getBaseTypeChoices(), formState?.baseType, localize(
+    "PERSISTENT_ZONES.UI.BaseTypes.Simple",
+    "Simple"
+  ));
+  const variantLabel = String(formState?.selectedVariant ?? "").trim()
+    ? getVariantLabel(formState.selectedVariant)
+    : null;
+  const itemLabel = String(item?.name ?? "").trim() || localize(
+    "PERSISTENT_ZONES.UI.ConfigTitle",
+    "Persistent Zones"
+  );
+
+  return [
+    itemLabel,
+    baseTypeLabel,
+    variantLabel
+  ].filter(Boolean).join(" - ");
+}
+
+function getProfileScopeLabel(scope) {
+  return String(scope ?? "").trim().toLowerCase() === "user"
+    ? localize("PERSISTENT_ZONES.UI.ProfileScopes.User", "User")
+    : localize("PERSISTENT_ZONES.UI.ProfileScopes.Builtin", "Built-in");
+}
+
+function localizeProfileTemplateLabel(templateType) {
+  return templateType
+    ? localizeTemplateType(templateType)
+    : localize(
+        "PERSISTENT_ZONES.UI.ProfileCompatibility.AnyTemplate",
+        "Inherited from detected template"
+      );
 }
 
 function getBaseTypeChoices() {

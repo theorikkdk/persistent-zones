@@ -14,6 +14,7 @@
       "Sections": {
         "Basics": "Basics",
         "Activation": "Activation",
+        "Profiles": "Profiles",
         "Geometry": "Geometry",
         "Behaviors": "Effective Part Behaviors",
         "Triggers": "Triggers",
@@ -31,6 +32,12 @@
       "Fields": {
         "Enabled": "Persistent Zones Enabled",
         "BaseType": "Base Type",
+        "Profile": "Profile",
+        "ProfileName": "Profile Name",
+        "ProfileScope": "Profile Scope",
+        "ProfileBaseType": "Profile Base Type",
+        "ProfileTemplateType": "Profile Template Type",
+        "ProfileCompatibility": "Profile Compatibility",
         "SimpleTemplateType": "Template Type",
         "TemplateTypeSource": "Template Type Source",
         "DetectedTemplateType": "Detected Template Type",
@@ -135,6 +142,27 @@
         "BaseTypeFiltered": "The stored base type is incompatible with the effective template type, so the editor is using a compatible fallback.",
         "VariantFiltered": "The stored variant is incompatible with the effective base type, so the editor is using a compatible fallback."
       },
+      "ProfileScopes": {
+        "Builtin": "Built-in",
+        "User": "User"
+      },
+      "ProfileCompatibility": {
+        "Compatible": "Compatible",
+        "Incompatible": "Incompatible",
+        "NotFound": "The selected profile could not be found.",
+        "NotFoundShort": "Missing",
+        "TemplateMismatch": "This profile expects a different template type.",
+        "BaseTypeIncompatible": "This profile base type is incompatible with the effective template.",
+        "AnyTemplate": "Inherited from detected template"
+      },
+      "Profiles": {
+        "SimpleDamage": "Simple Damage",
+        "RingBasic": "Ring Basic",
+        "WallHeatedLineLeft": "Wall Heated Line Left",
+        "WallHeatedLineRight": "Wall Heated Line Right",
+        "WallHeatedRingInner": "Wall Heated Ring Inner",
+        "WallHeatedRingOuter": "Wall Heated Ring Outer"
+      },
       "Variants": {
         "LineLeft": "Line Left",
         "LineRight": "Line Right",
@@ -162,17 +190,26 @@
       "Actions": {
         "Preview": "Preview",
         "Save": "Save",
+        "ApplyProfile": "Apply Profile",
+        "SaveProfile": "Save as Profile",
         "Clear": "Clear"
       },
       "Help": {
         "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
         "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
         "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
-        "ActiveVariantParts": "Only the effective parts for the currently selected variant are shown here."
+        "ActiveVariantParts": "Only the effective parts for the currently selected variant are shown here.",
+        "ProfileSection": "Load a reusable built-in or user profile into the current editor draft.",
+        "ProfileSaveHint": "Leave the name blank to use the suggested profile name. Only valid definitions can be saved."
       },
       "Notifications": {
         "Saved": "Persistent Zones definition saved.",
-        "Cleared": "Persistent Zones definition cleared."
+        "Cleared": "Persistent Zones definition cleared.",
+        "ProfileApplied": "Persistent Zones profile applied to the editor.",
+        "ProfileSaved": "Persistent Zones profile saved.",
+        "ProfileNotFound": "The selected profile could not be found.",
+        "ProfileIncompatible": "This profile is incompatible with the current detected template.",
+        "ProfileSaveInvalid": "Only a valid Persistent Zones definition can be saved as a profile."
       }
     }
   }

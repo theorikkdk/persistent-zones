@@ -73,6 +73,67 @@
       </div>
     </section>
 
+    <section class="persistent-zones-item-config__card">
+      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Profiles"}}</h2>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.Profile"}}</label>
+        <select name="selectedProfileId" data-action="select-profile">
+          {{#each profileOptions as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      {{#if selectedProfileContext.hasSelection}}
+        <div class="persistent-zones-item-config__meta">
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileScope"}}:</strong>
+            <span>{{selectedProfileContext.profileScopeLabel}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileBaseType"}}:</strong>
+            <span>{{selectedProfileContext.profileBaseTypeLabel}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileTemplateType"}}:</strong>
+            <span>{{selectedProfileContext.profileTemplateTypeLabel}}</span>
+          </div>
+          <div>
+            <strong>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileCompatibility"}}:</strong>
+            <span>{{selectedProfileContext.compatibilityLabel}}</span>
+          </div>
+        </div>
+
+        {{#if selectedProfileContext.compatibilityMessage}}
+          <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}:</strong> {{selectedProfileContext.compatibilityMessage}}</p>
+        {{/if}}
+      {{else}}
+        <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ProfileSection"}}</p>
+      {{/if}}
+
+      <div class="persistent-zones-item-config__inline-actions">
+        <button type="button" class="button" data-action="apply-profile" {{#unless selectedProfileContext.canApply}}disabled{{/unless}}>
+          <i class="fas fa-folder-open"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.ApplyProfile"}}</span>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileName"}}</label>
+        <input type="text" name="profileName" value="{{profileNameDraft}}" placeholder="{{suggestedProfileName}}">
+      </div>
+
+      <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ProfileSaveHint"}}</p>
+
+      <div class="persistent-zones-item-config__inline-actions">
+        <button type="button" class="button" data-action="save-profile" {{#unless canSaveProfile}}disabled{{/unless}}>
+          <i class="fas fa-bookmark"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.SaveProfile"}}</span>
+        </button>
+      </div>
+    </section>
+
     {{#if showVariantSelect}}
       <section class="persistent-zones-item-config__card">
         <h2>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}</h2>

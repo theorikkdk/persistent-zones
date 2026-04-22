@@ -1,5 +1,6 @@
 import { createPersistentZonesApi } from "./api.mjs";
 import { MODULE_API_NAMESPACE, MODULE_ID } from "./constants.mjs";
+import { registerPersistentZoneProfileSettings } from "./profiles.mjs";
 import { registerPersistentZonesItemConfigUi } from "./ui/item-config-app.mjs";
 import {
   cleanupSceneRegions,
@@ -21,6 +22,7 @@ export function bootstrapPersistentZones() {
 }
 
 function onInit() {
+  registerPersistentZoneProfileSettings();
   apiInstance = createPersistentZonesApi();
   game[MODULE_API_NAMESPACE] = apiInstance;
 

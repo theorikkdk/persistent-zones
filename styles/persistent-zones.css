@@ -252,6 +252,38 @@
   margin-bottom: 0.5rem;
 }
 
+.persistent-zones-item-config__inline-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
+}
+
+.persistent-zones-item-config__inline-actions .button {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.05rem;
+  min-width: 8rem;
+  border: 1px solid rgba(198, 167, 121, 0.18);
+  border-radius: 999px;
+  background: rgba(20, 16, 14, 0.88);
+  color: var(--pz-text);
+}
+
+.persistent-zones-item-config__inline-actions .button:hover:not([disabled]) {
+  border-color: rgba(223, 176, 116, 0.45);
+  color: #fff3dd;
+}
+
+.persistent-zones-item-config__inline-actions .button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .persistent-zones-item-config__pill {
   border-radius: 999px;
   padding: 0.24rem 0.62rem;
@@ -429,6 +461,7 @@
     justify-content: stretch;
   }
 
+  .persistent-zones-item-config__inline-actions .button,
   .persistent-zones-item-config__card--actions .button {
     flex: 1 1 100%;
   }

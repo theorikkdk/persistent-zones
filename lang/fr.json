@@ -14,7 +14,8 @@
       "Sections": {
         "Basics": "Base",
         "Activation": "Activation",
-        "Geometry": "Géométrie",
+        "Profiles": "Profils",
+        "Geometry": "G\u00e9om\u00e9trie",
         "Behaviors": "Comportements des parts effectives",
         "Triggers": "Triggers",
         "OnEnter": "\u00c0 l'entr\u00e9e",
@@ -24,13 +25,19 @@
         "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",
         "StructuredDebug": "R\u00e9sum\u00e9 structur\u00e9",
-        "AdvancedDebug": "Avancé / Debug",
+        "AdvancedDebug": "Avanc\u00e9 / Debug",
         "RawDefinition": "D\u00e9finition brute",
         "NormalizedDefinition": "D\u00e9finition normalis\u00e9e"
       },
       "Fields": {
         "Enabled": "Persistent Zones activ\u00e9",
         "BaseType": "Type de base",
+        "Profile": "Profil",
+        "ProfileName": "Nom du profil",
+        "ProfileScope": "Port\u00e9e du profil",
+        "ProfileBaseType": "Type de base du profil",
+        "ProfileTemplateType": "Gabarit du profil",
+        "ProfileCompatibility": "Compatibilit\u00e9 du profil",
         "SimpleTemplateType": "Type de gabarit",
         "TemplateTypeSource": "Source du type de gabarit",
         "DetectedTemplateType": "Type de gabarit d\u00e9tect\u00e9",
@@ -135,6 +142,27 @@
         "BaseTypeFiltered": "Le type de base enregistr\u00e9 est incompatible avec le type de gabarit effectif, donc l'\u00e9diteur utilise un fallback compatible.",
         "VariantFiltered": "La variante enregistr\u00e9e est incompatible avec le type de base effectif, donc l'\u00e9diteur utilise un fallback compatible."
       },
+      "ProfileScopes": {
+        "Builtin": "Int\u00e9gr\u00e9",
+        "User": "Utilisateur"
+      },
+      "ProfileCompatibility": {
+        "Compatible": "Compatible",
+        "Incompatible": "Incompatible",
+        "NotFound": "Le profil s\u00e9lectionn\u00e9 est introuvable.",
+        "NotFoundShort": "Introuvable",
+        "TemplateMismatch": "Ce profil attend un type de gabarit diff\u00e9rent.",
+        "BaseTypeIncompatible": "Le type de base de ce profil est incompatible avec le gabarit effectif.",
+        "AnyTemplate": "H\u00e9rit\u00e9 du gabarit d\u00e9tect\u00e9"
+      },
+      "Profiles": {
+        "SimpleDamage": "D\u00e9g\u00e2ts simples",
+        "RingBasic": "Anneau basique",
+        "WallHeatedLineLeft": "Mur chauff\u00e9 ligne gauche",
+        "WallHeatedLineRight": "Mur chauff\u00e9 ligne droite",
+        "WallHeatedRingInner": "Mur chauff\u00e9 anneau int\u00e9rieur",
+        "WallHeatedRingOuter": "Mur chauff\u00e9 anneau ext\u00e9rieur"
+      },
       "Variants": {
         "LineLeft": "Ligne gauche",
         "LineRight": "Ligne droite",
@@ -162,17 +190,26 @@
       "Actions": {
         "Preview": "Pr\u00e9visualiser",
         "Save": "Enregistrer",
+        "ApplyProfile": "Appliquer le profil",
+        "SaveProfile": "Enregistrer comme profil",
         "Clear": "Supprimer"
       },
       "Help": {
         "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
         "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
         "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
-        "ActiveVariantParts": "Seules les parts effectives de la variante actuellement s\u00e9lectionn\u00e9e sont affich\u00e9es ici."
+        "ActiveVariantParts": "Seules les parts effectives de la variante actuellement s\u00e9lectionn\u00e9e sont affich\u00e9es ici.",
+        "ProfileSection": "Chargez un profil r\u00e9utilisable int\u00e9gr\u00e9 ou utilisateur dans le draft actuel de l'\u00e9diteur.",
+        "ProfileSaveHint": "Laissez le nom vide pour utiliser le nom sugg\u00e9r\u00e9. Seules les d\u00e9finitions valides peuvent \u00eatre enregistr\u00e9es."
       },
       "Notifications": {
         "Saved": "D\u00e9finition Persistent Zones enregistr\u00e9e.",
-        "Cleared": "D\u00e9finition Persistent Zones supprim\u00e9e."
+        "Cleared": "D\u00e9finition Persistent Zones supprim\u00e9e.",
+        "ProfileApplied": "Profil Persistent Zones appliqu\u00e9 dans l'\u00e9diteur.",
+        "ProfileSaved": "Profil Persistent Zones enregistr\u00e9.",
+        "ProfileNotFound": "Le profil s\u00e9lectionn\u00e9 est introuvable.",
+        "ProfileIncompatible": "Ce profil est incompatible avec le gabarit actuellement d\u00e9tect\u00e9.",
+        "ProfileSaveInvalid": "Seule une d\u00e9finition Persistent Zones valide peut \u00eatre enregistr\u00e9e comme profil."
       }
     }
   }
