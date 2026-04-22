@@ -128,6 +128,143 @@ export function isManagedRegion(regionDocument) {
   return Boolean(runtime?.templateId || runtime?.templateUuid);
 }
 
+export function isWallHeightSupported() {
+  return Boolean(game?.modules?.get?.("wall-height")?.active);
+}
+
+export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument, normalizedDefinition = null) {
+  if (!tokenDocument?.actor) {
+    return {
+      allowed: false,
+      targetMatched: false,
+      targetFilter: "all",
+      sourceActorUuid: null,
+      targetActorUuid: null,
+      sourceTokenId: null,
+      sourceDisposition: null,
+      targetDisposition: null,
+      reason: "Token has no Actor."
+    };
+  }
+
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const definition = normalizedDefinition ?? runtime.normalizedDefinition ?? {};
+  const targeting = isPlainObject(definition?.targeting) ? definition.targeting : {};
+  const targetFilter = normalizeManagedRegionTargetFilter(targeting);
+  const sourceActorUuid =
+    runtime?.casterUuid ??
+    runtime?.actorUuid ??
+    definition?.casterUuid ??
+    definition?.actorUuid ??
+    null;
+  const targetActorUuid = tokenDocument.actor?.uuid ?? null;
+  const sourceToken = resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid);
+  const sourceDisposition = coerceNumber(
+    pickFirstDefined(sourceToken?.disposition, sourceToken?.document?.disposition),
+    null
+  );
+  const targetDisposition = coerceNumber(
+    pickFirstDefined(tokenDocument?.disposition, tokenDocument?.document?.disposition),
+    null
+  );
+  const sameActor = Boolean(sourceActorUuid && targetActorUuid && sourceActorUuid === targetActorUuid);
+
+  const baseResult = {
+    targetFilter,
+    sourceActorUuid,
+    targetActorUuid,
+    sourceTokenId: sourceToken?.id ?? null,
+    sourceDisposition,
+    targetDisposition
+  };
+
+  switch (targetFilter) {
+    case "self":
+      return {
+        ...baseResult,
+        allowed: sameActor,
+        targetMatched: sameActor,
+        reason: sameActor
+          ? "Target filter self matched the source Actor."
+          : "Target filter self requires the source Actor."
+      };
+    case "not-self": {
+      const matched = sourceActorUuid && targetActorUuid
+        ? sourceActorUuid !== targetActorUuid
+        : true;
+
+      return {
+        ...baseResult,
+        allowed: matched,
+        targetMatched: matched,
+        reason: matched
+          ? "Target filter not-self matched."
+          : "Target filter not-self excludes the source Actor."
+      };
+    }
+    case "allies": {
+      if (sameActor) {
+        return {
+          ...baseResult,
+          allowed: false,
+          targetMatched: false,
+          reason: "Target filter allies excludes self in this MVP."
+        };
+      }
+
+      if (sourceDisposition === null || targetDisposition === null) {
+        return {
+          ...baseResult,
+          allowed: false,
+          targetMatched: false,
+          reason: "Target filter allies requires source and target token dispositions."
+        };
+      }
+
+      const matched = sourceDisposition !== 0 && sourceDisposition === targetDisposition;
+      return {
+        ...baseResult,
+        allowed: matched,
+        targetMatched: matched,
+        reason: matched
+          ? "Target filter allies matched token disposition."
+          : "Target filter allies did not match token disposition."
+      };
+    }
+    case "enemies": {
+      if (sourceDisposition === null || targetDisposition === null) {
+        return {
+          ...baseResult,
+          allowed: false,
+          targetMatched: false,
+          reason: "Target filter enemies requires source and target token dispositions."
+        };
+      }
+
+      const matched =
+        sourceDisposition !== 0 &&
+        targetDisposition !== 0 &&
+        Math.sign(sourceDisposition) !== Math.sign(targetDisposition);
+      return {
+        ...baseResult,
+        allowed: matched,
+        targetMatched: matched,
+        reason: matched
+          ? "Target filter enemies matched token disposition."
+          : "Target filter enemies did not match token disposition."
+      };
+    }
+    case "all":
+    default:
+      return {
+        ...baseResult,
+        allowed: true,
+        targetMatched: true,
+        reason: "Target filter all matched."
+      };
+  }
+}
+
 export function findManagedRegions(scene, predicate = null) {
   const regionDocuments =
     scene?.regions?.contents ??
@@ -391,6 +528,33 @@ function buildTokenRegionMembershipState(tokenDocument, state = null) {
     ),
     shape: state?.shape ?? tokenDocument?._source?.shape ?? tokenDocument?.shape ?? null
   };
+}
+
+function normalizeManagedRegionTargetFilter(targetingDefinition = {}) {
+  const explicitMode = String(targetingDefinition?.mode ?? "").trim().toLowerCase();
+  const includeSelf = coerceBoolean(targetingDefinition?.includeSelf, true);
+  const mode = explicitMode || (includeSelf === false ? "not-self" : "all");
+
+  return ["all", "allies", "enemies", "self", "not-self"].includes(mode)
+    ? mode
+    : "all";
+}
+
+function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid) {
+  const scene =
+    regionDocument?.parent ??
+    tokenDocument?.parent ??
+    canvas?.scene ??
+    null;
+  const tokenDocuments =
+    scene?.tokens?.contents ??
+    Array.from(scene?.tokens?.values?.() ?? []);
+
+  if (!sourceActorUuid || !tokenDocuments.length) {
+    return null;
+  }
+
+  return tokenDocuments.find((candidate) => candidate?.actor?.uuid === sourceActorUuid) ?? null;
 }
 
 function sampleTokenRegionPoints({ x, y, width, height }) {

@@ -15,8 +15,12 @@
         "Basics": "Base",
         "Activation": "Activation",
         "Profiles": "Profils",
+        "TemplateContext": "Contexte du gabarit d\u00e9tect\u00e9",
+        "TypeVariant": "Type / Variante",
         "Geometry": "G\u00e9om\u00e9trie",
+        "DerivedGeometry": "G\u00e9om\u00e9trie d\u00e9riv\u00e9e / Param\u00e8tres",
         "Behaviors": "Comportements des parts effectives",
+        "LinksTerrain": "Liens & Terrain",
         "Triggers": "Triggers",
         "OnEnter": "\u00c0 l'entr\u00e9e",
         "OnExit": "\u00c0 la sortie",
@@ -68,13 +72,50 @@
         "PartCount": "Nombre de parts",
         "PartId": "Identifiant de part",
         "GeometryType": "Type de g\u00e9om\u00e9trie",
+        "TargetFilter": "Filtre de cibles",
+        "DifficultTerrain": "Terrain difficile",
+        "LinkedWalls": "Murs li\u00e9s",
+        "LinkedWallsPreset": "Preset de murs li\u00e9s",
+        "LinkedWallHeight": "Hauteur des murs li\u00e9s",
+        "LinkedLight": "Lumi\u00e8re li\u00e9e",
+        "LinkedLightPreset": "Preset de lumi\u00e8re li\u00e9e",
+        "LinkedLightRange": "Port\u00e9e de la lumi\u00e8re li\u00e9e",
+        "LinkedLightBright": "Port\u00e9e vive",
+        "LinkedLightDim": "Port\u00e9e tamis\u00e9e",
         "WallThickness": "\u00c9paisseur du mur",
         "SideThickness": "\u00c9paisseur de la zone lat\u00e9rale"
+      },
+      "Common": {
+        "Enabled": "Activ\u00e9",
+        "Disabled": "D\u00e9sactiv\u00e9"
+      },
+      "SectionSummaries": {
+        "GlobalTriggers": "{count} déclenchements",
+        "CompositeParts": "{count} parts"
       },
       "MovementModes": {
         "Any": "Tous",
         "Voluntary": "Volontaire",
         "Forced": "Forc\u00e9"
+      },
+      "TargetFilters": {
+        "All": "Tous",
+        "Allies": "Alli\u00e9s",
+        "Enemies": "Ennemis",
+        "Self": "Soi",
+        "NotSelf": "Sauf soi"
+      },
+      "LinkedWallPresets": {
+        "Solid": "Solide",
+        "Terrain": "Terrain",
+        "Invisible": "Invisible",
+        "Ethereal": "\u00c9th\u00e9r\u00e9"
+      },
+      "LinkedLightPresets": {
+        "Glow": "Lueur",
+        "Moonlight": "Clair de lune",
+        "Fire": "Feu",
+        "Holy": "Sacr\u00e9"
       },
       "OnEnterModes": {
         "None": "Aucun",
@@ -117,6 +158,9 @@
         "AutoUsingDetected": "Le mode auto utilise le premier type d\u00e9tect\u00e9.",
         "ManualMismatch": "L'override manuel du type de gabarit diff\u00e8re du type de gabarit dnd5e d\u00e9tect\u00e9.",
         "NoDetectedSource": "Aucune source de gabarit dnd5e n'a \u00e9t\u00e9 d\u00e9tect\u00e9e."
+      },
+      "FeatureWarnings": {
+        "WallHeightUnavailable": "La hauteur des murs li\u00e9s n\u00e9cessite un module de support wall-height actif."
       },
       "ActivityTypes": {
         "Damage": "D\u00e9g\u00e2ts",

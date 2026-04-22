@@ -11,12 +11,14 @@ import {
   debug,
   duplicateData,
   fromUuidSafe,
+  isWallHeightSupported,
   isPlainObject,
   pickFirstDefined,
   safeGet
 } from "../runtime/utils.mjs";
 import {
-  cleanupRegionsForItem
+  cleanupRegionsForItem,
+  rebuildActiveRegionsForItem
 } from "../runtime/concentration-cleanup.mjs";
 import {
   deleteUserPersistentZoneProfile,
@@ -47,6 +49,9 @@ const DEFAULT_SAVE_DC_SOURCE = "caster";
 const DEFAULT_TEMPLATE_TYPE_SOURCE = "auto";
 const DEFAULT_SIMPLE_TEMPLATE_TYPE = "circle";
 const DEFAULT_DAMAGE_TYPE = "fire";
+const DEFAULT_LINKED_WALL_PRESET = "solid";
+const DEFAULT_LINKED_LIGHT_PRESET = "glow";
+const DEFAULT_TARGET_FILTER = "all";
 const DEFAULT_ON_ENTER_MODE = "none";
 const DEFAULT_MOVE_DISTANCE_STEP = 5;
 const DEFAULT_LINE_TEMPLATE_WIDTH = 5;
@@ -174,6 +179,49 @@ class PersistentZonesItemConfig extends FormApplication {
     );
 
     const compositeMode = isCompositeBaseType(formState.baseType);
+    const globalTriggerSections = buildTriggerEditorSections(formState.triggerConfigs, this.itemDocument);
+    const partSections = buildCompositePartSections(formState, this.itemDocument);
+    const selectedVariantLabel = selectionContext.selectedVariantLabel;
+    const showVariantSelect = selectionContext.variantChoices.length > 0;
+    const linksTerrainContext = buildLinksTerrainContext(formState);
+    const selectedBaseTypeLabel =
+      getSelectedChoiceLabel(selectionContext.compatibleBaseTypeChoices, selectionContext.effectiveBaseType) ??
+      getSelectedChoiceLabel(getBaseTypeChoices(), formState.baseType) ??
+      formState.baseType;
+    const templateContextSummaryText =
+      templateTypeContext.effectiveTemplateTypeLabel ??
+      localize("PERSISTENT_ZONES.UI.NoneOption", "None");
+    const typeVariantSummaryParts = [
+      selectedBaseTypeLabel,
+      selectedProfileContext.hasSelection && !showVariantSelect ? null : selectedVariantLabel
+    ].filter(Boolean);
+    const typeVariantSummaryText = [
+      selectedBaseTypeLabel,
+      selectedProfileContext.hasSelection && !showVariantSelect ? null : selectedVariantLabel
+    ].filter(Boolean).join(" | ");
+    const geometrySummaryParts = [];
+    if (["ring", "composite-line", "composite-ring"].includes(formState.baseType)) {
+      geometrySummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.WallThickness", "Wall Thickness")}: ${formState.wallThickness}`
+      );
+    }
+    if (["composite-line", "composite-ring"].includes(formState.baseType)) {
+      geometrySummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.SideThickness", "Heated Side Thickness")}: ${formState.sideThickness}`
+      );
+    }
+    const geometrySummaryText = geometrySummaryParts.join(" | ");
+    const behaviorSummaryText = compositeMode
+      ? formatLocalize(
+        "PERSISTENT_ZONES.UI.SectionSummaries.CompositeParts",
+        { count: partSections.length },
+        `${partSections.length} parts`
+      )
+      : formatLocalize(
+        "PERSISTENT_ZONES.UI.SectionSummaries.GlobalTriggers",
+        { count: globalTriggerSections.length },
+        `${globalTriggerSections.length} triggers`
+      );
 
     return {
       item: this.itemDocument,
@@ -188,6 +236,11 @@ class PersistentZonesItemConfig extends FormApplication {
       profileOptions: profileListContext.options,
       profileListContext,
       selectedProfileContext,
+      linksTerrainContext,
+      templateContextSummaryText,
+      typeVariantSummaryText,
+      geometrySummaryText,
+      behaviorSummaryText,
       baseTypeOptions: buildChoiceOptions(
         selectionContext.compatibleBaseTypeChoices,
         selectionContext.effectiveBaseType
@@ -198,10 +251,11 @@ class PersistentZonesItemConfig extends FormApplication {
         selectionContext.variantChoices,
         selectionContext.effectiveSelectedVariant
       ),
-      globalTriggerSections: buildTriggerEditorSections(formState.triggerConfigs, this.itemDocument),
-      partSections: buildCompositePartSections(formState, this.itemDocument),
-      selectedVariantLabel: selectionContext.selectedVariantLabel,
-      showVariantSelect: selectionContext.variantChoices.length > 0,
+      globalTriggerSections,
+      partSections,
+      selectedVariantLabel,
+      showVariantSelect,
+      showGeometrySection: ["ring", "composite-line", "composite-ring"].includes(formState.baseType),
       showWallThickness: ["ring", "composite-line", "composite-ring"].includes(formState.baseType),
       showSideThickness: ["composite-line", "composite-ring"].includes(formState.baseType),
       showGlobalTriggers: !compositeMode,
@@ -271,6 +325,8 @@ class PersistentZonesItemConfig extends FormApplication {
     const previousBaseType = deriveBaseTypeFromDefinition(previousDefinition, this.itemDocument);
     const nextBaseType = formState.baseType;
     const removedLegacyFields = collectRemovedLegacyDefinitionFields(previousDefinition, definition);
+    const definitionChanged =
+      JSON.stringify(previousDefinition ?? null) !== JSON.stringify(definition ?? null);
 
     if (previousDefinition) {
       await this.itemDocument.unsetFlag(MODULE_ID, DEFINITION_FLAG_KEY);
@@ -288,6 +344,13 @@ class PersistentZonesItemConfig extends FormApplication {
       });
     }
 
+    let rebuildSummary = null;
+    if (previousDefinition && formState.enabled !== false && definitionChanged) {
+      rebuildSummary = await rebuildActiveRegionsForItem(this.itemDocument, {
+        reason: "item-config-save"
+      });
+    }
+
     debug("Rebuilt item zone definition for base type.", {
       itemUuid: this.itemDocument.uuid,
       itemName: this.itemDocument.name,
@@ -302,6 +365,19 @@ class PersistentZonesItemConfig extends FormApplication {
       selectedVariant: selectionContext.selectedVariant,
       selectedVariantCompatible: selectionContext.selectedVariantCompatible,
       enabled: formState.enabled,
+      targetFilter: formState.targetFilter,
+      linkedWallsEnabled: formState.linkedWallsEnabled,
+      linkedWallsPreset: formState.linkedWallsPreset,
+      linkedWallHeight: formState.linkedWallHeight,
+      wallHeightSupported: isWallHeightSupported(),
+      linkedLightsEnabled: formState.linkedLightEnabled,
+      linkedLightPreset: formState.linkedLightPreset,
+      linkedLightRange: formState.linkedLightRadius,
+      linkedLightBright: formState.linkedLightBright,
+      linkedLightDim: formState.linkedLightDim,
+      difficultTerrainEnabled: formState.difficultTerrainEnabled,
+      definitionChanged,
+      rebuildSummary,
       removedLegacyFields
     });
 
@@ -1103,13 +1179,15 @@ function buildDefinitionPreview(item, formState, definition) {
     const compatibilityIssues = collectActivityCompatibilityValidationIssues(selectionContext.state, item);
     const templateTypeWarnings = Array.from(templateTypeContext.warnings ?? []);
     const selectionWarnings = Array.from(selectionContext.warnings ?? []);
+    const featureWarnings = collectAuthoringFeatureWarnings(selectionContext.state);
     const reasons = [
       ...normalizedReasons,
       ...compatibilityIssues
     ];
     const warnings = [
       ...templateTypeWarnings,
-      ...selectionWarnings
+      ...selectionWarnings,
+      ...featureWarnings
     ];
     const isValid = Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0;
 
@@ -1143,7 +1221,8 @@ function buildDefinitionPreview(item, formState, definition) {
     const reasons = [caughtError?.message ?? "Unknown preview error."];
     const warnings = [
       ...Array.from(templateTypeContext.warnings ?? []),
-      ...Array.from(selectionContext.warnings ?? [])
+      ...Array.from(selectionContext.warnings ?? []),
+      ...collectAuthoringFeatureWarnings(selectionContext.state)
     ];
 
     return {
@@ -1173,6 +1252,26 @@ function buildDefinitionPreview(item, formState, definition) {
       })
     };
   }
+}
+
+function collectAuthoringFeatureWarnings(formState = {}) {
+  const warnings = [];
+  const normalizedState = normalizeAuthoringFormState(formState);
+
+  if (
+    normalizedState.linkedWallsEnabled &&
+    normalizedState.linkedWallHeight !== null &&
+    !isWallHeightSupported()
+  ) {
+    warnings.push(
+      localize(
+        "PERSISTENT_ZONES.UI.FeatureWarnings.WallHeightUnavailable",
+        "Linked wall height requires an active wall-height support module."
+      )
+    );
+  }
+
+  return warnings;
 }
 
 function buildStructuredDebugInspector({
@@ -1246,6 +1345,52 @@ function buildStructuredDebugInspector({
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.PartCount", "Part Count"),
         String(partSummaries.length)
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.TargetFilter", "Target Filter"),
+        localizeTargetFilterLabel(effectiveState.targetFilter)
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.DifficultTerrain", "Difficult Terrain"),
+        effectiveState.difficultTerrainEnabled
+          ? localize("PERSISTENT_ZONES.UI.Common.Enabled", "Enabled")
+          : localize("PERSISTENT_ZONES.UI.Common.Disabled", "Disabled")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedWalls", "Linked Walls"),
+        effectiveState.linkedWallsEnabled
+          ? getChoiceLabelByValue(
+            getLinkedWallPresetChoices(),
+            effectiveState.linkedWallsPreset,
+            effectiveState.linkedWallsPreset
+          )
+          : localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedLight", "Linked Light"),
+        effectiveState.linkedLightEnabled
+          ? getChoiceLabelByValue(
+            getLinkedLightPresetChoices(),
+            effectiveState.linkedLightPreset,
+            effectiveState.linkedLightPreset
+          )
+          : localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedLightRange", "Linked Light Range"),
+        effectiveState.linkedLightRadius ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedLightBright", "Linked Light Bright"),
+        effectiveState.linkedLightBright ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedLightDim", "Linked Light Dim"),
+        effectiveState.linkedLightDim ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LinkedWallHeight", "Linked Wall Height"),
+        effectiveState.linkedWallHeight ?? localize("PERSISTENT_ZONES.UI.NoneOption", "None")
       )
     ],
     partSummaries,
@@ -1422,9 +1567,19 @@ function readAuthoringFormState(root, seedState = null, item = null) {
     templateTypeSource: readValue(form, "templateTypeSource"),
     simpleTemplateType: readValue(form, "simpleTemplateType"),
     selectedVariant: readValue(form, "selectedVariant"),
+    targetFilter: readValue(form, "targetFilter"),
     triggerConfigs: readTriggerAuthoringFormState(form, existingState.triggerConfigs),
     wallThickness: readOptionalValue(form, "wallThickness", existingState.wallThickness),
     sideThickness: readOptionalValue(form, "sideThickness", existingState.sideThickness),
+    difficultTerrainEnabled: readCheckbox(form, "difficultTerrainEnabled"),
+    linkedWallsEnabled: readCheckbox(form, "linkedWallsEnabled"),
+    linkedWallsPreset: readOptionalValue(form, "linkedWallsPreset", existingState.linkedWallsPreset),
+    linkedWallHeight: readOptionalValue(form, "linkedWallHeight", existingState.linkedWallHeight),
+    linkedLightEnabled: readCheckbox(form, "linkedLightEnabled"),
+    linkedLightPreset: readOptionalValue(form, "linkedLightPreset", existingState.linkedLightPreset),
+    linkedLightRadius: readOptionalValue(form, "linkedLightRadius", existingState.linkedLightRadius),
+    linkedLightBright: readOptionalValue(form, "linkedLightBright", existingState.linkedLightBright),
+    linkedLightDim: readOptionalValue(form, "linkedLightDim", existingState.linkedLightDim),
     partConfigs: readPartAuthoringFormState(form, existingState.partConfigs)
   }, {
     item,
@@ -1448,6 +1603,7 @@ function normalizeAuthoringFormState(formData = {}, {
     templateTypeSource,
     simpleTemplateType,
     selectedVariant,
+    targetFilter: normalizeAuthoringTargetFilter(formData.targetFilter),
     triggerConfigs: normalizeAuthoringTriggerConfigs(
       isPlainObject(formData.triggerConfigs)
         ? formData.triggerConfigs
@@ -1466,6 +1622,15 @@ function normalizeAuthoringFormState(formData = {}, {
       formData.sideThickness,
       getDefaultSideThicknessForBaseType(baseType)
     ),
+    difficultTerrainEnabled: coerceBoolean(formData.difficultTerrainEnabled, false) ?? false,
+    linkedWallsEnabled: coerceBoolean(formData.linkedWallsEnabled, false) ?? false,
+    linkedWallsPreset: normalizeLinkedWallPreset(formData.linkedWallsPreset),
+    linkedWallHeight: normalizeOptionalLinkedMetric(formData.linkedWallHeight),
+    linkedLightEnabled: coerceBoolean(formData.linkedLightEnabled, false) ?? false,
+    linkedLightPreset: normalizeLinkedLightPreset(formData.linkedLightPreset),
+    linkedLightRadius: normalizeOptionalLinkedMetric(formData.linkedLightRadius),
+    linkedLightBright: normalizeOptionalLinkedMetric(formData.linkedLightBright),
+    linkedLightDim: normalizeOptionalLinkedMetric(formData.linkedLightDim),
     partConfigs: normalizeAuthoringPartConfigs(formData.partConfigs)
   };
 
@@ -1484,9 +1649,19 @@ function getDefaultAuthoringState(item = null) {
     templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
     simpleTemplateType: detectedTemplateType,
     selectedVariant: DEFAULT_VARIANT_BY_BASE_TYPE["composite-line"],
+    targetFilter: DEFAULT_TARGET_FILTER,
     triggerConfigs: buildDefaultAuthoringTriggerConfigs(),
     wallThickness: getDefaultWallThicknessForBaseType("simple"),
     sideThickness: getDefaultSideThicknessForBaseType("simple"),
+    difficultTerrainEnabled: false,
+    linkedWallsEnabled: false,
+    linkedWallsPreset: DEFAULT_LINKED_WALL_PRESET,
+    linkedWallHeight: null,
+    linkedLightEnabled: false,
+    linkedLightPreset: DEFAULT_LINKED_LIGHT_PRESET,
+    linkedLightRadius: null,
+    linkedLightBright: null,
+    linkedLightDim: null,
     partConfigs: buildDefaultPartAuthoringConfigs()
   };
 }
@@ -1536,12 +1711,104 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         fallbackState.selectedVariant
       )
     ),
+    targetFilter: normalizeAuthoringTargetFilter(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["targeting", "mode"]),
+        safeGet(rawDefinition, ["targeting", "mode"]),
+        safeGet(normalizedDefinition, ["targeting", "mode"]),
+        safeGet(effectiveDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
+        safeGet(rawDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
+        safeGet(normalizedDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
+        fallbackState.targetFilter
+      )
+    ),
     triggerConfigs: normalizeAuthoringTriggerConfigs(
       rootTriggerConfigs,
       fallbackState.triggerConfigs
     ),
     wallThickness: deriveAuthoringWallThickness(effectiveDefinition, normalizedDefinition, baseType),
     sideThickness: deriveCompositeSideThickness(effectiveDefinition, normalizedDefinition, baseType),
+    difficultTerrainEnabled: coerceBoolean(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["terrain", "difficult"]),
+        safeGet(effectiveDefinition, ["movementCost", "enabled"]),
+        safeGet(rawDefinition, ["terrain", "difficult"]),
+        safeGet(normalizedDefinition, ["terrain", "difficult"]),
+        fallbackState.difficultTerrainEnabled
+      ),
+      fallbackState.difficultTerrainEnabled
+    ) ?? fallbackState.difficultTerrainEnabled,
+    linkedWallsEnabled: coerceBoolean(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedWalls", "enabled"]),
+        safeGet(rawDefinition, ["linkedWalls", "enabled"]),
+        safeGet(normalizedDefinition, ["linkedWalls", "enabled"]),
+        fallbackState.linkedWallsEnabled
+      ),
+      fallbackState.linkedWallsEnabled
+    ) ?? fallbackState.linkedWallsEnabled,
+    linkedWallsPreset: normalizeLinkedWallPreset(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedWalls", "preset"]),
+        safeGet(rawDefinition, ["linkedWalls", "preset"]),
+        safeGet(normalizedDefinition, ["linkedWalls", "preset"]),
+        safeGet(normalizedDefinition, ["linkedWalls", "resolvedPreset"]),
+        fallbackState.linkedWallsPreset
+      )
+    ),
+    linkedWallHeight: normalizeOptionalLinkedMetric(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedWalls", "height"]),
+        safeGet(effectiveDefinition, ["linkedWalls", "wallHeight"]),
+        safeGet(rawDefinition, ["linkedWalls", "height"]),
+        safeGet(rawDefinition, ["linkedWalls", "wallHeight"]),
+        fallbackState.linkedWallHeight
+      )
+    ),
+    linkedLightEnabled: coerceBoolean(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedLight", "enabled"]),
+        safeGet(rawDefinition, ["linkedLight", "enabled"]),
+        safeGet(rawDefinition, ["linkedLights", "enabled"]),
+        safeGet(normalizedDefinition, ["linkedLight", "enabled"]),
+        fallbackState.linkedLightEnabled
+      ),
+      fallbackState.linkedLightEnabled
+    ) ?? fallbackState.linkedLightEnabled,
+    linkedLightPreset: normalizeLinkedLightPreset(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedLight", "preset"]),
+        safeGet(rawDefinition, ["linkedLight", "preset"]),
+        safeGet(rawDefinition, ["linkedLights", "preset"]),
+        safeGet(normalizedDefinition, ["linkedLight", "preset"]),
+        safeGet(normalizedDefinition, ["linkedLight", "resolvedPreset"]),
+        fallbackState.linkedLightPreset
+      )
+    ),
+    linkedLightRadius: normalizeOptionalLinkedMetric(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedLight", "radius"]),
+        safeGet(rawDefinition, ["linkedLight", "radius"]),
+        safeGet(rawDefinition, ["linkedLights", "radius"]),
+        fallbackState.linkedLightRadius
+      )
+    ),
+    linkedLightBright: normalizeOptionalLinkedMetric(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedLight", "bright"]),
+        safeGet(rawDefinition, ["linkedLight", "bright"]),
+        safeGet(rawDefinition, ["linkedLights", "bright"]),
+        fallbackState.linkedLightBright
+      )
+    ),
+    linkedLightDim: normalizeOptionalLinkedMetric(
+      pickFirstDefined(
+        safeGet(effectiveDefinition, ["linkedLight", "dim"]),
+        safeGet(rawDefinition, ["linkedLight", "dim"]),
+        safeGet(rawDefinition, ["linkedLights", "dim"]),
+        fallbackState.linkedLightDim
+      )
+    ),
     partConfigs: buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition)
   };
 }
@@ -1988,10 +2255,12 @@ function buildDefinitionFromAuthoringState(formState, {
     enabled: state.enabled,
     label: item?.name ?? DEFAULT_ZONE_LABEL,
     shapeMode: "template",
-    targeting: {
-      mode: "all",
-      includeSelf: true
+    targeting: buildAuthoringTargetingDefinition(state.targetFilter),
+    terrain: {
+      difficult: state.difficultTerrainEnabled
     },
+    linkedWalls: buildAuthoringLinkedWallsDefinition(state),
+    linkedLight: buildAuthoringLinkedLightDefinition(state),
     concentration: {
       required: false
     }
@@ -2066,6 +2335,50 @@ function buildDefinitionFromAuthoringState(formState, {
         };
     }
   }
+
+function buildAuthoringTargetingDefinition(targetFilter) {
+  const normalizedTargetFilter = normalizeAuthoringTargetFilter(targetFilter);
+
+  return {
+    mode: normalizedTargetFilter,
+    includeSelf: normalizedTargetFilter !== "not-self"
+  };
+}
+
+function buildAuthoringLinkedWallsDefinition(state = {}) {
+  const definition = {
+    enabled: state.linkedWallsEnabled,
+    preset: state.linkedWallsPreset
+  };
+
+  if (state.linkedWallHeight !== null) {
+    definition.height = state.linkedWallHeight;
+    definition.bottom = 0;
+  }
+
+  return definition;
+}
+
+function buildAuthoringLinkedLightDefinition(state = {}) {
+  const definition = {
+    enabled: state.linkedLightEnabled,
+    preset: state.linkedLightPreset
+  };
+
+  if (state.linkedLightRadius !== null) {
+    definition.radius = state.linkedLightRadius;
+  }
+
+  if (state.linkedLightBright !== null) {
+    definition.bright = state.linkedLightBright;
+  }
+
+  if (state.linkedLightDim !== null) {
+    definition.dim = state.linkedLightDim;
+  }
+
+  return definition;
+}
 
 function buildConfiguredRootTriggers(triggerConfigs = {}) {
   const configuredTriggers = buildDisabledTriggers();
@@ -3278,6 +3591,164 @@ function getOnMoveStepModeChoices() {
   ];
 }
 
+function getLinkedWallPresetChoices() {
+  return [
+    {
+      value: "solid",
+      label: localize("PERSISTENT_ZONES.UI.LinkedWallPresets.Solid", "Solid")
+    },
+    {
+      value: "terrain",
+      label: localize("PERSISTENT_ZONES.UI.LinkedWallPresets.Terrain", "Terrain")
+    },
+    {
+      value: "invisible",
+      label: localize("PERSISTENT_ZONES.UI.LinkedWallPresets.Invisible", "Invisible")
+    },
+    {
+      value: "ethereal",
+      label: localize("PERSISTENT_ZONES.UI.LinkedWallPresets.Ethereal", "Ethereal")
+    }
+  ];
+}
+
+function getLinkedLightPresetChoices() {
+  return [
+    {
+      value: "glow",
+      label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Glow", "Glow")
+    },
+    {
+      value: "moonlight",
+      label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Moonlight", "Moonlight")
+    },
+    {
+      value: "fire",
+      label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Fire", "Fire")
+    },
+    {
+      value: "holy",
+      label: localize("PERSISTENT_ZONES.UI.LinkedLightPresets.Holy", "Holy")
+    }
+  ];
+}
+
+function buildLinksTerrainContext(formState = {}) {
+  const state = normalizeAuthoringFormState(formState);
+  const activeLabels = [];
+  const wallHeightSupported = isWallHeightSupported();
+
+  if (state.difficultTerrainEnabled) {
+    activeLabels.push(localize("PERSISTENT_ZONES.UI.Fields.DifficultTerrain", "Difficult Terrain"));
+  }
+
+  activeLabels.push(
+    `${localize("PERSISTENT_ZONES.UI.Fields.TargetFilter", "Target Filter")}: ${localizeTargetFilterLabel(state.targetFilter)}`
+  );
+
+  if (state.linkedWallsEnabled) {
+    const wallSummaryParts = [
+      getChoiceLabelByValue(
+        getLinkedWallPresetChoices(),
+        state.linkedWallsPreset,
+        state.linkedWallsPreset
+      )
+    ];
+
+    if (state.linkedWallHeight !== null) {
+      wallSummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.LinkedWallHeight", "Linked Wall Height")}: ${state.linkedWallHeight}`
+      );
+    }
+
+    activeLabels.push(wallSummaryParts.join(" | "));
+  }
+
+  if (state.linkedLightEnabled) {
+    const lightSummaryParts = [
+      getChoiceLabelByValue(
+        getLinkedLightPresetChoices(),
+        state.linkedLightPreset,
+        state.linkedLightPreset
+      )
+    ];
+
+    if (state.linkedLightRadius !== null) {
+      lightSummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.LinkedLightRange", "Linked Light Range")}: ${state.linkedLightRadius}`
+      );
+    }
+
+    if (state.linkedLightBright !== null) {
+      lightSummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.LinkedLightBright", "Linked Light Bright")}: ${state.linkedLightBright}`
+      );
+    }
+
+    if (state.linkedLightDim !== null) {
+      lightSummaryParts.push(
+        `${localize("PERSISTENT_ZONES.UI.Fields.LinkedLightDim", "Linked Light Dim")}: ${state.linkedLightDim}`
+      );
+    }
+
+    activeLabels.push(lightSummaryParts.join(" | "));
+  }
+
+  return {
+    activeCount: activeLabels.length,
+    summaryText: activeLabels.length
+      ? activeLabels.join(" | ")
+      : localize("PERSISTENT_ZONES.UI.NoneOption", "None"),
+    targetFilterOptions: buildChoiceOptions(
+      getTargetFilterChoices(),
+      state.targetFilter
+    ),
+    linkedWallsPresetOptions: buildChoiceOptions(
+      getLinkedWallPresetChoices(),
+      state.linkedWallsPreset
+    ),
+    linkedLightPresetOptions: buildChoiceOptions(
+      getLinkedLightPresetChoices(),
+      state.linkedLightPreset
+    ),
+    wallHeightSupported,
+    wallHeightStatusLabel: wallHeightSupported
+      ? localize("PERSISTENT_ZONES.UI.Common.Enabled", "Enabled")
+      : localize("PERSISTENT_ZONES.UI.Common.Disabled", "Disabled"),
+    wallHeightUnavailableMessage: wallHeightSupported
+      ? ""
+      : localize(
+        "PERSISTENT_ZONES.UI.FeatureWarnings.WallHeightUnavailable",
+        "Linked wall height requires an active wall-height support module."
+      )
+  };
+}
+
+function getTargetFilterChoices() {
+  return [
+    {
+      value: "all",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.All", "All")
+    },
+    {
+      value: "allies",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.Allies", "Allies")
+    },
+    {
+      value: "enemies",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.Enemies", "Enemies")
+    },
+    {
+      value: "self",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self")
+    },
+    {
+      value: "not-self",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.NotSelf", "Not Self")
+    }
+  ];
+}
+
 function getMovementModeChoices() {
   return [
     {
@@ -3696,6 +4167,22 @@ function localizeMovementModeLabel(movementMode) {
   }
 }
 
+function localizeTargetFilterLabel(targetFilter) {
+  switch (normalizeAuthoringTargetFilter(targetFilter)) {
+    case "allies":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.Allies", "Allies");
+    case "enemies":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.Enemies", "Enemies");
+    case "self":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self");
+    case "not-self":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.NotSelf", "Not Self");
+    case "all":
+    default:
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.All", "All");
+  }
+}
+
 function localizeOnMoveStepModeLabel(stepMode) {
   return normalizeOnMoveStepMode(stepMode, "distance") === "grid-cell"
     ? localize("PERSISTENT_ZONES.UI.OnMoveStepModes.GridCell", "By Cell")
@@ -3829,6 +4316,20 @@ function normalizeDamageType(value) {
   return normalized || DEFAULT_DAMAGE_TYPE;
 }
 
+function normalizeLinkedWallPreset(value) {
+  const normalized = String(value ?? DEFAULT_LINKED_WALL_PRESET).trim().toLowerCase();
+  return getLinkedWallPresetChoices().some((choice) => choice.value === normalized)
+    ? normalized
+    : DEFAULT_LINKED_WALL_PRESET;
+}
+
+function normalizeLinkedLightPreset(value) {
+  const normalized = String(value ?? DEFAULT_LINKED_LIGHT_PRESET).trim().toLowerCase();
+  return getLinkedLightPresetChoices().some((choice) => choice.value === normalized)
+    ? normalized
+    : DEFAULT_LINKED_LIGHT_PRESET;
+}
+
 function normalizeAbilityId(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized || "";
@@ -3858,6 +4359,13 @@ function normalizeOnMoveStepMode(value, fallback = "distance") {
   return fallback;
 }
 
+function normalizeAuthoringTargetFilter(value) {
+  const normalized = String(value ?? DEFAULT_TARGET_FILTER).trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "not-self"].includes(normalized)
+    ? normalized
+    : DEFAULT_TARGET_FILTER;
+}
+
 function normalizeAuthoringMovementMode(value) {
   const normalized = String(value ?? "any").trim().toLowerCase();
   return ["any", "voluntary", "forced"].includes(normalized) ? normalized : "any";
@@ -3873,6 +4381,11 @@ function clampMoveCellStep(value, fallback = 1) {
 
 function clampTriggerDistanceStep(value, fallback = DEFAULT_MOVE_DISTANCE_STEP) {
   return Math.max(coerceLocalizedNumber(value, fallback), MIN_THICKNESS);
+}
+
+function normalizeOptionalLinkedMetric(value) {
+  const numericValue = coerceLocalizedNumber(value, null);
+  return numericValue === null ? null : Math.max(numericValue, 0);
 }
 
 function extractActivityIdFromTriggerConfig(triggerLike = {}) {

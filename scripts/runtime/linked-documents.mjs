@@ -7,7 +7,8 @@ import {
   duplicateData,
   getRegionRuntimeFlags,
   getRegionShapeData,
-  getTemplateType
+  getTemplateType,
+  isWallHeightSupported
 } from "./utils.mjs";
 
 const DEFAULT_LINKED_WALL_SEGMENTS = 24;
@@ -154,7 +155,11 @@ async function syncLinkedWalls({
     return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, existingWalls, "unsupported-shape");
   }
 
-  if (existingWalls.length === desiredWalls.length && existingWalls.length) {
+  const existingUsesWallHeight = existingWalls.some((wallDocument) => wallDocument?.flags?.["wall-height"] !== undefined);
+  const desiredUsesWallHeight = desiredWalls.some((wallData) => wallData?.flags?.["wall-height"] !== undefined);
+  const wallHeightModeChanged = existingUsesWallHeight !== desiredUsesWallHeight;
+
+  if (existingWalls.length === desiredWalls.length && existingWalls.length && !wallHeightModeChanged) {
     const updates = existingWalls.map((wallDocument, index) => ({
       _id: wallDocument.id,
       ...desiredWalls[index]
@@ -179,7 +184,7 @@ async function syncLinkedWalls({
       templateId: templateDocument?.id ?? null,
       regionId: regionDocument?.id ?? null,
       linkedDocumentIds: existingWalls.map((document) => document.id),
-      reason: "recreate",
+      reason: wallHeightModeChanged ? "recreate-wall-height" : "recreate",
       syncApplied: true
     });
   }
@@ -332,23 +337,49 @@ function buildLinkedWallData({
   const sight = resolveWallSenseValue(linkedWalls?.sight, linkedWalls?.mode ?? linkedWalls?.wallMode);
   const light = resolveWallSenseValue(linkedWalls?.light, linkedWalls?.mode ?? linkedWalls?.wallMode);
   const sound = resolveWallSenseValue(linkedWalls?.sound, "none");
+  const wallHeightSupported = isWallHeightSupported();
+  const wallHeightTop = coerceNumber(linkedWalls?.height, null);
+  const wallHeightBottom = coerceNumber(linkedWalls?.bottom, 0);
+  const wallHeightApplied = wallHeightSupported && wallHeightTop !== null;
 
-  return segments.map((c) => ({
-    c,
-    move,
-    sight,
-    light,
-    sound,
-    dir: 0,
-    door: 0,
-    ds: 0,
-    flags: buildLinkedDocumentFlags({
+  debug("Prepared linked wall config.", {
+    templateId: templateDocument?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    linkedDocumentKind: "wall",
+    segmentCount: segments.length,
+    wallHeightSupported,
+    wallHeightApplied,
+    wallHeightTop,
+    wallHeightBottom
+  });
+
+  return segments.map((c) => {
+    const flags = buildLinkedDocumentFlags({
       kind: "wall",
       templateDocument,
       regionDocument,
       itemUuid
-    })
-  }));
+    });
+
+    if (wallHeightApplied) {
+      flags["wall-height"] = {
+        top: wallHeightTop,
+        bottom: wallHeightBottom
+      };
+    }
+
+    return {
+      c,
+      move,
+      sight,
+      light,
+      sound,
+      dir: 0,
+      door: 0,
+      ds: 0,
+      flags
+    };
+  });
 }
 
 function buildLinkedLightData({
@@ -377,6 +408,15 @@ function buildLinkedLightData({
   }
 
   const animation = normalizeLinkedLightAnimation(linkedLight?.animation);
+
+  debug("Prepared linked light config.", {
+    templateId: templateDocument?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    linkedDocumentKind: "light",
+    linkedLightRange: radius,
+    linkedLightBright: bright,
+    linkedLightDim: dim
+  });
 
   return {
     x: center.x,

@@ -8,6 +8,8 @@ import {
   pickFirstDefined
 } from "./utils.mjs";
 import { cleanupLinkedDocumentsForRegion } from "./linked-documents.mjs";
+import { createRegionFromTemplate } from "./region-factory.mjs";
+import { getZoneDefinitionFromItem } from "./zone-definition.mjs";
 
 let hooksRegistered = false;
 const pendingRegionCleanup = new Set();
@@ -292,6 +294,169 @@ export async function cleanupRegionsForItem(itemOrUuid, { reason = "manual" } = 
   }
 
   return deleted;
+}
+
+export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual" } = {}) {
+  const itemUuid = await resolveManagedItemUuid(itemOrUuid);
+  if (!itemUuid) {
+    debug("Skipped active managed Region rebuild because no Item could be resolved.", {
+      itemOrUuid,
+      reason,
+      activeRegionsRebuildSkipped: true
+    });
+    return {
+      itemUuid: null,
+      rebuildNeeded: false,
+      rebuiltCount: 0,
+      cleanedCount: 0,
+      templateCount: 0
+    };
+  }
+
+  const itemDocument =
+    itemOrUuid?.documentName === "Item"
+      ? itemOrUuid
+      : await fromUuidSafe(itemUuid);
+  const templateEntries = new Map();
+  let activeRegionCount = 0;
+
+  for (const scene of game.scenes.contents) {
+    const matchingRegions = findManagedRegions(scene, (regionDocument) => {
+      const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+      return runtime.itemUuid === itemUuid;
+    });
+
+    if (!matchingRegions.length) {
+      continue;
+    }
+
+    activeRegionCount += matchingRegions.length;
+
+    for (const regionDocument of matchingRegions) {
+      const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+      const templateUuid = String(runtime.templateUuid ?? "").trim();
+      if (!templateUuid || templateEntries.has(templateUuid)) {
+        continue;
+      }
+
+      templateEntries.set(templateUuid, {
+        templateUuid,
+        sceneId: scene.id,
+        regionId: regionDocument?.id ?? null,
+        groupId: runtime.groupId ?? null
+      });
+    }
+  }
+
+  if (!activeRegionCount) {
+    debug("Skipped active managed Region rebuild because no active Regions were found for the Item.", {
+      itemUuid,
+      itemName: itemDocument?.name ?? null,
+      reason,
+      activeRegionsRebuildSkipped: true
+    });
+    return {
+      itemUuid,
+      rebuildNeeded: false,
+      rebuiltCount: 0,
+      cleanedCount: 0,
+      templateCount: 0
+    };
+  }
+
+  debug("Detected active managed Region rebuild requirement.", {
+    itemUuid,
+    itemName: itemDocument?.name ?? null,
+    reason,
+    activeRegionsRebuildNeeded: true,
+    activeRegionCount,
+    templateCount: templateEntries.size
+  });
+
+  const cleaned = await cleanupRegionsForItem(itemDocument ?? itemUuid, {
+    reason: `${reason}-rebuild-cleanup`
+  });
+
+  const zoneDefinition = getZoneDefinitionFromItem(itemDocument);
+  if (!itemDocument || !zoneDefinition) {
+    debug("Skipped active managed Region rebuild because no active definition could be resolved after cleanup.", {
+      itemUuid,
+      itemName: itemDocument?.name ?? null,
+      reason,
+      activeRegionsRebuildSkipped: true,
+      cleanedCount: cleaned.length,
+      templateCount: templateEntries.size
+    });
+    return {
+      itemUuid,
+      rebuildNeeded: true,
+      rebuiltCount: 0,
+      cleanedCount: cleaned.length,
+      templateCount: templateEntries.size
+    };
+  }
+
+  const rebuiltRegions = [];
+  const skippedTemplates = [];
+
+  for (const templateEntry of templateEntries.values()) {
+    const templateDocument = await fromUuidSafe(templateEntry.templateUuid);
+    if (templateDocument?.documentName !== "MeasuredTemplate") {
+      skippedTemplates.push({
+        ...templateEntry,
+        reason: "missing-template"
+      });
+      continue;
+    }
+
+    const createdRegion = await createRegionFromTemplate(templateDocument, {
+      force: true,
+      item: itemDocument,
+      rawDefinition: zoneDefinition
+    });
+
+    if (createdRegion) {
+      rebuiltRegions.push(createdRegion);
+      continue;
+    }
+
+    skippedTemplates.push({
+      ...templateEntry,
+      reason: "create-returned-null"
+    });
+  }
+
+  if (!rebuiltRegions.length) {
+    debug("Skipped active managed Region rebuild because no linked templates could be recreated.", {
+      itemUuid,
+      itemName: itemDocument?.name ?? null,
+      reason,
+      activeRegionsRebuildSkipped: true,
+      cleanedCount: cleaned.length,
+      templateCount: templateEntries.size,
+      skippedTemplates
+    });
+  } else {
+    debug("Rebuilt active managed Regions for Item.", {
+      itemUuid,
+      itemName: itemDocument?.name ?? null,
+      reason,
+      activeRegionsRebuilt: true,
+      cleanedCount: cleaned.length,
+      rebuiltCount: rebuiltRegions.length,
+      templateCount: templateEntries.size,
+      skippedTemplates
+    });
+  }
+
+  return {
+    itemUuid,
+    rebuildNeeded: true,
+    rebuiltCount: rebuiltRegions.length,
+    cleanedCount: cleaned.length,
+    templateCount: templateEntries.size,
+    skippedTemplates
+  };
 }
 
 async function onCanvasReady(scene) {

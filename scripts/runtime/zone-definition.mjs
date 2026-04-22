@@ -856,10 +856,18 @@ function normalizeSource(sourceDefinition) {
 
 function normalizeTargeting(targetingDefinition) {
   const definition = isPlainObject(targetingDefinition) ? targetingDefinition : {};
+  const explicitMode = String(pickFirstDefined(definition.mode, "")).trim().toLowerCase();
+  const includeSelf = coerceBoolean(
+    pickFirstDefined(definition.includeSelf, explicitMode === "not-self" ? false : true),
+    explicitMode === "not-self" ? false : true
+  );
+  const normalizedMode = explicitMode || (includeSelf === false ? "not-self" : "all");
 
   return {
-    mode: String(pickFirstDefined(definition.mode, "all")).toLowerCase(),
-    includeSelf: coerceBoolean(pickFirstDefined(definition.includeSelf, true), true)
+    mode: ["all", "allies", "enemies", "self", "not-self"].includes(normalizedMode)
+      ? normalizedMode
+      : "all",
+    includeSelf: normalizedMode === "not-self" ? false : includeSelf
   };
 }
 

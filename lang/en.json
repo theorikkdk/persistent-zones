@@ -15,8 +15,12 @@
         "Basics": "Basics",
         "Activation": "Activation",
         "Profiles": "Profiles",
+        "TemplateContext": "Detected Template Context",
+        "TypeVariant": "Type / Variant",
         "Geometry": "Geometry",
+        "DerivedGeometry": "Derived Geometry / Parameters",
         "Behaviors": "Effective Part Behaviors",
+        "LinksTerrain": "Links & Terrain",
         "Triggers": "Triggers",
         "OnEnter": "On Enter",
         "OnExit": "On Exit",
@@ -68,13 +72,50 @@
         "PartCount": "Part Count",
         "PartId": "Part ID",
         "GeometryType": "Geometry Type",
+        "TargetFilter": "Target Filter",
+        "DifficultTerrain": "Difficult Terrain",
+        "LinkedWalls": "Linked Walls",
+        "LinkedWallsPreset": "Linked Wall Preset",
+        "LinkedWallHeight": "Linked Wall Height",
+        "LinkedLight": "Linked Light",
+        "LinkedLightPreset": "Linked Light Preset",
+        "LinkedLightRange": "Linked Light Range",
+        "LinkedLightBright": "Linked Light Bright",
+        "LinkedLightDim": "Linked Light Dim",
         "WallThickness": "Wall Thickness",
         "SideThickness": "Heated Side Thickness"
+      },
+      "Common": {
+        "Enabled": "Enabled",
+        "Disabled": "Disabled"
+      },
+      "SectionSummaries": {
+        "GlobalTriggers": "{count} triggers",
+        "CompositeParts": "{count} parts"
       },
       "MovementModes": {
         "Any": "Any",
         "Voluntary": "Voluntary",
         "Forced": "Forced"
+      },
+      "TargetFilters": {
+        "All": "All",
+        "Allies": "Allies",
+        "Enemies": "Enemies",
+        "Self": "Self",
+        "NotSelf": "Not Self"
+      },
+      "LinkedWallPresets": {
+        "Solid": "Solid",
+        "Terrain": "Terrain",
+        "Invisible": "Invisible",
+        "Ethereal": "Ethereal"
+      },
+      "LinkedLightPresets": {
+        "Glow": "Glow",
+        "Moonlight": "Moonlight",
+        "Fire": "Fire",
+        "Holy": "Holy"
       },
       "OnEnterModes": {
         "None": "None",
@@ -117,6 +158,9 @@
         "AutoUsingDetected": "Auto mode is using the first detected type.",
         "ManualMismatch": "The manual template type override differs from the detected dnd5e template type.",
         "NoDetectedSource": "No dnd5e template source detected."
+      },
+      "FeatureWarnings": {
+        "WallHeightUnavailable": "Linked wall height requires an active wall-height support module."
       },
       "ActivityTypes": {
         "Damage": "Damage",

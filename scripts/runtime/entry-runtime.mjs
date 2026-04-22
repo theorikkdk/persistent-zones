@@ -4,6 +4,7 @@ import {
   coerceNumber,
   debug,
   distanceToPixels,
+  evaluateManagedRegionTargetFilter,
   findManagedRegions,
   getRegionRuntimeFlags,
   getTokenCenter,
@@ -666,7 +667,7 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
     const exitMovementModeMatched = movementModeMatches(movementMode, onExit.movementMode);
     const moveMovementModeMatched = movementModeMatches(movementMode, onMove.movementMode);
-    const filterResult = shouldAffectToken(tokenDocument, runtime, normalizedDefinition);
+    const filterResult = shouldAffectToken(tokenDocument, regionDocument, normalizedDefinition);
 
     return {
       regionDocument,
@@ -788,9 +789,16 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
 
   if (enterDetected || exitDetected || moveTriggerCount > 0) {
     if (!filterResult.allowed) {
-      debug("Skipped managed Region effect because token filtering rejected the target.", {
+      debug("Skipped managed Region effect because target filter rejected the token.", {
         tokenId: tokenDocument.id,
         regionId: regionDocument.id,
+        targetFilter: filterResult.targetFilter,
+        targetMatched: filterResult.targetMatched,
+        sourceActorUuid: filterResult.sourceActorUuid ?? null,
+        sourceTokenId: filterResult.sourceTokenId ?? null,
+        sourceDisposition: filterResult.sourceDisposition ?? null,
+        targetActorUuid: filterResult.targetActorUuid ?? null,
+        targetDisposition: filterResult.targetDisposition ?? null,
         reason: filterResult.reason
       });
     } else {
@@ -853,6 +861,13 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     exitMovementModeMatched,
     moveRequiredMovementMode: onMove.movementMode ?? "any",
     moveMovementModeMatched,
+    targetFilter: filterResult.targetFilter,
+    targetMatched: filterResult.targetMatched,
+    sourceActorUuid: filterResult.sourceActorUuid ?? null,
+    sourceTokenId: filterResult.sourceTokenId ?? null,
+    sourceDisposition: filterResult.sourceDisposition ?? null,
+    targetActorUuid: filterResult.targetActorUuid ?? null,
+    targetDisposition: filterResult.targetDisposition ?? null,
     moveStepMode: stepMode,
     moveConfiguredStep: roundDistanceValue(configuredStep),
     moveInsideCellCount: insideCellCount,
@@ -2436,38 +2451,8 @@ function explainPreUpdateOnEnterTruncationFailure(evaluation) {
   return "plan-not-produced";
 }
 
-function shouldAffectToken(tokenDocument, runtime, normalizedDefinition) {
-  if (!tokenDocument?.actor) {
-    return { allowed: false, reason: "Token has no Actor." };
-  }
-
-  const targeting = normalizedDefinition?.targeting ?? {};
-  const mode = String(targeting.mode ?? "all").toLowerCase();
-  const sourceActorUuid = runtime?.casterUuid ?? runtime?.actorUuid ?? null;
-  const tokenActorUuid = tokenDocument.actor?.uuid ?? null;
-
-  if (mode === "self") {
-    return {
-      allowed: Boolean(sourceActorUuid && tokenActorUuid === sourceActorUuid),
-      reason: "Targeting mode self."
-    };
-  }
-
-  if (mode === "allies" || mode === "enemies") {
-    return {
-      allowed: false,
-      reason: `Targeting mode ${mode} is reserved but not yet implemented in this MVP.`
-    };
-  }
-
-  if (targeting.includeSelf === false && sourceActorUuid && tokenActorUuid === sourceActorUuid) {
-    return {
-      allowed: false,
-      reason: "Self targeting is excluded."
-    };
-  }
-
-  return { allowed: true, reason: "Targeting mode all." };
+function shouldAffectToken(tokenDocument, regionDocument, normalizedDefinition) {
+  return evaluateManagedRegionTargetFilter(tokenDocument, regionDocument, normalizedDefinition);
 }
 
 function isDuplicateMovementTrigger(kind, regionDocument, tokenDocument, moveSource, afterCenter) {

@@ -1,6 +1,7 @@
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import {
   debug,
+  evaluateManagedRegionTargetFilter,
   findManagedRegions,
   getRegionRuntimeFlags,
   getTokenCenter,
@@ -104,6 +105,11 @@ async function processCombatTiming(combat, state, timing) {
       triggerConfig?.activity?.id ??
       triggerConfig?.activityId ??
       null;
+    const filterResult = evaluateManagedRegionTargetFilter(
+      tokenDocument,
+      regionDocument,
+      normalizedDefinition
+    );
     const tokenInside = testTokenInsideManagedRegion(
       tokenDocument,
       regionDocument,
@@ -114,10 +120,31 @@ async function processCombatTiming(combat, state, timing) {
 
     let effectApplied = false;
 
+    if (normalizedDefinition?.enabled && triggerConfig.enabled && tokenInside && !filterResult.allowed) {
+      debug("Skipped managed Region turn effect because target filter rejected the token.", {
+        combatId: combat?.id ?? null,
+        round: state.round,
+        turn: state.turn,
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId,
+        triggerTiming,
+        targetFilter: filterResult.targetFilter,
+        targetMatched: filterResult.targetMatched,
+        sourceActorUuid: filterResult.sourceActorUuid ?? null,
+        sourceTokenId: filterResult.sourceTokenId ?? null,
+        sourceDisposition: filterResult.sourceDisposition ?? null,
+        targetActorUuid: filterResult.targetActorUuid ?? null,
+        targetDisposition: filterResult.targetDisposition ?? null,
+        reason: filterResult.reason
+      });
+    }
+
     if (
       normalizedDefinition?.enabled &&
       triggerConfig.enabled &&
       tokenInside &&
+      filterResult.allowed &&
       !alreadyApplied
     ) {
       const application = await applyConfiguredTriggerEffect({
@@ -149,9 +176,18 @@ async function processCombatTiming(combat, state, timing) {
       triggerTiming,
       triggerMode,
       selectedActivity,
+      targetFilter: filterResult.targetFilter,
+      targetMatched: filterResult.targetMatched,
+      sourceActorUuid: filterResult.sourceActorUuid ?? null,
+      sourceTokenId: filterResult.sourceTokenId ?? null,
+      sourceDisposition: filterResult.sourceDisposition ?? null,
+      targetActorUuid: filterResult.targetActorUuid ?? null,
+      targetDisposition: filterResult.targetDisposition ?? null,
       tokenInside,
       alreadyApplied,
-      effectApplied
+      effectApplied,
+      skippedBecauseTargetFilter: tokenInside && !filterResult.allowed,
+      reason: !filterResult.allowed ? filterResult.reason : null
     });
   }
 }

@@ -180,6 +180,16 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.persistent-zones-item-config__metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.persistent-zones-item-config__metric-grid .form-group {
+  margin-bottom: 0;
+}
+
 .persistent-zones-item-config__choice {
   position: relative;
   display: flex;
@@ -586,6 +596,46 @@
   display: grid;
   gap: 0.55rem;
   margin-top: 0.5rem;
+}
+
+.persistent-zones-item-config__section-summary::before {
+  content: "\25B8";
+}
+
+.persistent-zones-item-config__section-toggle[open] > .persistent-zones-item-config__section-summary::before {
+  content: "\25BE";
+}
+
+.persistent-zones-item-config__card--preview > .persistent-zones-item-config__section-toggle {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.persistent-zones-item-config__card--preview > .persistent-zones-item-config__section-toggle > .persistent-zones-item-config__section-summary::before {
+  content: "\25B8";
+}
+
+.persistent-zones-item-config__card--preview > .persistent-zones-item-config__section-toggle[open] > .persistent-zones-item-config__section-summary::before {
+  content: "\25BE";
+}
+
+.persistent-zones-item-config__json-details > summary::before {
+  content: "\25B8";
+}
+
+.persistent-zones-item-config__json-details[open] > summary::before {
+  content: "\25BE";
+}
+
+.persistent-zones-item-config__part-block {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.persistent-zones-item-config__part-block + .persistent-zones-item-config__part-block {
+  margin-top: 0.2rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(198, 167, 121, 0.12);
 }
 
 .persistent-zones-item-config__card textarea {

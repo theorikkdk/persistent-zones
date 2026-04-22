@@ -159,6 +159,21 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
     sound: normalizeSenseChannel(
       pickFirstDefined(definition.sound, presetConfig?.sound, modeFallback.sound),
       modeFallback.sound
+    ),
+    height: coerceNumber(
+      pickFirstDefined(
+        definition.height,
+        definition.wallHeight,
+        definition.top
+      ),
+      null
+    ),
+    bottom: coerceNumber(
+      pickFirstDefined(
+        definition.bottom,
+        0
+      ),
+      0
     )
   };
 
