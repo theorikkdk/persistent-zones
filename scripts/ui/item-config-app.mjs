@@ -23,6 +23,7 @@ import {
   evaluatePersistentZoneProfileCompatibility,
   getPersistentZoneProfile,
   getPersistentZoneProfiles,
+  renameUserPersistentZoneProfile,
   saveUserPersistentZoneProfile
 } from "../profiles.mjs";
 import {
@@ -203,6 +204,7 @@ class PersistentZonesItemConfig extends FormApplication {
     html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
     html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this));
     html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
+    html.find("[data-action='rename-profile']").on("click", this.#onRenameProfile.bind(this, html));
     html.find("[data-action='save-profile']").on("click", this.#onSaveProfile.bind(this, html));
     html.find("[data-action='delete-profile']").on("click", this.#onDeleteProfile.bind(this, html));
     html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
@@ -496,6 +498,92 @@ class PersistentZonesItemConfig extends FormApplication {
       localize(
         "PERSISTENT_ZONES.UI.Notifications.ProfileSaved",
         "Persistent Zones profile saved."
+      )
+    );
+
+    await this.render(false);
+  }
+
+  async #onRenameProfile(html, event) {
+    event.preventDefault();
+
+    const selectedProfileId = String(
+      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      this._selectedProfileId ??
+      ""
+    ).trim();
+    const selectedProfile = getPersistentZoneProfile(selectedProfileId);
+
+    if (!selectedProfile) {
+      debug("Skipped persistent-zones profile rename because no profile was selected.", {
+        profileRenamed: false,
+        profileId: selectedProfileId || null,
+        profileType: "missing"
+      });
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+          "The selected profile could not be found."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    if (selectedProfile.scope !== "user") {
+      debug("Blocked persistent-zones profile rename from item config for built-in profile.", {
+        profileRenamed: false,
+        renameBlocked: true,
+        profileId: selectedProfile.id,
+        oldName: selectedProfile.label,
+        newName: null,
+        profileType: selectedProfile.scope
+      });
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileRenameBlockedBuiltin",
+          "Built-in profiles cannot be renamed."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    const nextName = await promptForPersistentZoneProfileName(selectedProfile.label);
+    if (nextName === null) {
+      return;
+    }
+
+    const renameResult = await renameUserPersistentZoneProfile(selectedProfile.id, nextName);
+    if (!renameResult.ok) {
+      ui.notifications?.warn?.(
+        renameResult.error ||
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfileRenameEmpty",
+            "A profile name is required."
+          )
+      );
+      await this.render(false);
+      return;
+    }
+
+    if (renameResult.unchanged) {
+      ui.notifications?.info?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileRenameUnchanged",
+          "The profile name is unchanged."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    this._selectedProfileId = renameResult.profile?.id ?? selectedProfile.id;
+
+    ui.notifications?.info?.(
+      localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileRenamed",
+        "Persistent Zones profile renamed."
       )
     );
 
@@ -2264,6 +2352,7 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
       profileTemplateTypeLabel: null,
       profileScope: null,
       canDelete: false,
+      canRename: false,
       effectiveTemplateType: normalizeTemplateTypeValueForAuthoring(effectiveTemplateType),
       profileTemplateType: null,
       profileBaseType: null,
@@ -2298,6 +2387,7 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
       : null,
     profileTemplateTypeLabel: profile ? localizeProfileTemplateLabel(profile.templateType ?? null) : null,
     canDelete: profile?.scope === "user",
+    canRename: profile?.scope === "user",
     effectiveTemplateType: compatibility.effectiveTemplateType,
     profileTemplateType: compatibility.profileTemplateType,
     profileBaseType: compatibility.profileBaseType,
@@ -2339,6 +2429,61 @@ function localizeProfileTemplateLabel(templateType) {
         "PERSISTENT_ZONES.UI.ProfileCompatibility.AnyTemplate",
         "Inherited from detected template"
       );
+}
+
+async function promptForPersistentZoneProfileName(initialValue = "") {
+  const escapedValue = escapeHtmlAttribute(initialValue);
+  const inputId = `${MODULE_ID}-profile-rename-input`;
+
+  if (typeof Dialog?.prompt === "function") {
+    return Dialog.prompt({
+      title: localize(
+        "PERSISTENT_ZONES.UI.ProfileRenameTitle",
+        "Rename Persistent Zones Profile"
+      ),
+      content: `
+        <form class="persistent-zones-item-config__prompt">
+          <div class="form-group">
+            <label for="${inputId}">${localize(
+              "PERSISTENT_ZONES.UI.Fields.ProfileName",
+              "Profile Name"
+            )}</label>
+            <input id="${inputId}" type="text" value="${escapedValue}" autofocus>
+          </div>
+        </form>
+      `,
+      label: localize(
+        "PERSISTENT_ZONES.UI.Actions.RenameProfile",
+        "Rename Profile"
+      ),
+      callback: (html) => {
+        const inputValue = html?.find?.(`#${inputId}`)?.val?.();
+        return String(inputValue ?? "").trim();
+      }
+    });
+  }
+
+  const promptedValue = window.prompt(
+    localize(
+      "PERSISTENT_ZONES.UI.ProfileRenamePrompt",
+      "Enter a new name for this Persistent Zones profile."
+    ),
+    initialValue
+  );
+
+  if (promptedValue === null) {
+    return null;
+  }
+
+  return String(promptedValue ?? "").trim();
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function getBaseTypeChoices() {

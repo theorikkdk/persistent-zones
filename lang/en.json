@@ -191,6 +191,7 @@
         "Preview": "Preview",
         "Save": "Save",
         "ApplyProfile": "Apply Profile",
+        "RenameProfile": "Rename Profile",
         "SaveProfile": "Save as Profile",
         "DeleteProfile": "Delete Profile",
         "Clear": "Clear"
@@ -209,11 +210,18 @@
         "ProfileApplied": "Persistent Zones profile applied to the editor.",
         "ProfileSaved": "Persistent Zones profile saved.",
         "ProfileDeleted": "Persistent Zones profile deleted.",
+        "ProfileRenamed": "Persistent Zones profile renamed.",
         "ProfileNotFound": "The selected profile could not be found.",
         "ProfileIncompatible": "This profile is incompatible with the current detected template.",
         "ProfileDeleteBlockedBuiltin": "Built-in profiles cannot be deleted.",
+        "ProfileRenameBlockedBuiltin": "Built-in profiles cannot be renamed.",
+        "ProfileRenameEmpty": "A profile name is required.",
+        "ProfileRenameDuplicate": "Another user profile already uses that name.",
+        "ProfileRenameUnchanged": "The profile name is unchanged.",
         "ProfileSaveInvalid": "Only a valid Persistent Zones definition can be saved as a profile."
       },
+      "ProfileRenameTitle": "Rename Persistent Zones Profile",
+      "ProfileRenamePrompt": "Enter a new name for this Persistent Zones profile.",
       "ProfileDeleteTitle": "Delete Persistent Zones Profile",
       "ProfileDeleteConfirm": "Delete the selected Persistent Zones profile?"
     }

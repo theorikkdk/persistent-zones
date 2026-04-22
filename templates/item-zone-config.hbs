@@ -117,6 +117,10 @@
           <i class="fas fa-folder-open"></i>
           <span>{{localize "PERSISTENT_ZONES.UI.Actions.ApplyProfile"}}</span>
         </button>
+        <button type="button" class="button" data-action="rename-profile" {{#unless selectedProfileContext.canRename}}disabled{{/unless}}>
+          <i class="fas fa-pen"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.RenameProfile"}}</span>
+        </button>
         <button type="button" class="button" data-action="delete-profile" {{#unless selectedProfileContext.canDelete}}disabled{{/unless}}>
           <i class="fas fa-trash"></i>
           <span>{{localize "PERSISTENT_ZONES.UI.Actions.DeleteProfile"}}</span>

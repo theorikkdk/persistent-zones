@@ -310,6 +310,182 @@ export async function deleteUserPersistentZoneProfile(profileId) {
   };
 }
 
+export async function renameUserPersistentZoneProfile(profileId, nextName) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) {
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      error: "A profile id is required."
+    };
+  }
+
+  const profile = getPersistentZoneProfile(normalizedProfileId);
+  if (!profile) {
+    debug("Blocked persistent-zones profile rename because the profile was not found.", {
+      profileRenamed: false,
+      profileId: normalizedProfileId,
+      profileType: "missing"
+    });
+
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      profile: null,
+      error: localize(
+        "PERSISTENT_ZONES.UI.ProfileCompatibility.NotFound",
+        "The selected profile could not be found."
+      )
+    };
+  }
+
+  if (profile.scope !== "user") {
+    debug("Blocked persistent-zones profile rename for built-in profile.", {
+      profileRenamed: false,
+      renameBlocked: true,
+      profileId: profile.id,
+      oldName: profile.label,
+      newName: nextName,
+      profileType: profile.scope
+    });
+
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      profile,
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileRenameBlockedBuiltin",
+        "Built-in profiles cannot be renamed."
+      )
+    };
+  }
+
+  const normalizedNextName = String(nextName ?? "").trim();
+  if (!normalizedNextName) {
+    debug("Blocked persistent-zones profile rename because the new name was empty.", {
+      profileRenamed: false,
+      renameBlocked: true,
+      profileId: profile.id,
+      oldName: profile.label,
+      newName: normalizedNextName,
+      profileType: profile.scope
+    });
+
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      profile,
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileRenameEmpty",
+        "A profile name is required."
+      )
+    };
+  }
+
+  if (profile.label === normalizedNextName) {
+    debug("Skipped persistent-zones profile rename because the new name matched the current name.", {
+      profileRenamed: false,
+      renameBlocked: false,
+      profileId: profile.id,
+      oldName: profile.label,
+      newName: normalizedNextName,
+      profileType: profile.scope
+    });
+
+    return {
+      ok: true,
+      renamed: false,
+      unchanged: true,
+      profile
+    };
+  }
+
+  const currentProfiles = readUserProfilesSetting();
+  const duplicateProfile = Object.values(currentProfiles)
+    .map((profileRecord) => normalizeZoneProfile(profileRecord, {
+      fallbackScope: "user"
+    }))
+    .filter(Boolean)
+    .find((candidateProfile) => {
+      if (candidateProfile.id === profile.id) {
+        return false;
+      }
+
+      return normalizeProfileLabelForComparison(candidateProfile.label) ===
+        normalizeProfileLabelForComparison(normalizedNextName);
+    });
+
+  if (duplicateProfile) {
+    debug("Blocked persistent-zones profile rename because the target name already existed.", {
+      profileRenamed: false,
+      renameBlocked: true,
+      profileId: profile.id,
+      oldName: profile.label,
+      newName: normalizedNextName,
+      duplicateProfileId: duplicateProfile.id,
+      duplicateProfileName: duplicateProfile.label,
+      profileType: profile.scope
+    });
+
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      profile,
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileRenameDuplicate",
+        "Another user profile already uses that name."
+      )
+    };
+  }
+
+  const storedProfile = currentProfiles[profile.id];
+  if (!isPlainObject(storedProfile)) {
+    return {
+      ok: false,
+      renamed: false,
+      unchanged: false,
+      profile,
+      error: localize(
+        "PERSISTENT_ZONES.UI.ProfileCompatibility.NotFound",
+        "The selected profile could not be found."
+      )
+    };
+  }
+
+  const nextProfileRecord = duplicateData(storedProfile);
+  nextProfileRecord.label = normalizedNextName;
+  nextProfileRecord.updatedAt = Date.now();
+  nextProfileRecord.definition = duplicateData(nextProfileRecord.definition ?? {});
+  nextProfileRecord.definition.label = normalizedNextName;
+
+  currentProfiles[profile.id] = nextProfileRecord;
+  await game.settings.set(MODULE_ID, USER_PROFILES_SETTING_KEY, currentProfiles);
+
+  const renamedProfile = normalizeZoneProfile(nextProfileRecord, {
+    fallbackScope: "user"
+  });
+
+  debug("Renamed persistent-zones profile.", {
+    profileRenamed: true,
+    profileId: profile.id,
+    oldName: profile.label,
+    newName: normalizedNextName,
+    profileType: profile.scope
+  });
+
+  return {
+    ok: true,
+    renamed: true,
+    unchanged: false,
+    profile: renamedProfile
+  };
+}
+
 function getBuiltinPersistentZoneProfiles() {
   return BUILTIN_PROFILE_FACTORIES.map((factory) => {
     const label = localize(factory.labelKey, factory.fallbackLabel);
@@ -703,6 +879,10 @@ function normalizeProfileScope(value, fallbackValue = "builtin") {
 function normalizeProfileId(value) {
   const normalized = String(value ?? "").trim();
   return normalized || "";
+}
+
+function normalizeProfileLabelForComparison(value) {
+  return String(value ?? "").trim().toLocaleLowerCase();
 }
 
 function slugifyProfileName(value) {

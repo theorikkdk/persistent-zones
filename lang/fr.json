@@ -191,6 +191,7 @@
         "Preview": "Pr\u00e9visualiser",
         "Save": "Enregistrer",
         "ApplyProfile": "Appliquer le profil",
+        "RenameProfile": "Renommer le profil",
         "SaveProfile": "Enregistrer comme profil",
         "DeleteProfile": "Supprimer le profil",
         "Clear": "Supprimer"
@@ -209,11 +210,18 @@
         "ProfileApplied": "Profil Persistent Zones appliqu\u00e9 dans l'\u00e9diteur.",
         "ProfileSaved": "Profil Persistent Zones enregistr\u00e9.",
         "ProfileDeleted": "Profil Persistent Zones supprim\u00e9.",
+        "ProfileRenamed": "Profil Persistent Zones renomm\u00e9.",
         "ProfileNotFound": "Le profil s\u00e9lectionn\u00e9 est introuvable.",
         "ProfileIncompatible": "Ce profil est incompatible avec le gabarit actuellement d\u00e9tect\u00e9.",
         "ProfileDeleteBlockedBuiltin": "Les profils int\u00e9gr\u00e9s ne peuvent pas \u00eatre supprim\u00e9s.",
+        "ProfileRenameBlockedBuiltin": "Les profils int\u00e9gr\u00e9s ne peuvent pas \u00eatre renomm\u00e9s.",
+        "ProfileRenameEmpty": "Un nom de profil est requis.",
+        "ProfileRenameDuplicate": "Un autre profil utilisateur utilise d\u00e9j\u00e0 ce nom.",
+        "ProfileRenameUnchanged": "Le nom du profil est inchang\u00e9.",
         "ProfileSaveInvalid": "Seule une d\u00e9finition Persistent Zones valide peut \u00eatre enregistr\u00e9e comme profil."
       },
+      "ProfileRenameTitle": "Renommer le profil Persistent Zones",
+      "ProfileRenamePrompt": "Saisissez un nouveau nom pour ce profil Persistent Zones.",
       "ProfileDeleteTitle": "Supprimer le profil Persistent Zones",
       "ProfileDeleteConfirm": "Supprimer le profil Persistent Zones s\u00e9lectionn\u00e9 ?"
     }
