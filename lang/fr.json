@@ -192,6 +192,7 @@
         "Save": "Enregistrer",
         "ApplyProfile": "Appliquer le profil",
         "SaveProfile": "Enregistrer comme profil",
+        "DeleteProfile": "Supprimer le profil",
         "Clear": "Supprimer"
       },
       "Help": {
@@ -207,10 +208,14 @@
         "Cleared": "D\u00e9finition Persistent Zones supprim\u00e9e.",
         "ProfileApplied": "Profil Persistent Zones appliqu\u00e9 dans l'\u00e9diteur.",
         "ProfileSaved": "Profil Persistent Zones enregistr\u00e9.",
+        "ProfileDeleted": "Profil Persistent Zones supprim\u00e9.",
         "ProfileNotFound": "Le profil s\u00e9lectionn\u00e9 est introuvable.",
         "ProfileIncompatible": "Ce profil est incompatible avec le gabarit actuellement d\u00e9tect\u00e9.",
+        "ProfileDeleteBlockedBuiltin": "Les profils int\u00e9gr\u00e9s ne peuvent pas \u00eatre supprim\u00e9s.",
         "ProfileSaveInvalid": "Seule une d\u00e9finition Persistent Zones valide peut \u00eatre enregistr\u00e9e comme profil."
-      }
+      },
+      "ProfileDeleteTitle": "Supprimer le profil Persistent Zones",
+      "ProfileDeleteConfirm": "Supprimer le profil Persistent Zones s\u00e9lectionn\u00e9 ?"
     }
   }
 }

@@ -192,6 +192,7 @@
         "Save": "Save",
         "ApplyProfile": "Apply Profile",
         "SaveProfile": "Save as Profile",
+        "DeleteProfile": "Delete Profile",
         "Clear": "Clear"
       },
       "Help": {
@@ -207,10 +208,14 @@
         "Cleared": "Persistent Zones definition cleared.",
         "ProfileApplied": "Persistent Zones profile applied to the editor.",
         "ProfileSaved": "Persistent Zones profile saved.",
+        "ProfileDeleted": "Persistent Zones profile deleted.",
         "ProfileNotFound": "The selected profile could not be found.",
         "ProfileIncompatible": "This profile is incompatible with the current detected template.",
+        "ProfileDeleteBlockedBuiltin": "Built-in profiles cannot be deleted.",
         "ProfileSaveInvalid": "Only a valid Persistent Zones definition can be saved as a profile."
-      }
+      },
+      "ProfileDeleteTitle": "Delete Persistent Zones Profile",
+      "ProfileDeleteConfirm": "Delete the selected Persistent Zones profile?"
     }
   }
 }

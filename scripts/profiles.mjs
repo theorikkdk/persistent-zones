@@ -243,6 +243,73 @@ export async function saveUserPersistentZoneProfile({
   };
 }
 
+export async function deleteUserPersistentZoneProfile(profileId) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) {
+    return {
+      ok: false,
+      deleted: false,
+      error: "A profile id is required."
+    };
+  }
+
+  const profile = getPersistentZoneProfile(normalizedProfileId);
+  if (!profile) {
+    debug("Blocked persistent-zones profile delete because the profile was not found.", {
+      profileDeleted: false,
+      profileId: normalizedProfileId,
+      profileType: "missing"
+    });
+
+    return {
+      ok: false,
+      deleted: false,
+      profile: null,
+      error: localize(
+        "PERSISTENT_ZONES.UI.ProfileCompatibility.NotFound",
+        "The selected profile could not be found."
+      )
+    };
+  }
+
+  if (profile.scope !== "user") {
+    debug("Blocked persistent-zones profile delete for built-in profile.", {
+      profileDeleted: false,
+      deleteBlocked: true,
+      profileId: profile.id,
+      profileLabel: profile.label,
+      profileType: profile.scope
+    });
+
+    return {
+      ok: false,
+      deleted: false,
+      profile,
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileDeleteBlockedBuiltin",
+        "Built-in profiles cannot be deleted."
+      )
+    };
+  }
+
+  const currentProfiles = readUserProfilesSetting();
+  delete currentProfiles[profile.id];
+  await game.settings.set(MODULE_ID, USER_PROFILES_SETTING_KEY, currentProfiles);
+
+  debug("Deleted persistent-zones profile.", {
+    profileDeleted: true,
+    profileId: profile.id,
+    profileLabel: profile.label,
+    profileType: profile.scope
+  });
+
+  return {
+    ok: true,
+    deleted: true,
+    profile
+  };
+}
+
 function getBuiltinPersistentZoneProfiles() {
   return BUILTIN_PROFILE_FACTORIES.map((factory) => {
     const label = localize(factory.labelKey, factory.fallbackLabel);

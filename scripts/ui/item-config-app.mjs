@@ -19,6 +19,7 @@ import {
   cleanupRegionsForItem
 } from "../runtime/concentration-cleanup.mjs";
 import {
+  deleteUserPersistentZoneProfile,
   evaluatePersistentZoneProfileCompatibility,
   getPersistentZoneProfile,
   getPersistentZoneProfiles,
@@ -203,6 +204,7 @@ class PersistentZonesItemConfig extends FormApplication {
     html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this));
     html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
     html.find("[data-action='save-profile']").on("click", this.#onSaveProfile.bind(this, html));
+    html.find("[data-action='delete-profile']").on("click", this.#onDeleteProfile.bind(this, html));
     html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
     html.find("[name='profileName']").on("input", this.#onProfileNameChanged.bind(this));
   }
@@ -494,6 +496,92 @@ class PersistentZonesItemConfig extends FormApplication {
       localize(
         "PERSISTENT_ZONES.UI.Notifications.ProfileSaved",
         "Persistent Zones profile saved."
+      )
+    );
+
+    await this.render(false);
+  }
+
+  async #onDeleteProfile(html, event) {
+    event.preventDefault();
+
+    const selectedProfileId = String(
+      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      this._selectedProfileId ??
+      ""
+    ).trim();
+    const selectedProfile = getPersistentZoneProfile(selectedProfileId);
+
+    if (!selectedProfile) {
+      debug("Skipped persistent-zones profile delete because no profile was selected.", {
+        profileDeleted: false,
+        profileId: selectedProfileId || null,
+        profileType: "missing"
+      });
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+          "The selected profile could not be found."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    if (selectedProfile.scope !== "user") {
+      debug("Blocked persistent-zones profile delete from item config for built-in profile.", {
+        profileDeleted: false,
+        deleteBlocked: true,
+        profileId: selectedProfile.id,
+        profileLabel: selectedProfile.label,
+        profileType: selectedProfile.scope
+      });
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileDeleteBlockedBuiltin",
+          "Built-in profiles cannot be deleted."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    const confirmed = await Dialog.confirm({
+      title: localize(
+        "PERSISTENT_ZONES.UI.ProfileDeleteTitle",
+        "Delete Persistent Zones Profile"
+      ),
+      content: `<p>${localize(
+        "PERSISTENT_ZONES.UI.ProfileDeleteConfirm",
+        "Delete the selected Persistent Zones profile?"
+      )}</p><p><strong>${selectedProfile.label}</strong></p>`
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    const deleteResult = await deleteUserPersistentZoneProfile(selectedProfile.id);
+    if (!deleteResult.ok) {
+      ui.notifications?.warn?.(
+        deleteResult.error ||
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+            "The selected profile could not be found."
+          )
+      );
+      await this.render(false);
+      return;
+    }
+
+    if (this._selectedProfileId === selectedProfile.id) {
+      this._selectedProfileId = "";
+    }
+
+    ui.notifications?.info?.(
+      localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileDeleted",
+        "Persistent Zones profile deleted."
       )
     );
 
@@ -2174,6 +2262,8 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
       profileScopeLabel: null,
       profileBaseTypeLabel: null,
       profileTemplateTypeLabel: null,
+      profileScope: null,
+      canDelete: false,
       effectiveTemplateType: normalizeTemplateTypeValueForAuthoring(effectiveTemplateType),
       profileTemplateType: null,
       profileBaseType: null,
@@ -2201,11 +2291,13 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
     compatibilityLabel,
     compatibilityMessage: compatibility.reason,
     profileLabel: profile?.label ?? null,
+    profileScope: profile?.scope ?? null,
     profileScopeLabel: profile ? getProfileScopeLabel(profile.scope) : null,
     profileBaseTypeLabel: profile
       ? getSelectedChoiceLabel(getBaseTypeChoices(), profile.baseType, profile.baseType)
       : null,
     profileTemplateTypeLabel: profile ? localizeProfileTemplateLabel(profile.templateType ?? null) : null,
+    canDelete: profile?.scope === "user",
     effectiveTemplateType: compatibility.effectiveTemplateType,
     profileTemplateType: compatibility.profileTemplateType,
     profileBaseType: compatibility.profileBaseType,
