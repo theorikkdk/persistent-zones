@@ -73,10 +73,33 @@
       </div>
     </section>
 
-    <section class="persistent-zones-item-config__card">
-      <h2>{{localize "PERSISTENT_ZONES.UI.Sections.Profiles"}}</h2>
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--profiles">
+      <details class="persistent-zones-item-config__section-toggle persistent-zones-item-config__section-toggle--profiles" data-action="toggle-profile-section" {{#if profilesExpanded}}open{{/if}}>
+        <summary class="persistent-zones-item-config__section-summary">
+          <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.Profiles"}}</span>
+          <span class="persistent-zones-item-config__section-meta">
+            {{#if selectedProfileContext.profileLabel}}
+              {{selectedProfileContext.profileLabel}}
+            {{else}}
+              {{localize "PERSISTENT_ZONES.UI.NoneOption"}}
+            {{/if}}
+          </span>
+          <span class="persistent-zones-item-config__pill">{{profileListContext.summaryText}}</span>
+        </summary>
 
-      <div class="form-group">
+        <div class="persistent-zones-item-config__section-body">
+      <div class="persistent-zones-item-config__profile-row">
+        <div class="form-group form-group--stacked form-group--compact">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileFilter"}}</label>
+          <input type="text" name="profileFilter" value="{{profileFilter}}" placeholder="{{localize "PERSISTENT_ZONES.UI.Fields.ProfileFilter"}}" dir="ltr" inputmode="text" autocapitalize="off" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="persistent-zones-item-config__profile-summary">
+          <span class="persistent-zones-item-config__pill persistent-zones-item-config__pill--soft">{{selectedProfileContext.compatibilityLabel}}</span>
+        </div>
+      </div>
+
+      <div class="form-group form-group--stacked form-group--compact">
         <label>{{localize "PERSISTENT_ZONES.UI.Fields.Profile"}}</label>
         <select name="selectedProfileId" data-action="select-profile">
           {{#each profileOptions as |option|}}
@@ -85,8 +108,14 @@
         </select>
       </div>
 
+      {{#if profileListContext.hasFilter}}
+        {{#unless profileListContext.hasMatches}}
+          <p class="hint">{{localize "PERSISTENT_ZONES.UI.ProfileListNoMatches"}}</p>
+        {{/unless}}
+      {{/if}}
+
       {{#if selectedProfileContext.hasSelection}}
-        <div class="persistent-zones-item-config__meta">
+        <div class="persistent-zones-item-config__meta persistent-zones-item-config__meta--profiles">
           <div>
             <strong>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileScope"}}:</strong>
             <span>{{selectedProfileContext.profileScopeLabel}}</span>
@@ -112,10 +141,14 @@
         <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ProfileSection"}}</p>
       {{/if}}
 
-      <div class="persistent-zones-item-config__inline-actions">
+      <div class="persistent-zones-item-config__inline-actions persistent-zones-item-config__inline-actions--compact persistent-zones-item-config__profile-actions-grid persistent-zones-item-config__profile-actions-grid--primary">
         <button type="button" class="button" data-action="apply-profile" {{#unless selectedProfileContext.canApply}}disabled{{/unless}}>
           <i class="fas fa-folder-open"></i>
           <span>{{localize "PERSISTENT_ZONES.UI.Actions.ApplyProfile"}}</span>
+        </button>
+        <button type="button" class="button" data-action="duplicate-profile" {{#unless selectedProfileContext.canDuplicate}}disabled{{/unless}}>
+          <i class="fas fa-copy"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.DuplicateProfile"}}</span>
         </button>
         <button type="button" class="button" data-action="rename-profile" {{#unless selectedProfileContext.canRename}}disabled{{/unless}}>
           <i class="fas fa-pen"></i>
@@ -127,19 +160,34 @@
         </button>
       </div>
 
-      <div class="form-group">
-        <label>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileName"}}</label>
-        <input type="text" name="profileName" value="{{profileNameDraft}}" placeholder="{{suggestedProfileName}}">
-      </div>
+      <div class="persistent-zones-item-config__profile-save-row">
+        <div class="form-group form-group--stacked form-group--compact">
+          <label>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileName"}}</label>
+          <input type="text" name="profileName" value="{{profileNameDraft}}" placeholder="{{suggestedProfileName}}">
+        </div>
 
-      <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ProfileSaveHint"}}</p>
-
-      <div class="persistent-zones-item-config__inline-actions">
-        <button type="button" class="button" data-action="save-profile" {{#unless canSaveProfile}}disabled{{/unless}}>
+        <button type="button" class="button persistent-zones-item-config__button--accent" data-action="save-profile" {{#unless canSaveProfile}}disabled{{/unless}}>
           <i class="fas fa-bookmark"></i>
           <span>{{localize "PERSISTENT_ZONES.UI.Actions.SaveProfile"}}</span>
         </button>
       </div>
+
+      <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ProfileSaveHint"}}</p>
+
+      <div class="persistent-zones-item-config__inline-actions persistent-zones-item-config__inline-actions--compact persistent-zones-item-config__profile-actions-grid persistent-zones-item-config__profile-actions-grid--secondary">
+        <button type="button" class="button" data-action="export-profiles">
+          <i class="fas fa-file-export"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.ExportProfiles"}}</span>
+        </button>
+        <button type="button" class="button" data-action="import-profiles">
+          <i class="fas fa-file-import"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.ImportProfiles"}}</span>
+        </button>
+      </div>
+
+      <input type="file" accept=".json,application/json" data-action="import-profile-file" hidden>
+        </div>
+      </details>
     </section>
 
     {{#if showVariantSelect}}
@@ -486,21 +534,6 @@
       {{/if}}
     </section>
 
-    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--actions">
-      <button type="button" class="button" data-action="preview">
-        <i class="fas fa-search"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Preview"}}</span>
-      </button>
-      <button type="submit" class="button default">
-        <i class="fas fa-save"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Save"}}</span>
-      </button>
-      <button type="button" class="button" data-action="clear">
-        <i class="fas fa-trash"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Clear"}}</span>
-      </button>
-    </section>
-
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
       <details>
         <summary>{{localize "PERSISTENT_ZONES.UI.Sections.AdvancedDebug"}}</summary>
@@ -573,6 +606,21 @@
           <textarea readonly>{{preview.normalizedDefinitionJson}}</textarea>
         </details>
       </details>
+    </section>
+
+    <section class="persistent-zones-item-config__card persistent-zones-item-config__card--actions">
+      <button type="button" class="button" data-action="preview">
+        <i class="fas fa-search"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Preview"}}</span>
+      </button>
+      <button type="submit" class="button default">
+        <i class="fas fa-save"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Save"}}</span>
+      </button>
+      <button type="button" class="button" data-action="clear">
+        <i class="fas fa-trash"></i>
+        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Clear"}}</span>
+      </button>
     </section>
   </div>
 </form>

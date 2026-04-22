@@ -20,9 +20,12 @@ import {
 } from "../runtime/concentration-cleanup.mjs";
 import {
   deleteUserPersistentZoneProfile,
+  duplicatePersistentZoneProfile,
   evaluatePersistentZoneProfileCompatibility,
+  exportUserPersistentZoneProfiles,
   getPersistentZoneProfile,
   getPersistentZoneProfiles,
+  importUserPersistentZoneProfiles,
   renameUserPersistentZoneProfile,
   saveUserPersistentZoneProfile
 } from "../profiles.mjs";
@@ -126,6 +129,10 @@ class PersistentZonesItemConfig extends FormApplication {
     this._draftState = duplicateData(options.formState) ?? null;
     this._selectedProfileId = String(options.profileId ?? "").trim();
     this._profileNameDraft = String(options.profileName ?? "").trim();
+    this._profileFilter = String(options.profileFilter ?? "").trim();
+    this._profilesExpanded = Boolean(options.profilesExpanded ?? false);
+    this._pendingProfileFilterCursor = null;
+    this._profileUiReadyLogged = false;
   }
 
   static get defaultOptions() {
@@ -157,7 +164,10 @@ class PersistentZonesItemConfig extends FormApplication {
       item: this.itemDocument
     });
     const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
-    const profileOptions = buildProfileChoiceOptions(this._selectedProfileId);
+    const profileListContext = buildProfileListContext({
+      selectedProfileId: this._selectedProfileId,
+      filterText: this._profileFilter
+    });
     const selectedProfileContext = buildProfileSelectionContext(
       this._selectedProfileId,
       templateTypeContext.effectiveTemplateType
@@ -170,10 +180,13 @@ class PersistentZonesItemConfig extends FormApplication {
       itemName: this.itemDocument?.name ?? DEFAULT_ZONE_LABEL,
       hasStoredDefinition: Boolean(rawDefinition),
       state: formState,
+      profileFilter: this._profileFilter,
+      profilesExpanded: this._profilesExpanded,
       profileNameDraft: this._profileNameDraft,
       suggestedProfileName: suggestUserProfileName(formState, this.itemDocument),
       canSaveProfile: preview.isValid,
-      profileOptions,
+      profileOptions: profileListContext.options,
+      profileListContext,
       selectedProfileContext,
       baseTypeOptions: buildChoiceOptions(
         selectionContext.compatibleBaseTypeChoices,
@@ -202,13 +215,45 @@ class PersistentZonesItemConfig extends FormApplication {
 
     html.find("[data-action='preview']").on("click", this.#onPreview.bind(this, html));
     html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
-    html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this));
+    html.find("[data-action='toggle-profile-section']").on("toggle", this.#onProfileSectionToggled.bind(this));
+    html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this, html));
+    html.find("[data-action='duplicate-profile']").on("click", this.#onDuplicateProfile.bind(this, html));
     html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
     html.find("[data-action='rename-profile']").on("click", this.#onRenameProfile.bind(this, html));
     html.find("[data-action='save-profile']").on("click", this.#onSaveProfile.bind(this, html));
     html.find("[data-action='delete-profile']").on("click", this.#onDeleteProfile.bind(this, html));
+    html.find("[data-action='export-profiles']").on("click", this.#onExportProfiles.bind(this));
+    html.find("[data-action='import-profiles']").on("click", this.#onImportProfiles.bind(this, html));
+    html.find("[data-action='import-profile-file']").on("change", this.#onImportProfileFileChanged.bind(this, html));
     html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
+    html.find("[name='profileFilter']").on("input", this.#onProfileFilterChanged.bind(this, html));
     html.find("[name='profileName']").on("input", this.#onProfileNameChanged.bind(this));
+
+    if (!this._profileUiReadyLogged) {
+      const sortedProfiles = sortProfilesForUi(getPersistentZoneProfiles());
+      debug("Prepared persistent-zones profile library UI.", {
+        profileSorted: true,
+        sortMode: "scope-label",
+        totalCount: sortedProfiles.length,
+        stickyFooterReady: true
+      });
+      this._profileUiReadyLogged = true;
+    }
+
+    if (Number.isInteger(this._pendingProfileFilterCursor)) {
+      const cursorPosition = this._pendingProfileFilterCursor;
+      this._pendingProfileFilterCursor = null;
+
+      requestAnimationFrame(() => {
+        const filterInput = this.form?.querySelector?.("[name='profileFilter']");
+        if (!filterInput) {
+          return;
+        }
+
+        filterInput.focus();
+        filterInput.setSelectionRange(cursorPosition, cursorPosition);
+      });
+    }
   }
 
   async _updateObject(_event, formData) {
@@ -317,13 +362,88 @@ class PersistentZonesItemConfig extends FormApplication {
     await this.render(false);
   }
 
-  async #onProfileSelectionChanged(event) {
+  async #onProfileSelectionChanged(html, event) {
+    this.#captureCurrentDraft(html);
     this._selectedProfileId = String(event?.currentTarget?.value ?? "").trim();
     await this.render(false);
   }
 
+  async #onProfileFilterChanged(html, event) {
+    this.#captureCurrentDraft(html);
+    this._profileFilter = String(event?.currentTarget?.value ?? "");
+    this._pendingProfileFilterCursor = this._profileFilter.length;
+    const profileListContext = buildProfileListContext({
+      selectedProfileId: this._selectedProfileId,
+      filterText: this._profileFilter
+    });
+
+    debug("Filtered persistent-zones profile library.", {
+      profileFiltered: true,
+      filterText: this._profileFilter,
+      filteredCount: profileListContext.filteredCount,
+      totalCount: profileListContext.totalCount,
+      hasMatches: profileListContext.hasMatches
+    });
+
+    await this.render(false);
+  }
+
+  #onProfileSectionToggled(event) {
+    this._profilesExpanded = Boolean(event?.currentTarget?.open);
+  }
+
   #onProfileNameChanged(event) {
     this._profileNameDraft = String(event?.currentTarget?.value ?? "");
+  }
+
+  async #onDuplicateProfile(html, event) {
+    event.preventDefault();
+    this.#captureCurrentDraft(html);
+
+    const selectedProfileId = String(
+      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      this._selectedProfileId ??
+      ""
+    ).trim();
+    const selectedProfile = getPersistentZoneProfile(selectedProfileId);
+
+    if (!selectedProfile) {
+      ui.notifications?.warn?.(
+        localize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+          "The selected profile could not be found."
+        )
+      );
+      await this.render(false);
+      return;
+    }
+
+    const duplicateResult = await duplicatePersistentZoneProfile(selectedProfile.id);
+    if (!duplicateResult.ok || !duplicateResult.profile) {
+      ui.notifications?.warn?.(
+        duplicateResult.error ||
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfileNotFound",
+            "The selected profile could not be found."
+          )
+      );
+      await this.render(false);
+      return;
+    }
+
+    this._selectedProfileId = duplicateResult.profile.id;
+
+    ui.notifications?.info?.(
+      formatLocalize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfileDuplicated",
+        {
+          profileLabel: duplicateResult.profile.label
+        },
+        'Persistent Zones profile duplicated as "{profileLabel}".'
+      )
+    );
+
+    await this.render(false);
   }
 
   async #onApplyProfile(html, event) {
@@ -506,6 +626,7 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async #onRenameProfile(html, event) {
     event.preventDefault();
+    this.#captureCurrentDraft(html);
 
     const selectedProfileId = String(
       html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
@@ -592,6 +713,7 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async #onDeleteProfile(html, event) {
     event.preventDefault();
+    this.#captureCurrentDraft(html);
 
     const selectedProfileId = String(
       html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
@@ -676,6 +798,115 @@ class PersistentZonesItemConfig extends FormApplication {
     await this.render(false);
   }
 
+  async #onExportProfiles(event) {
+    event.preventDefault();
+
+    const exportPayload = exportUserPersistentZoneProfiles();
+    const exportFilename = buildPersistentZoneProfileExportFilename();
+    downloadPersistentZoneProfileExport(exportPayload, exportFilename);
+
+    ui.notifications?.info?.(
+      formatLocalize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfilesExported",
+        {
+          count: exportPayload.profileCount ?? 0
+        },
+        "Exported {count} Persistent Zones user profile(s)."
+      )
+    );
+  }
+
+  async #onImportProfiles(html, event) {
+    event.preventDefault();
+
+    const input = html?.[0]?.querySelector?.("[data-action='import-profile-file']");
+    if (!input) {
+      return;
+    }
+
+    input.value = "";
+    input.click();
+  }
+
+  async #onImportProfileFileChanged(html, event) {
+    this.#captureCurrentDraft(html);
+
+    const input = event?.currentTarget;
+    const file = Array.from(input?.files ?? [])[0] ?? null;
+    if (!file) {
+      return;
+    }
+
+    try {
+      const fileText = await file.text();
+      let parsedPayload = null;
+
+      try {
+        parsedPayload = JSON.parse(fileText);
+      } catch (_error) {
+        ui.notifications?.warn?.(
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfilesImportInvalidJson",
+            "The selected file is not valid JSON."
+          )
+        );
+        return;
+      }
+
+      const importResult = await importUserPersistentZoneProfiles(parsedPayload);
+      if (!importResult.ok && importResult.importedCount === 0) {
+        ui.notifications?.warn?.(
+          importResult.error ||
+            localize(
+              "PERSISTENT_ZONES.UI.Notifications.ProfilesImportInvalidStructure",
+              "The selected file does not contain a valid Persistent Zones profile export."
+            )
+        );
+        await this.render(false);
+        return;
+      }
+
+      if (importResult.emptyImport) {
+        ui.notifications?.info?.(
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfilesImportNoEntries",
+            "The selected file contains no user profiles to import."
+          )
+        );
+        await this.render(false);
+        return;
+      }
+
+      if (importResult.importedCount === 0) {
+        ui.notifications?.warn?.(
+          localize(
+            "PERSISTENT_ZONES.UI.Notifications.ProfilesImportNoValidEntries",
+            "No valid user profiles could be imported from the selected file."
+          )
+        );
+        await this.render(false);
+        return;
+      }
+
+      ui.notifications?.info?.(
+        formatLocalize(
+          "PERSISTENT_ZONES.UI.Notifications.ProfilesImported",
+          {
+            importedCount: importResult.importedCount ?? 0,
+            skippedCount: importResult.skippedCount ?? 0
+          },
+          "Imported {importedCount} user profile(s). Skipped {skippedCount} invalid entries."
+        )
+      );
+
+      await this.render(false);
+    } finally {
+      if (input) {
+        input.value = "";
+      }
+    }
+  }
+
   async #onClear(event) {
     event.preventDefault();
 
@@ -708,6 +939,23 @@ class PersistentZonesItemConfig extends FormApplication {
     );
 
     await this.render(false);
+  }
+
+  #captureCurrentDraft(html) {
+    const formElement = html?.[0] ?? this.form;
+    if (!formElement) {
+      return;
+    }
+
+    const baseState =
+      this._draftState ??
+      deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument);
+    const rawFormState = readAuthoringFormState(
+      formElement,
+      baseState,
+      this.itemDocument
+    );
+    this._draftState = resolveAuthoringSelectionContext(rawFormState, this.itemDocument).state;
   }
 }
 
@@ -2318,21 +2566,106 @@ function getChoiceLabelByValue(choices, selectedValue, fallbackValue = "") {
     ?.label ?? fallbackValue;
 }
 
-function buildProfileChoiceOptions(selectedProfileId = "") {
-  const profileChoices = getPersistentZoneProfiles().map((profile) => ({
+function buildProfileListContext({
+  selectedProfileId = "",
+  filterText = ""
+} = {}) {
+  const allProfiles = sortProfilesForUi(getPersistentZoneProfiles());
+  const normalizedFilterText = String(filterText ?? "").trim();
+  const normalizedFilterNeedle = normalizedFilterText.toLocaleLowerCase();
+  const filteredProfiles = normalizedFilterNeedle
+    ? allProfiles.filter((profile) => profileMatchesFilter(profile, normalizedFilterNeedle))
+    : allProfiles;
+  const selectedProfile = allProfiles.find((profile) => profile.id === String(selectedProfileId ?? "").trim()) ?? null;
+  const shouldKeepSelectedVisible = Boolean(
+    selectedProfile &&
+    !filteredProfiles.some((profile) => profile.id === selectedProfile.id)
+  );
+  const visibleProfiles = shouldKeepSelectedVisible
+    ? [selectedProfile, ...filteredProfiles]
+    : filteredProfiles;
+  const profileChoices = visibleProfiles.map((profile) => ({
     value: profile.id,
     label: `${profile.label} (${getProfileScopeLabel(profile.scope)})`
   }));
 
-  return buildChoiceOptions(
-    [
+  return {
+    filterText: normalizedFilterText,
+    hasFilter: Boolean(normalizedFilterNeedle),
+    hasMatches: visibleProfiles.length > 0,
+    totalCount: allProfiles.length,
+    filteredCount: filteredProfiles.length,
+    selectedProfileKeptVisible: shouldKeepSelectedVisible,
+    summaryText: buildProfileListSummaryText({
+      hasFilter: Boolean(normalizedFilterNeedle),
+      filteredCount: filteredProfiles.length,
+      totalCount: allProfiles.length
+    }),
+    options: buildChoiceOptions(
+      [
+        {
+          value: "",
+          label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+        },
+        ...profileChoices
+      ],
+      selectedProfileId
+    )
+  };
+}
+
+function sortProfilesForUi(profiles = []) {
+  return Array.from(profiles ?? [])
+    .filter(Boolean)
+    .sort((leftProfile, rightProfile) => {
+      const leftScopeRank = leftProfile?.scope === "user" ? 1 : 0;
+      const rightScopeRank = rightProfile?.scope === "user" ? 1 : 0;
+      if (leftScopeRank !== rightScopeRank) {
+        return leftScopeRank - rightScopeRank;
+      }
+
+      return String(leftProfile?.label ?? "").localeCompare(String(rightProfile?.label ?? ""), undefined, {
+        sensitivity: "base"
+      });
+    });
+}
+
+function profileMatchesFilter(profile, normalizedFilterNeedle = "") {
+  if (!normalizedFilterNeedle) {
+    return true;
+  }
+
+  return [
+    profile?.label,
+    profile?.baseType,
+    profile?.templateType,
+    profile?.selectedVariant,
+    getProfileScopeLabel(profile?.scope)
+  ].some((candidate) => String(candidate ?? "").toLocaleLowerCase().includes(normalizedFilterNeedle));
+}
+
+function buildProfileListSummaryText({
+  hasFilter = false,
+  filteredCount = 0,
+  totalCount = 0
+} = {}) {
+  if (hasFilter) {
+    return formatLocalize(
+      "PERSISTENT_ZONES.UI.ProfileListSummaryFiltered",
       {
-        value: "",
-        label: localize("PERSISTENT_ZONES.UI.NoneOption", "None")
+        visibleCount: filteredCount,
+        totalCount
       },
-      ...profileChoices
-    ],
-    selectedProfileId
+      "{visibleCount}/{totalCount} profiles shown."
+    );
+  }
+
+  return formatLocalize(
+    "PERSISTENT_ZONES.UI.ProfileListSummaryAll",
+    {
+      count: totalCount
+    },
+    "{count} profiles available."
   );
 }
 
@@ -2353,6 +2686,7 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
       profileScope: null,
       canDelete: false,
       canRename: false,
+      canDuplicate: false,
       effectiveTemplateType: normalizeTemplateTypeValueForAuthoring(effectiveTemplateType),
       profileTemplateType: null,
       profileBaseType: null,
@@ -2388,6 +2722,7 @@ function buildProfileSelectionContext(profileId, effectiveTemplateType = null) {
     profileTemplateTypeLabel: profile ? localizeProfileTemplateLabel(profile.templateType ?? null) : null,
     canDelete: profile?.scope === "user",
     canRename: profile?.scope === "user",
+    canDuplicate: Boolean(profile),
     effectiveTemplateType: compatibility.effectiveTemplateType,
     profileTemplateType: compatibility.profileTemplateType,
     profileBaseType: compatibility.profileBaseType,
@@ -2476,6 +2811,33 @@ async function promptForPersistentZoneProfileName(initialValue = "") {
   }
 
   return String(promptedValue ?? "").trim();
+}
+
+function buildPersistentZoneProfileExportFilename() {
+  const isoDate = new Date().toISOString().slice(0, 10);
+  return `${MODULE_ID}-user-profiles-${isoDate}.json`;
+}
+
+function downloadPersistentZoneProfileExport(payload, filename) {
+  const serializedPayload = JSON.stringify(payload, null, 2);
+
+  if (typeof saveDataToFile === "function") {
+    saveDataToFile(serializedPayload, "application/json", filename);
+    return;
+  }
+
+  const blob = new Blob([serializedPayload], {
+    type: "application/json"
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 function escapeHtmlAttribute(value) {
@@ -3403,6 +3765,19 @@ function resolveChoiceLabel(choiceLike, fallbackValue = "") {
 function localize(key, fallback) {
   const localized = game.i18n?.localize?.(key);
   return localized && localized !== key ? localized : fallback;
+}
+
+function formatLocalize(key, data = {}, fallback = "") {
+  const formatted = game.i18n?.format?.(key, data);
+  if (formatted && formatted !== key) {
+    return formatted;
+  }
+
+  return String(fallback ?? "").replace(/\{(\w+)\}/g, (_match, token) => {
+    return Object.prototype.hasOwnProperty.call(data, token)
+      ? String(data[token])
+      : "";
+  });
 }
 
 function isMovementTriggerTiming(timing) {

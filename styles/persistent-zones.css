@@ -33,6 +33,7 @@
   display: grid;
   gap: 0.7rem;
   padding: 0.85rem;
+  padding-bottom: 1rem;
 }
 
 .persistent-zones-item-config__card {
@@ -84,6 +85,11 @@
 
 .persistent-zones-item-config .form-group--stacked {
   grid-template-columns: 1fr;
+}
+
+.persistent-zones-item-config .form-group--compact {
+  margin-bottom: 0.35rem;
+  gap: 0.35rem;
 }
 
 .persistent-zones-item-config label {
@@ -261,6 +267,11 @@
   margin-top: 0.65rem;
 }
 
+.persistent-zones-item-config__inline-actions--compact {
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
 .persistent-zones-item-config__inline-actions .button {
   display: inline-flex;
   gap: 0.4rem;
@@ -272,6 +283,53 @@
   border-radius: 999px;
   background: rgba(20, 16, 14, 0.88);
   color: var(--pz-text);
+}
+
+.persistent-zones-item-config__inline-actions--compact .button {
+  min-height: 1.7rem;
+  min-width: 0;
+  padding: 0.18rem 0.48rem;
+  font-size: 0.74rem;
+  border-color: rgba(198, 167, 121, 0.14);
+  background: rgba(18, 14, 12, 0.76);
+  box-shadow: none;
+}
+
+.persistent-zones-item-config__inline-actions--compact .button span {
+  white-space: nowrap;
+}
+
+.persistent-zones-item-config__profile-actions-grid {
+  display: grid;
+  align-items: stretch;
+}
+
+.persistent-zones-item-config__profile-actions-grid--primary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.persistent-zones-item-config__profile-actions-grid--secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.persistent-zones-item-config__profile-actions-grid .button {
+  width: 100%;
+  min-width: 0;
+  min-height: 1.92rem;
+  padding-inline: 0.45rem;
+  justify-content: center;
+}
+
+.persistent-zones-item-config__profile-actions-grid .button i {
+  font-size: 0.76rem;
+}
+
+.persistent-zones-item-config__profile-actions-grid .button span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.08;
+  text-align: center;
 }
 
 .persistent-zones-item-config__inline-actions .button:hover:not([disabled]) {
@@ -291,6 +349,8 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  background: rgba(198, 155, 99, 0.12);
+  color: var(--pz-text-muted);
 }
 
 .persistent-zones-item-config__pill.is-valid {
@@ -306,6 +366,11 @@
 .persistent-zones-item-config__pill.is-warning {
   background: rgba(176, 122, 42, 0.16);
   color: #f0c57c;
+}
+
+.persistent-zones-item-config__pill--soft {
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .persistent-zones-item-config__reasons {
@@ -333,10 +398,19 @@
   gap: 0.5rem;
   align-items: center;
   justify-content: flex-end;
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
   padding-top: 0.7rem;
   padding-bottom: 0.7rem;
+  border-color: var(--pz-border-strong);
   background:
-    linear-gradient(180deg, rgba(29, 24, 20, 0.94) 0%, rgba(22, 18, 16, 0.98) 100%);
+    linear-gradient(180deg, rgba(29, 24, 20, 0.92) 0%, rgba(22, 18, 16, 0.98) 100%);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 -10px 24px rgba(0, 0, 0, 0.18),
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .persistent-zones-item-config__card--actions .button {
@@ -388,6 +462,109 @@
 .persistent-zones-item-config__meta {
   display: grid;
   gap: 0.35rem;
+}
+
+.persistent-zones-item-config__meta--profiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.8rem;
+  padding: 0.1rem 0;
+}
+
+.persistent-zones-item-config__card--profiles {
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.persistent-zones-item-config__section-toggle {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.persistent-zones-item-config__section-summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.persistent-zones-item-config__section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.persistent-zones-item-config__section-summary::before {
+  content: "▸";
+  color: var(--pz-accent);
+  font-size: 0.85rem;
+}
+
+.persistent-zones-item-config__section-toggle[open] > .persistent-zones-item-config__section-summary::before {
+  content: "▾";
+}
+
+.persistent-zones-item-config__section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pz-text-muted);
+}
+
+.persistent-zones-item-config__section-meta {
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--pz-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.persistent-zones-item-config__section-body {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.2rem;
+}
+
+.persistent-zones-item-config__profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: end;
+}
+
+.persistent-zones-item-config__profile-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.persistent-zones-item-config__profile-save-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: end;
+}
+
+.persistent-zones-item-config input[name="profileFilter"] {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  text-align: left;
+}
+
+.persistent-zones-item-config__profile-save-row .button {
+  min-height: 2rem;
+  min-width: 0;
+  padding-inline: 0.85rem;
+  white-space: nowrap;
+}
+
+.persistent-zones-item-config__button--accent {
+  border-color: rgba(223, 176, 116, 0.45) !important;
+  background:
+    linear-gradient(180deg, rgba(88, 63, 39, 0.96) 0%, rgba(63, 45, 29, 0.98) 100%) !important;
+  color: #fff3dd !important;
 }
 
 .persistent-zones-item-config__debug-parts {
@@ -449,11 +626,23 @@
     grid-template-columns: 1fr;
   }
 
+  .persistent-zones-item-config__meta--profiles,
+  .persistent-zones-item-config__section-summary,
+  .persistent-zones-item-config__profile-row,
+  .persistent-zones-item-config__profile-save-row {
+    grid-template-columns: 1fr;
+  }
+
   .persistent-zones-item-config__choice-group,
   .persistent-zones-item-config__choice-group--two,
   .persistent-zones-item-config__choice-group--three,
   .persistent-zones-item-config__choice-group--four {
     grid-template-columns: 1fr;
+  }
+
+  .persistent-zones-item-config__profile-actions-grid--primary,
+  .persistent-zones-item-config__profile-actions-grid--secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .persistent-zones-item-config__card--actions {

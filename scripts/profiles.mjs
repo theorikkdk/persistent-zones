@@ -9,6 +9,8 @@ import {
 } from "./runtime/utils.mjs";
 
 const USER_PROFILES_SETTING_KEY = "userProfiles";
+const PROFILE_EXPORT_FORMAT = "persistent-zones-user-profiles";
+const PROFILE_EXPORT_VERSION = 1;
 const BUILTIN_PROFILE_FACTORIES = Object.freeze([
   {
     id: "simple-damage",
@@ -486,6 +488,214 @@ export async function renameUserPersistentZoneProfile(profileId, nextName) {
   };
 }
 
+export async function duplicatePersistentZoneProfile(profileId, {
+  name = null
+} = {}) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) {
+    return {
+      ok: false,
+      duplicated: false,
+      error: "A profile id is required."
+    };
+  }
+
+  const sourceProfile = getPersistentZoneProfile(normalizedProfileId);
+  if (!sourceProfile) {
+    debug("Blocked persistent-zones profile duplication because the profile was not found.", {
+      profileDuplicated: false,
+      profileId: normalizedProfileId,
+      profileType: "missing"
+    });
+
+    return {
+      ok: false,
+      duplicated: false,
+      profile: null,
+      error: localize(
+        "PERSISTENT_ZONES.UI.ProfileCompatibility.NotFound",
+        "The selected profile could not be found."
+      )
+    };
+  }
+
+  const queuedLabels = new Set(
+    Object.values(readUserProfilesSetting())
+      .map((profileRecord) => normalizeProfileLabelForComparison(profileRecord?.label))
+      .filter(Boolean)
+  );
+  const requestedName = String(name ?? "").trim();
+  const desiredName = requestedName || buildDefaultDuplicatedProfileLabel(sourceProfile.label);
+  const finalName = buildUniqueDuplicatedProfileLabel(desiredName, queuedLabels);
+  const duplicatedDefinition = duplicateData(sourceProfile.definition);
+  const saveResult = await saveUserPersistentZoneProfile({
+    name: finalName,
+    definition: duplicatedDefinition
+  });
+
+  if (!saveResult.ok || !saveResult.profile) {
+    return {
+      ok: false,
+      duplicated: false,
+      profile: null,
+      error: saveResult.error
+    };
+  }
+
+  debug("Duplicated persistent-zones profile.", {
+    profileDuplicated: true,
+    sourceProfileId: sourceProfile.id,
+    sourceProfileLabel: sourceProfile.label,
+    sourceProfileType: sourceProfile.scope,
+    duplicatedProfileId: saveResult.profile.id,
+    duplicatedProfileLabel: saveResult.profile.label,
+    requestedName: requestedName || null,
+    nameAdjusted: finalName !== desiredName
+  });
+
+  return {
+    ok: true,
+    duplicated: true,
+    profile: saveResult.profile,
+    sourceProfile,
+    requestedName: requestedName || null,
+    finalName,
+    nameAdjusted: finalName !== desiredName
+  };
+}
+
+export function exportUserPersistentZoneProfiles() {
+  const userProfiles = getUserPersistentZoneProfiles();
+  const exportedProfiles = userProfiles.map((profile) => serializeUserProfileForExport(profile));
+  const payload = {
+    format: PROFILE_EXPORT_FORMAT,
+    version: PROFILE_EXPORT_VERSION,
+    moduleId: MODULE_ID,
+    exportedAt: new Date().toISOString(),
+    profileCount: exportedProfiles.length,
+    profiles: exportedProfiles
+  };
+
+  debug("Exported persistent-zones user profiles.", {
+    profilesExported: true,
+    exportedCount: exportedProfiles.length,
+    exportedProfileIds: exportedProfiles.map((profile) => profile.id)
+  });
+
+  return payload;
+}
+
+export async function importUserPersistentZoneProfiles(payloadLike) {
+  const payloadResolution = resolveProfileImportPayload(payloadLike);
+  if (!payloadResolution.ok) {
+    debug("Rejected persistent-zones profile import because the payload structure was invalid.", {
+      profilesImported: false,
+      importedCount: 0,
+      skippedCount: 0,
+      renamedOnImport: [],
+      invalidEntries: payloadResolution.invalidEntries
+    });
+
+    return {
+      ok: false,
+      importedCount: 0,
+      skippedCount: 0,
+      renamedOnImport: [],
+      invalidEntries: payloadResolution.invalidEntries,
+      profiles: [],
+      error: payloadResolution.error
+    };
+  }
+
+  const currentProfiles = readUserProfilesSetting();
+  const queuedLabels = new Set(
+    Object.values(currentProfiles)
+      .map((profileRecord) => normalizeProfileLabelForComparison(profileRecord?.label))
+      .filter(Boolean)
+  );
+  const importedProfiles = [];
+  const invalidEntries = [];
+  const renamedOnImport = [];
+  const timestamp = Date.now();
+
+  for (const [index, entry] of payloadResolution.entries.entries()) {
+    const normalizedEntry = normalizeImportedProfileEntry(entry, index);
+    if (!normalizedEntry.ok) {
+      invalidEntries.push(normalizedEntry.invalidEntry);
+      continue;
+    }
+
+    const importedProfile = normalizedEntry.profile;
+    const finalLabel = buildUniqueImportedProfileLabel(importedProfile.label, queuedLabels);
+    const profileId = buildAvailableUserProfileId(finalLabel, currentProfiles);
+    const createdAt = importedProfile.createdAt ?? timestamp;
+    const updatedAt = importedProfile.updatedAt ?? timestamp;
+    const normalizedDefinition = duplicateData(importedProfile.definition);
+
+    normalizedDefinition.source = {
+      ...duplicateData(normalizedDefinition.source ?? {}),
+      type: "profile",
+      module: MODULE_ID,
+      profileId,
+      baseType: importedProfile.baseType
+    };
+    normalizedDefinition.label = finalLabel;
+
+    currentProfiles[profileId] = {
+      id: profileId,
+      label: finalLabel,
+      scope: "user",
+      baseType: importedProfile.baseType,
+      templateType: importedProfile.templateType,
+      selectedVariant: importedProfile.selectedVariant,
+      definition: normalizedDefinition,
+      createdAt,
+      updatedAt
+    };
+
+    queuedLabels.add(normalizeProfileLabelForComparison(finalLabel));
+
+    const storedProfile = normalizeZoneProfile(currentProfiles[profileId], {
+      fallbackScope: "user"
+    });
+    if (storedProfile) {
+      importedProfiles.push(storedProfile);
+    }
+
+    if (finalLabel !== importedProfile.label) {
+      renamedOnImport.push({
+        originalLabel: importedProfile.label,
+        finalLabel,
+        profileId
+      });
+    }
+  }
+
+  if (importedProfiles.length) {
+    await game.settings.set(MODULE_ID, USER_PROFILES_SETTING_KEY, currentProfiles);
+  }
+
+  const skippedCount = invalidEntries.length;
+
+  debug("Imported persistent-zones user profiles.", {
+    profilesImported: importedProfiles.length > 0,
+    importedCount: importedProfiles.length,
+    skippedCount,
+    renamedOnImport,
+    invalidEntries
+  });
+
+  return {
+    ok: importedProfiles.length > 0 || payloadResolution.entries.length === 0,
+    importedCount: importedProfiles.length,
+    skippedCount,
+    renamedOnImport,
+    invalidEntries,
+    profiles: importedProfiles,
+    emptyImport: payloadResolution.entries.length === 0
+  };
+}
+
 function getBuiltinPersistentZoneProfiles() {
   return BUILTIN_PROFILE_FACTORIES.map((factory) => {
     const label = localize(factory.labelKey, factory.fallbackLabel);
@@ -523,6 +733,155 @@ function getUserPersistentZoneProfiles() {
 function readUserProfilesSetting() {
   const storedValue = duplicateData(game.settings.get(MODULE_ID, USER_PROFILES_SETTING_KEY) ?? {});
   return isPlainObject(storedValue) ? storedValue : {};
+}
+
+function resolveProfileImportPayload(payloadLike) {
+  if (Array.isArray(payloadLike)) {
+    return {
+      ok: true,
+      entries: payloadLike
+    };
+  }
+
+  if (!isPlainObject(payloadLike)) {
+    return {
+      ok: false,
+      entries: [],
+      invalidEntries: [
+        {
+          index: null,
+          reason: "invalid-structure",
+          message: "Import payload must be an object or an array of profiles."
+        }
+      ],
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfilesImportInvalidStructure",
+        "The selected file does not contain a valid Persistent Zones profile export."
+      )
+    };
+  }
+
+  const normalizedFormat = String(payloadLike.format ?? "").trim();
+  if (normalizedFormat && normalizedFormat !== PROFILE_EXPORT_FORMAT) {
+    return {
+      ok: false,
+      entries: [],
+      invalidEntries: [
+        {
+          index: null,
+          reason: "invalid-format",
+          message: `Expected format "${PROFILE_EXPORT_FORMAT}" but received "${normalizedFormat}".`
+        }
+      ],
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfilesImportInvalidStructure",
+        "The selected file does not contain a valid Persistent Zones profile export."
+      )
+    };
+  }
+
+  if (!Array.isArray(payloadLike.profiles)) {
+    return {
+      ok: false,
+      entries: [],
+      invalidEntries: [
+        {
+          index: null,
+          reason: "missing-profiles-array",
+          message: "Import payload is missing a profiles array."
+        }
+      ],
+      error: localize(
+        "PERSISTENT_ZONES.UI.Notifications.ProfilesImportInvalidStructure",
+        "The selected file does not contain a valid Persistent Zones profile export."
+      )
+    };
+  }
+
+  return {
+    ok: true,
+    entries: payloadLike.profiles
+  };
+}
+
+function normalizeImportedProfileEntry(entry, index) {
+  if (!isPlainObject(entry)) {
+    return {
+      ok: false,
+      invalidEntry: {
+        index,
+        reason: "invalid-entry",
+        message: `Entry ${index + 1} is not an object.`
+      }
+    };
+  }
+
+  if (normalizeProfileScope(entry.scope, "user") !== "user") {
+    return {
+      ok: false,
+      invalidEntry: {
+        index,
+        reason: "non-user-scope",
+        message: `Entry ${index + 1} is not a user profile export.`
+      }
+    };
+  }
+
+  const label = String(entry.label ?? entry.name ?? "").trim();
+  if (!label) {
+    return {
+      ok: false,
+      invalidEntry: {
+        index,
+        reason: "missing-label",
+        message: `Entry ${index + 1} is missing a profile label.`
+      }
+    };
+  }
+
+  if (!isPlainObject(entry.definition)) {
+    return {
+      ok: false,
+      invalidEntry: {
+        index,
+        reason: "missing-definition",
+        message: `Entry ${index + 1} is missing a definition object.`
+      }
+    };
+  }
+
+  const normalizedProfile = normalizeZoneProfile(
+    {
+      id: normalizeProfileId(entry.id) || `import-${index + 1}`,
+      label,
+      scope: "user",
+      baseType: entry.baseType,
+      templateType: entry.templateType,
+      selectedVariant: entry.selectedVariant,
+      definition: duplicateData(entry.definition),
+      createdAt: entry.createdAt ?? null,
+      updatedAt: entry.updatedAt ?? null
+    },
+    {
+      fallbackScope: "user"
+    }
+  );
+
+  if (!normalizedProfile) {
+    return {
+      ok: false,
+      invalidEntry: {
+        index,
+        reason: "normalization-failed",
+        message: `Entry ${index + 1} could not be normalized as a profile.`
+      }
+    };
+  }
+
+  return {
+    ok: true,
+    profile: normalizedProfile
+  };
 }
 
 function normalizeZoneProfile(profileLike, {
@@ -885,6 +1244,98 @@ function normalizeProfileLabelForComparison(value) {
   return String(value ?? "").trim().toLocaleLowerCase();
 }
 
+function serializeUserProfileForExport(profile) {
+  return {
+    id: profile.id,
+    label: profile.label,
+    scope: "user",
+    baseType: profile.baseType,
+    templateType: profile.templateType,
+    selectedVariant: profile.selectedVariant,
+    definition: duplicateData(profile.definition),
+    createdAt: profile.createdAt ?? null,
+    updatedAt: profile.updatedAt ?? null
+  };
+}
+
+function buildDefaultDuplicatedProfileLabel(label) {
+  const baseLabel = String(label ?? "").trim() || localize(
+    "PERSISTENT_ZONES.UI.Profiles.ImportedFallback",
+    "Imported Profile"
+  );
+  const copySuffix = localize(
+    "PERSISTENT_ZONES.UI.ProfileCopySuffix",
+    "Copy"
+  );
+  return `${baseLabel} (${copySuffix})`;
+}
+
+function buildUniqueDuplicatedProfileLabel(label, queuedLabels = new Set()) {
+  const fallbackLabel = localize(
+    "PERSISTENT_ZONES.UI.Profiles.ImportedFallback",
+    "Imported Profile"
+  );
+  const copySuffix = localize(
+    "PERSISTENT_ZONES.UI.ProfileCopySuffix",
+    "Copy"
+  );
+  const baseLabel = String(label ?? "").trim() || fallbackLabel;
+
+  if (!queuedLabels.has(normalizeProfileLabelForComparison(baseLabel))) {
+    return baseLabel;
+  }
+
+  const normalizedBaseLabel = baseLabel.replace(
+    new RegExp(`\\s+\\(${escapeRegExp(copySuffix)}(?:\\s+\\d+)?\\)$`, "i"),
+    ""
+  ).trim() || baseLabel;
+  let counter = 2;
+  let candidateLabel = `${normalizedBaseLabel} (${copySuffix})`;
+
+  while (queuedLabels.has(normalizeProfileLabelForComparison(candidateLabel))) {
+    candidateLabel = `${normalizedBaseLabel} (${copySuffix} ${counter})`;
+    counter += 1;
+  }
+
+  return candidateLabel;
+}
+
+function buildUniqueImportedProfileLabel(label, queuedLabels = new Set()) {
+  const fallbackLabel = localize(
+    "PERSISTENT_ZONES.UI.Profiles.ImportedFallback",
+    "Imported Profile"
+  );
+  const trimmedLabel = String(label ?? "").trim() || fallbackLabel;
+  const baseLabel = trimmedLabel.replace(/\s+\(Imported(?:\s+\d+)?\)$/i, "").trim() || trimmedLabel;
+
+  if (!queuedLabels.has(normalizeProfileLabelForComparison(baseLabel))) {
+    return baseLabel;
+  }
+
+  let counter = 1;
+  let candidateLabel = `${baseLabel} (Imported)`;
+
+  while (queuedLabels.has(normalizeProfileLabelForComparison(candidateLabel))) {
+    counter += 1;
+    candidateLabel = `${baseLabel} (Imported ${counter})`;
+  }
+
+  return candidateLabel;
+}
+
+function buildAvailableUserProfileId(label, currentProfiles = {}) {
+  const baseId = `user-${slugifyProfileName(label)}`;
+  let candidateId = baseId;
+  let counter = 2;
+
+  while (Object.prototype.hasOwnProperty.call(currentProfiles, candidateId)) {
+    candidateId = `${baseId}-${counter}`;
+    counter += 1;
+  }
+
+  return candidateId;
+}
+
 function slugifyProfileName(value) {
   const normalized = String(value ?? "")
     .normalize("NFD")
@@ -931,4 +1382,8 @@ function localizeTemplateType(templateType) {
 function localize(key, fallback) {
   const localized = game.i18n?.localize?.(key);
   return localized && localized !== key ? localized : fallback;
+}
+
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
