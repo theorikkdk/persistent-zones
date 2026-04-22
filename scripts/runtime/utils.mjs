@@ -138,6 +138,10 @@ export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument,
       allowed: false,
       targetMatched: false,
       targetFilter: "all",
+      targetFilterGlobal: "all",
+      targetFilterPart: null,
+      targetFilterEffective: "all",
+      partId: null,
       sourceActorUuid: null,
       targetActorUuid: null,
       sourceTokenId: null,
@@ -150,7 +154,28 @@ export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument,
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const definition = normalizedDefinition ?? runtime.normalizedDefinition ?? {};
   const targeting = isPlainObject(definition?.targeting) ? definition.targeting : {};
-  const targetFilter = normalizeManagedRegionTargetFilter(targeting);
+  const targetingGlobal = isPlainObject(definition?.targetingGlobal)
+    ? definition.targetingGlobal
+    : targeting;
+  const targetingPart = isPlainObject(definition?.targetingPart)
+    ? definition.targetingPart
+    : null;
+  const targetingEffective = isPlainObject(definition?.targetingEffective)
+    ? definition.targetingEffective
+    : targeting;
+  const normalizedTargetingGlobal = normalizeManagedRegionTargeting(targetingGlobal);
+  const normalizedTargetingPart = targetingPart
+    ? normalizeManagedRegionTargeting(targetingPart)
+    : null;
+  const normalizedTargetingEffective = normalizeManagedRegionTargeting(targetingEffective);
+  const targetFilterGlobal = normalizedTargetingGlobal.targetFilter;
+  const targetFilterPart = normalizedTargetingPart?.targetFilter ?? null;
+  const targetFilterEffective = normalizedTargetingEffective.targetFilter;
+  const partId =
+    runtime?.partId ??
+    definition?.part?.id ??
+    null;
+  const targetFilter = targetFilterEffective;
   const sourceActorUuid =
     runtime?.casterUuid ??
     runtime?.actorUuid ??
@@ -170,7 +195,16 @@ export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument,
   const sameActor = Boolean(sourceActorUuid && targetActorUuid && sourceActorUuid === targetActorUuid);
 
   const baseResult = {
+    partId,
     targetFilter,
+    targetFilterGlobal,
+    targetFilterPart,
+    targetFilterEffective,
+    targetSelectionsGlobal: collectManagedRegionTargetSelectionLabels(normalizedTargetingGlobal),
+    targetSelectionsPart: normalizedTargetingPart
+      ? collectManagedRegionTargetSelectionLabels(normalizedTargetingPart)
+      : [],
+    targetSelectionsEffective: collectManagedRegionTargetSelectionLabels(normalizedTargetingEffective),
     sourceActorUuid,
     targetActorUuid,
     sourceTokenId: sourceToken?.id ?? null,
@@ -178,91 +212,60 @@ export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument,
     targetDisposition
   };
 
-  switch (targetFilter) {
-    case "self":
-      return {
-        ...baseResult,
-        allowed: sameActor,
-        targetMatched: sameActor,
-        reason: sameActor
-          ? "Target filter self matched the source Actor."
-          : "Target filter self requires the source Actor."
-      };
-    case "not-self": {
-      const matched = sourceActorUuid && targetActorUuid
-        ? sourceActorUuid !== targetActorUuid
-        : true;
-
-      return {
-        ...baseResult,
-        allowed: matched,
-        targetMatched: matched,
-        reason: matched
-          ? "Target filter not-self matched."
-          : "Target filter not-self excludes the source Actor."
-      };
-    }
-    case "allies": {
-      if (sameActor) {
-        return {
-          ...baseResult,
-          allowed: false,
-          targetMatched: false,
-          reason: "Target filter allies excludes self in this MVP."
-        };
-      }
-
-      if (sourceDisposition === null || targetDisposition === null) {
-        return {
-          ...baseResult,
-          allowed: false,
-          targetMatched: false,
-          reason: "Target filter allies requires source and target token dispositions."
-        };
-      }
-
-      const matched = sourceDisposition !== 0 && sourceDisposition === targetDisposition;
-      return {
-        ...baseResult,
-        allowed: matched,
-        targetMatched: matched,
-        reason: matched
-          ? "Target filter allies matched token disposition."
-          : "Target filter allies did not match token disposition."
-      };
-    }
-    case "enemies": {
-      if (sourceDisposition === null || targetDisposition === null) {
-        return {
-          ...baseResult,
-          allowed: false,
-          targetMatched: false,
-          reason: "Target filter enemies requires source and target token dispositions."
-        };
-      }
-
-      const matched =
-        sourceDisposition !== 0 &&
-        targetDisposition !== 0 &&
-        Math.sign(sourceDisposition) !== Math.sign(targetDisposition);
-      return {
-        ...baseResult,
-        allowed: matched,
-        targetMatched: matched,
-        reason: matched
-          ? "Target filter enemies matched token disposition."
-          : "Target filter enemies did not match token disposition."
-      };
-    }
-    case "all":
-    default:
-      return {
-        ...baseResult,
-        allowed: true,
-        targetMatched: true,
-        reason: "Target filter all matched."
-      };
+  if (!normalizedTargetingEffective.hasSelections) {
+    return {
+      ...baseResult,
+      allowed: false,
+      targetMatched: false,
+      reason: "Target selection has no enabled categories."
+    };
   }
+
+  if (targetFilterEffective === "all") {
+    return {
+      ...baseResult,
+      allowed: true,
+      targetMatched: true,
+      reason: "Target selection all matched."
+    };
+  }
+
+  const selfMatched = sameActor;
+  const alliesMatched =
+    !sameActor &&
+    sourceDisposition !== null &&
+    targetDisposition !== null &&
+    sourceDisposition !== 0 &&
+    sourceDisposition === targetDisposition;
+  const enemiesMatched =
+    sourceDisposition !== null &&
+    targetDisposition !== null &&
+    sourceDisposition !== 0 &&
+    targetDisposition !== 0 &&
+    Math.sign(sourceDisposition) !== Math.sign(targetDisposition);
+  const matched =
+    (normalizedTargetingEffective.self && selfMatched) ||
+    (normalizedTargetingEffective.allies && alliesMatched) ||
+    (normalizedTargetingEffective.enemies && enemiesMatched) ||
+    (
+      targetFilterEffective === "not-self" &&
+      sourceActorUuid &&
+      targetActorUuid &&
+      sourceActorUuid !== targetActorUuid
+    ) ||
+    (
+      targetFilterEffective === "not-self" &&
+      (!sourceActorUuid || !targetActorUuid)
+    );
+
+  return {
+    ...baseResult,
+    allowed: matched,
+    targetMatched: matched,
+    reason: matched
+      ? "Target selection matched the token."
+      : "Target selection did not match the token."
+  };
 }
 
 export function findManagedRegions(scene, predicate = null) {
@@ -530,14 +533,104 @@ function buildTokenRegionMembershipState(tokenDocument, state = null) {
   };
 }
 
-function normalizeManagedRegionTargetFilter(targetingDefinition = {}) {
-  const explicitMode = String(targetingDefinition?.mode ?? "").trim().toLowerCase();
-  const includeSelf = coerceBoolean(targetingDefinition?.includeSelf, true);
-  const mode = explicitMode || (includeSelf === false ? "not-self" : "all");
+function normalizeManagedRegionTargeting(targetingDefinition = {}) {
+  const definition = isPlainObject(targetingDefinition) ? targetingDefinition : {};
+  const explicitMode = String(definition?.mode ?? "").trim().toLowerCase();
+  const legacyMode = ["all", "allies", "enemies", "self", "not-self"].includes(explicitMode)
+    ? explicitMode
+    : "";
+  const includeSelf = coerceBoolean(definition?.includeSelf, legacyMode === "not-self" ? false : true);
+  const hasExplicitSelections = ["self", "allies", "enemies"]
+    .some((key) => definition?.[key] !== undefined);
+  const fallbackSelections = buildManagedRegionTargetSelectionsFromLegacyMode(
+    legacyMode || (includeSelf === false ? "not-self" : "all")
+  );
+  const selections = hasExplicitSelections || explicitMode === "custom"
+    ? {
+        self: coerceBoolean(
+          pickFirstDefined(definition?.self, definition?.includeSelf),
+          fallbackSelections.self
+        ) ?? fallbackSelections.self,
+        allies: coerceBoolean(definition?.allies, fallbackSelections.allies) ?? fallbackSelections.allies,
+        enemies: coerceBoolean(definition?.enemies, fallbackSelections.enemies) ?? fallbackSelections.enemies
+      }
+    : fallbackSelections;
+  const targetFilter = summarizeManagedRegionTargetSelections(selections);
 
-  return ["all", "allies", "enemies", "self", "not-self"].includes(mode)
-    ? mode
-    : "all";
+  return {
+    mode: targetFilter === "all" ? "all" : "custom",
+    self: selections.self,
+    allies: selections.allies,
+    enemies: selections.enemies,
+    includeSelf: selections.self,
+    targetFilter,
+    hasSelections: selections.self || selections.allies || selections.enemies
+  };
+}
+
+function buildManagedRegionTargetSelectionsFromLegacyMode(mode) {
+  switch (String(mode ?? "").trim().toLowerCase()) {
+    case "self":
+      return { self: true, allies: false, enemies: false };
+    case "allies":
+      return { self: false, allies: true, enemies: false };
+    case "enemies":
+      return { self: false, allies: false, enemies: true };
+    case "not-self":
+      return { self: false, allies: true, enemies: true };
+    case "all":
+    default:
+      return { self: true, allies: true, enemies: true };
+  }
+}
+
+function summarizeManagedRegionTargetSelections({
+  self = false,
+  allies = false,
+  enemies = false
+} = {}) {
+  if (self && allies && enemies) {
+    return "all";
+  }
+
+  if (!self && !allies && !enemies) {
+    return "none";
+  }
+
+  if (self && !allies && !enemies) {
+    return "self";
+  }
+
+  if (!self && allies && !enemies) {
+    return "allies";
+  }
+
+  if (!self && !allies && enemies) {
+    return "enemies";
+  }
+
+  if (!self && allies && enemies) {
+    return "not-self";
+  }
+
+  if (self && allies && !enemies) {
+    return "self+allies";
+  }
+
+  if (self && !allies && enemies) {
+    return "self+enemies";
+  }
+
+  return "custom";
+}
+
+function collectManagedRegionTargetSelectionLabels(targeting = {}) {
+  const normalized = normalizeManagedRegionTargeting(targeting);
+  return [
+    normalized.self ? "self" : null,
+    normalized.allies ? "allies" : null,
+    normalized.enemies ? "enemies" : null
+  ].filter(Boolean);
 }
 
 function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid) {

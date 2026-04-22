@@ -22,6 +22,7 @@
         "Behaviors": "Comportements des parts effectives",
         "LinksTerrain": "Liens & Terrain",
         "Triggers": "Triggers",
+        "ConfigurationState": "\u00c9tat de la configuration",
         "OnEnter": "\u00c0 l'entr\u00e9e",
         "OnExit": "\u00c0 la sortie",
         "OnMove": "Pendant le d\u00e9placement",
@@ -54,6 +55,7 @@
         "VariantResolutionMode": "R\u00e9solution de variante",
         "PreviewTemplateType": "Type de gabarit de pr\u00e9visualisation",
         "Status": "Statut",
+        "TargetingMode": "Mode de ciblage",
         "TriggerMode": "Mode",
         "MovementMode": "Filtre de mouvement",
         "StepMode": "Mode de pas",
@@ -72,7 +74,8 @@
         "PartCount": "Nombre de parts",
         "PartId": "Identifiant de part",
         "GeometryType": "Type de g\u00e9om\u00e9trie",
-        "TargetFilter": "Filtre de cibles",
+        "PartTargeting": "Ciblage de cette zone",
+        "TargetFilter": "Cibles",
         "DifficultTerrain": "Terrain difficile",
         "LinkedWalls": "Murs li\u00e9s",
         "LinkedWallsPreset": "Preset de murs li\u00e9s",
@@ -90,7 +93,7 @@
         "Disabled": "D\u00e9sactiv\u00e9"
       },
       "SectionSummaries": {
-        "GlobalTriggers": "{count} déclenchements",
+        "GlobalTriggers": "{count} d\u00e9clenchements",
         "CompositeParts": "{count} parts"
       },
       "MovementModes": {
@@ -102,8 +105,17 @@
         "All": "Tous",
         "Allies": "Alli\u00e9s",
         "Enemies": "Ennemis",
-        "Self": "Soi",
-        "NotSelf": "Sauf soi"
+        "Self": "Soi-m\u00eame",
+        "NotSelf": "Sauf soi-m\u00eame",
+        "None": "Aucune cible"
+      },
+      "TargetingModes": {
+        "All": "Tous",
+        "Custom": "Personnalis\u00e9"
+      },
+      "TargetFilterModes": {
+        "Inherit": "Utiliser le r\u00e9glage par d\u00e9faut",
+        "Custom": "R\u00e8gle propre \u00e0 cette zone"
       },
       "LinkedWallPresets": {
         "Solid": "Solide",
@@ -128,10 +140,10 @@
         "Distance": "Par distance"
       },
       "BaseTypes": {
-        "Simple": "Simple",
+        "Simple": "Zone simple",
         "Ring": "Anneau",
-        "CompositeLine": "Ligne composite",
-        "CompositeRing": "Anneau composite"
+        "CompositeLine": "Mur lin\u00e9aire",
+        "CompositeRing": "Mur annulaire"
       },
       "TemplateTypes": {
         "Circle": "Cercle",
@@ -232,6 +244,9 @@
         "Valid": "Valide",
         "Invalid": "Invalide",
         "Warning": "Avertissement",
+        "NeedsAttention": "\u00c0 corriger",
+        "ValidWithWarnings": "Valide avec avertissements",
+        "Ready": "Pr\u00eat",
         "NoIssues": "Aucun probl\u00e8me de validation d\u00e9tect\u00e9 pour la pr\u00e9visualisation actuelle."
       },
       "Actions": {
@@ -250,6 +265,8 @@
         "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
         "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
         "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
+        "PartTargetFilterInherited": "Cette zone utilise le ciblage par d\u00e9faut.",
+        "PartTargetFilterCustom": "Cette zone utilise son propre ciblage.",
         "ActiveVariantParts": "Seules les parts effectives de la variante actuellement s\u00e9lectionn\u00e9e sont affich\u00e9es ici.",
         "LinkedLightRangesHint": "Utilisez les port\u00e9es vive et tamis\u00e9e pour r\u00e9gler la lumi\u00e8re li\u00e9e. Laissez un champ vide pour conserver la valeur du preset.",
         "ProfileSection": "Chargez un profil r\u00e9utilisable int\u00e9gr\u00e9 ou utilisateur dans le draft actuel de l'\u00e9diteur.",
@@ -289,3 +306,4 @@
     }
   }
 }
+

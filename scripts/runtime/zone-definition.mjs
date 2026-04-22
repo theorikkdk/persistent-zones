@@ -857,18 +857,96 @@ function normalizeSource(sourceDefinition) {
 function normalizeTargeting(targetingDefinition) {
   const definition = isPlainObject(targetingDefinition) ? targetingDefinition : {};
   const explicitMode = String(pickFirstDefined(definition.mode, "")).trim().toLowerCase();
+  const legacyMode = ["all", "allies", "enemies", "self", "not-self"].includes(explicitMode)
+    ? explicitMode
+    : "";
   const includeSelf = coerceBoolean(
-    pickFirstDefined(definition.includeSelf, explicitMode === "not-self" ? false : true),
-    explicitMode === "not-self" ? false : true
+    pickFirstDefined(definition.includeSelf, legacyMode === "not-self" ? false : true),
+    legacyMode === "not-self" ? false : true
   );
-  const normalizedMode = explicitMode || (includeSelf === false ? "not-self" : "all");
+  const hasExplicitSelections = ["self", "allies", "enemies"]
+    .some((key) => definition[key] !== undefined);
+  const fallbackSelections = buildTargetingSelectionsFromLegacyMode(
+    legacyMode || (includeSelf === false ? "not-self" : "all")
+  );
+
+  const selections = hasExplicitSelections || explicitMode === "custom"
+    ? {
+        self: coerceBoolean(
+          pickFirstDefined(definition.self, definition.includeSelf),
+          fallbackSelections.self
+        ) ?? fallbackSelections.self,
+        allies: coerceBoolean(definition.allies, fallbackSelections.allies) ?? fallbackSelections.allies,
+        enemies: coerceBoolean(definition.enemies, fallbackSelections.enemies) ?? fallbackSelections.enemies
+      }
+    : fallbackSelections;
+  const targetFilter = summarizeTargetingSelections(selections);
 
   return {
-    mode: ["all", "allies", "enemies", "self", "not-self"].includes(normalizedMode)
-      ? normalizedMode
-      : "all",
-    includeSelf: normalizedMode === "not-self" ? false : includeSelf
+    mode: targetFilter === "all" ? "all" : "custom",
+    self: selections.self,
+    allies: selections.allies,
+    enemies: selections.enemies,
+    includeSelf: selections.self,
+    targetFilter,
+    hasSelections: selections.self || selections.allies || selections.enemies
   };
+}
+
+function buildTargetingSelectionsFromLegacyMode(mode) {
+  switch (String(mode ?? "").trim().toLowerCase()) {
+    case "self":
+      return { self: true, allies: false, enemies: false };
+    case "allies":
+      return { self: false, allies: true, enemies: false };
+    case "enemies":
+      return { self: false, allies: false, enemies: true };
+    case "not-self":
+      return { self: false, allies: true, enemies: true };
+    case "all":
+    default:
+      return { self: true, allies: true, enemies: true };
+  }
+}
+
+function summarizeTargetingSelections({
+  self = false,
+  allies = false,
+  enemies = false
+} = {}) {
+  if (self && allies && enemies) {
+    return "all";
+  }
+
+  if (!self && !allies && !enemies) {
+    return "none";
+  }
+
+  if (self && !allies && !enemies) {
+    return "self";
+  }
+
+  if (!self && allies && !enemies) {
+    return "allies";
+  }
+
+  if (!self && !allies && enemies) {
+    return "enemies";
+  }
+
+  if (!self && allies && enemies) {
+    return "not-self";
+  }
+
+  if (self && allies && !enemies) {
+    return "self+allies";
+  }
+
+  if (self && !allies && enemies) {
+    return "self+enemies";
+  }
+
+  return "custom";
 }
 
 function normalizeTerrain({
@@ -1039,11 +1117,17 @@ function normalizeZoneParts({
 }
 
 function buildDefaultZonePart(normalizedDefinition) {
+  const globalTargeting = duplicateData(normalizedDefinition.targeting);
   return {
     id: "primary",
     label: normalizedDefinition.label,
     geometry: duplicateData(normalizedDefinition.geometry),
-    targeting: duplicateData(normalizedDefinition.targeting),
+    targeting: duplicateData(globalTargeting),
+    targetingGlobal: duplicateData(globalTargeting),
+    targetingPart: null,
+    targetingEffective: duplicateData(globalTargeting),
+    targetingInherited: true,
+    targetingSource: "global",
     terrain: duplicateData(normalizedDefinition.terrain),
     linkedWalls: duplicateData(normalizedDefinition.linkedWalls),
     linkedLight: duplicateData(normalizedDefinition.linkedLight),
@@ -1085,10 +1169,19 @@ function normalizeZonePart(partLikeDefinition, index, {
         ? partDefinition.linkedLights
         : {}
   );
+  const globalTargeting = normalizeTargeting(normalizedDefinition.targeting);
+  const partTargetingDefinition =
+    isPlainObject(partDefinition.targeting) && Object.keys(partDefinition.targeting).length > 0
+    ? partDefinition.targeting
+    : null;
+  const partTargeting = partTargetingDefinition
+    ? normalizeTargeting(partTargetingDefinition)
+    : null;
   const mergedTargetingDefinition = mergePlainObjects(
-    normalizedDefinition.targeting,
-    isPlainObject(partDefinition.targeting) ? partDefinition.targeting : {}
+    globalTargeting,
+    partTargetingDefinition ?? {}
   );
+  const effectiveTargeting = normalizeTargeting(mergedTargetingDefinition);
 
   return {
     id: pickFirstDefined(partDefinition.id, partDefinition.key, `part-${index + 1}`),
@@ -1098,7 +1191,12 @@ function normalizeZonePart(partLikeDefinition, index, {
       templateDefinition,
       definition: partDefinition
     }),
-    targeting: normalizeTargeting(mergedTargetingDefinition),
+    targeting: duplicateData(effectiveTargeting),
+    targetingGlobal: duplicateData(globalTargeting),
+    targetingPart: duplicateData(partTargeting),
+    targetingEffective: duplicateData(effectiveTargeting),
+    targetingInherited: !partTargeting,
+    targetingSource: partTargeting ? "part" : "global",
     terrain: normalizeTerrain({
       terrainDefinition: mergedTerrainDefinition,
       movementCostDefinition: mergedMovementCostDefinition,
@@ -1649,6 +1747,7 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   validateTriggerConfig("onMove", onMove, reasons, { requireDistanceStep: true });
   validateTriggerConfig("onStartTurn", onStartTurn, reasons);
   validateTriggerConfig("onEndTurn", onEndTurn, reasons);
+  validateTargetingConfig("Definition", normalizedDefinition.targeting, reasons);
 
   if (!Array.isArray(normalizedDefinition.parts) || !normalizedDefinition.parts.length) {
     reasons.push("At least one zone part must be available after normalization.");
@@ -1755,6 +1854,7 @@ function validateZonePartConfig(part, index, reasons, {
   });
   validateTriggerConfig(`${partLabel} onStartTurn`, part?.triggers?.onStartTurn ?? {}, reasons);
   validateTriggerConfig(`${partLabel} onEndTurn`, part?.triggers?.onEndTurn ?? {}, reasons);
+  validateTargetingConfig(partLabel, part?.targeting ?? {}, reasons);
 
   const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
   if (!["template", "ring", "side-of-line", "side-of-ring"].includes(geometryType)) {
@@ -1881,6 +1981,13 @@ function validateZonePartConfig(part, index, reasons, {
     if (String(templateType ?? "").toLowerCase() !== "circle") {
       reasons.push(`Part "${part?.id ?? index + 1}" side-of-ring geometry currently requires a circle template.`);
     }
+  }
+}
+
+function validateTargetingConfig(label, targetingConfig, reasons) {
+  const normalizedTargeting = normalizeTargeting(targetingConfig);
+  if (!normalizedTargeting.hasSelections) {
+    reasons.push(`${label} targeting requires at least one selected target.`);
   }
 }
 

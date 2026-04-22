@@ -1,7 +1,12 @@
 <form class="persistent-zones-item-config">
   <div class="persistent-zones-item-config__shell">
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--primary">
-      <details class="persistent-zones-item-config__section-toggle" open>
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="activation"
+        {{#if sectionStates.activation}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.Activation"}}</span>
           <span class="persistent-zones-item-config__section-meta">
@@ -18,12 +23,18 @@
             <label>{{localize "PERSISTENT_ZONES.UI.Fields.Enabled"}}</label>
             <input type="checkbox" name="enabled" {{#if state.enabled}}checked{{/if}}>
           </div>
+
+          <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.AuthoringSubset"}}</p>
         </div>
       </details>
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--profiles">
-      <details class="persistent-zones-item-config__section-toggle persistent-zones-item-config__section-toggle--profiles" data-action="toggle-profile-section" {{#if profilesExpanded}}open{{/if}}>
+      <details
+        class="persistent-zones-item-config__section-toggle persistent-zones-item-config__section-toggle--profiles"
+        data-action="toggle-profile-section"
+        {{#if profilesExpanded}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.Profiles"}}</span>
           <span class="persistent-zones-item-config__section-meta">
@@ -40,7 +51,17 @@
           <div class="persistent-zones-item-config__profile-row">
             <div class="form-group form-group--stacked form-group--compact">
               <label>{{localize "PERSISTENT_ZONES.UI.Fields.ProfileFilter"}}</label>
-              <input type="text" name="profileFilter" value="{{profileFilter}}" placeholder="{{localize "PERSISTENT_ZONES.UI.Fields.ProfileFilter"}}" dir="ltr" inputmode="text" autocapitalize="off" autocomplete="off" spellcheck="false">
+              <input
+                type="text"
+                name="profileFilter"
+                value="{{profileFilter}}"
+                placeholder="{{localize "PERSISTENT_ZONES.UI.Fields.ProfileFilter"}}"
+                dir="ltr"
+                inputmode="text"
+                autocapitalize="off"
+                autocomplete="off"
+                spellcheck="false"
+              >
             </div>
 
             <div class="persistent-zones-item-config__profile-summary">
@@ -140,7 +161,12 @@
     </section>
 
     <section class="persistent-zones-item-config__card">
-      <details class="persistent-zones-item-config__section-toggle" open>
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="templateContext"
+        {{#if sectionStates.templateContext}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.TemplateContext"}}</span>
           <span class="persistent-zones-item-config__section-meta">{{templateContextSummaryText}}</span>
@@ -176,7 +202,12 @@
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--primary">
-      <details class="persistent-zones-item-config__section-toggle" open>
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="typeVariant"
+        {{#if sectionStates.typeVariant}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.TypeVariant"}}</span>
           <span class="persistent-zones-item-config__section-meta">{{typeVariantSummaryText}}</span>
@@ -208,7 +239,7 @@
           {{#if showVariantSelect}}
             <div class="form-group form-group--stacked">
               <label>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}</label>
-              <div class="persistent-zones-item-config__choice-group">
+              <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
                 {{#each variantOptions as |option|}}
                   <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
                     <input type="radio" name="selectedVariant" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
@@ -218,12 +249,6 @@
               </div>
             </div>
 
-            {{#if selectedVariantLabel}}
-              <p class="hint">
-                <strong>{{localize "PERSISTENT_ZONES.UI.Fields.SelectedVariant"}}:</strong>
-                {{selectedVariantLabel}}
-              </p>
-            {{/if}}
             {{#if selectionContext.compatibleVariantLabels}}
               <p class="hint">
                 <strong>{{localize "PERSISTENT_ZONES.UI.Compatibility.CompatibleVariants"}}:</strong>
@@ -240,7 +265,12 @@
 
     {{#if showGeometrySection}}
       <section class="persistent-zones-item-config__card">
-        <details class="persistent-zones-item-config__section-toggle" open>
+        <details
+          class="persistent-zones-item-config__section-toggle"
+          data-action="toggle-section"
+          data-section-id="geometry"
+          {{#if sectionStates.geometry}}open{{/if}}
+        >
           <summary class="persistent-zones-item-config__section-summary">
             <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.DerivedGeometry"}}</span>
             <span class="persistent-zones-item-config__section-meta">{{geometrySummaryText}}</span>
@@ -266,7 +296,12 @@
     {{/if}}
 
     <section class="persistent-zones-item-config__card">
-      <details class="persistent-zones-item-config__section-toggle" open>
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="behaviors"
+        {{#if sectionStates.behaviors}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.Behaviors"}}</span>
           <span class="persistent-zones-item-config__section-meta">{{behaviorSummaryText}}</span>
@@ -407,9 +442,68 @@
           {{/if}}
 
           {{#if showCompositePartSections}}
+            <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.ActiveVariantParts"}}</p>
+
             {{#each partSections as |part|}}
               <section class="persistent-zones-item-config__part-block">
                 <h3>{{part.label}}</h3>
+
+                <fieldset class="persistent-zones-item-config__part-section">
+                  <legend>{{localize "PERSISTENT_ZONES.UI.Fields.PartTargeting"}}</legend>
+
+                  <div class="form-group form-group--stacked">
+                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.PartTargeting"}}</label>
+                    <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                      {{#each part.targetingSourceOptions as |option|}}
+                        <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                          <input type="radio" name="{{part.targetingSourceFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                          <span>{{option.label}}</span>
+                        </label>
+                      {{/each}}
+                    </div>
+                  </div>
+
+                  <p class="hint">
+                    <strong>{{localize "PERSISTENT_ZONES.UI.Fields.TargetFilter"}}:</strong>
+                    {{part.targetFilterEffectiveLabel}}
+                  </p>
+
+                  {{#if part.showCustomTargetingOptions}}
+                    <div class="form-group form-group--stacked">
+                      <label>{{localize "PERSISTENT_ZONES.UI.Fields.TargetingMode"}}</label>
+                      <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+                        {{#each part.targetingModeOptions as |option|}}
+                          <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                            <input type="radio" name="{{part.targetingModeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                            <span>{{option.label}}</span>
+                          </label>
+                        {{/each}}
+                      </div>
+                    </div>
+
+                    {{#if part.showCustomTargetSelection}}
+                      <div class="form-group form-group--stacked">
+                        <label>{{localize "PERSISTENT_ZONES.UI.Fields.TargetFilter"}}</label>
+                        <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                          <label class="persistent-zones-item-config__choice {{#if part.targetSelf}}is-selected{{/if}}">
+                            <input type="checkbox" name="{{part.targetSelfFieldName}}" {{#if part.targetSelf}}checked{{/if}}>
+                            <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Self"}}</span>
+                          </label>
+                          <label class="persistent-zones-item-config__choice {{#if part.targetAllies}}is-selected{{/if}}">
+                            <input type="checkbox" name="{{part.targetAlliesFieldName}}" {{#if part.targetAllies}}checked{{/if}}>
+                            <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Allies"}}</span>
+                          </label>
+                          <label class="persistent-zones-item-config__choice {{#if part.targetEnemies}}is-selected{{/if}}">
+                            <input type="checkbox" name="{{part.targetEnemiesFieldName}}" {{#if part.targetEnemies}}checked{{/if}}>
+                            <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Enemies"}}</span>
+                          </label>
+                        </div>
+                      </div>
+                    {{/if}}
+                  {{else}}
+                    <p class="hint">{{localize "PERSISTENT_ZONES.UI.Help.PartTargetFilterInherited"}}</p>
+                  {{/if}}
+                </fieldset>
 
                 {{#each part.triggerSections as |triggerSection|}}
                   <fieldset class="persistent-zones-item-config__part-section">
@@ -549,7 +643,12 @@
     </section>
 
     <section class="persistent-zones-item-config__card">
-      <details class="persistent-zones-item-config__section-toggle">
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="linksTerrain"
+        {{#if sectionStates.linksTerrain}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.LinksTerrain"}}</span>
           <span class="persistent-zones-item-config__section-meta">{{linksTerrainContext.summaryText}}</span>
@@ -557,16 +656,36 @@
 
         <div class="persistent-zones-item-config__section-body">
           <div class="form-group form-group--stacked">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.TargetFilter"}}</label>
-            <div class="persistent-zones-item-config__choice-group">
-              {{#each linksTerrainContext.targetFilterOptions as |option|}}
+            <label>{{localize "PERSISTENT_ZONES.UI.Fields.TargetingMode"}}</label>
+            <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--two">
+              {{#each linksTerrainContext.targetingModeOptions as |option|}}
                 <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
-                  <input type="radio" name="targetFilter" value="{{option.value}}" {{#if option.selected}}checked{{/if}}>
+                  <input type="radio" name="targetingMode" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
                   <span>{{option.label}}</span>
                 </label>
               {{/each}}
             </div>
           </div>
+
+          {{#if linksTerrainContext.showCustomTargetSelection}}
+            <div class="form-group form-group--stacked">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.TargetFilter"}}</label>
+              <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                <label class="persistent-zones-item-config__choice {{#if linksTerrainContext.targetSelf}}is-selected{{/if}}">
+                  <input type="checkbox" name="targetSelf" {{#if linksTerrainContext.targetSelf}}checked{{/if}}>
+                  <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Self"}}</span>
+                </label>
+                <label class="persistent-zones-item-config__choice {{#if linksTerrainContext.targetAllies}}is-selected{{/if}}">
+                  <input type="checkbox" name="targetAllies" {{#if linksTerrainContext.targetAllies}}checked{{/if}}>
+                  <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Allies"}}</span>
+                </label>
+                <label class="persistent-zones-item-config__choice {{#if linksTerrainContext.targetEnemies}}is-selected{{/if}}">
+                  <input type="checkbox" name="targetEnemies" {{#if linksTerrainContext.targetEnemies}}checked{{/if}}>
+                  <span>{{localize "PERSISTENT_ZONES.UI.TargetFilters.Enemies"}}</span>
+                </label>
+              </div>
+            </div>
+          {{/if}}
 
           <div class="form-group">
             <label>{{localize "PERSISTENT_ZONES.UI.Fields.DifficultTerrain"}}</label>
@@ -632,32 +751,23 @@
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--validation">
-      <details class="persistent-zones-item-config__section-toggle" open>
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="status"
+        {{#if sectionStates.status}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
-          <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</span>
-          <span class="persistent-zones-item-config__section-meta">
-            {{#if preview.isValid}}
-              {{localize "PERSISTENT_ZONES.UI.Validation.Valid"}}
-            {{else}}
-              {{localize "PERSISTENT_ZONES.UI.Validation.Invalid"}}
-            {{/if}}
-          </span>
+          <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.ConfigurationState"}}</span>
+          <span class="persistent-zones-item-config__section-meta">{{preview.statusSummaryText}}</span>
         </summary>
 
         <div class="persistent-zones-item-config__section-body">
           <div class="persistent-zones-item-config__validation-header">
-            <span class="persistent-zones-item-config__pill {{#if preview.isValid}}is-valid{{else}}is-invalid{{/if}}">
-              {{#if preview.isValid}}
-                {{localize "PERSISTENT_ZONES.UI.Validation.Valid"}}
-              {{else}}
-                {{localize "PERSISTENT_ZONES.UI.Validation.Invalid"}}
-              {{/if}}
+            <span class="persistent-zones-item-config__pill {{preview.statusClass}}">
+              {{preview.statusLabel}}
             </span>
-            {{#if preview.warnings.length}}
-              <span class="persistent-zones-item-config__pill is-warning">
-                {{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}
-              </span>
-            {{/if}}
+            <span class="hint">{{preview.statusSummaryText}}</span>
           </div>
 
           {{#if preview.reasons.length}}
@@ -682,14 +792,18 @@
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--preview">
-      <details class="persistent-zones-item-config__section-toggle">
+      <details
+        class="persistent-zones-item-config__section-toggle"
+        data-action="toggle-section"
+        data-section-id="advancedDebug"
+        {{#if sectionStates.advancedDebug}}open{{/if}}
+      >
         <summary class="persistent-zones-item-config__section-summary">
           <span class="persistent-zones-item-config__section-title">{{localize "PERSISTENT_ZONES.UI.Sections.AdvancedDebug"}}</span>
           <span class="persistent-zones-item-config__section-meta">{{localize "PERSISTENT_ZONES.UI.Sections.StructuredDebug"}}</span>
         </summary>
 
         <div class="persistent-zones-item-config__section-body">
-          <h3>{{localize "PERSISTENT_ZONES.UI.Sections.StructuredDebug"}}</h3>
           <div class="persistent-zones-item-config__meta">
             {{#each preview.debugInspector.overviewRows as |row|}}
               <div>
@@ -713,6 +827,10 @@
                     <div>
                       <strong>{{localize "PERSISTENT_ZONES.UI.Fields.GeometryType"}}:</strong>
                       <span>{{part.geometryTypeLabel}}</span>
+                    </div>
+                    <div>
+                      <strong>{{localize "PERSISTENT_ZONES.UI.Fields.TargetFilter"}}:</strong>
+                      <span>{{part.targetFilterSummaryText}}</span>
                     </div>
                   </div>
 
@@ -739,7 +857,7 @@
           {{/if}}
 
           {{#if preview.debugInspector.reasons.length}}
-            <h3>{{localize "PERSISTENT_ZONES.UI.Sections.Validation"}}</h3>
+            <h3>{{localize "PERSISTENT_ZONES.UI.Sections.ConfigurationState"}}</h3>
             <ul class="persistent-zones-item-config__reasons">
               {{#each preview.debugInspector.reasons as |reason|}}
                 <li>{{reason}}</li>
@@ -761,18 +879,23 @@
     </section>
 
     <section class="persistent-zones-item-config__card persistent-zones-item-config__card--actions">
-      <button type="button" class="button" data-action="preview">
-        <i class="fas fa-search"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Preview"}}</span>
-      </button>
-      <button type="submit" class="button default">
-        <i class="fas fa-save"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Save"}}</span>
-      </button>
-      <button type="button" class="button" data-action="clear">
-        <i class="fas fa-trash"></i>
-        <span>{{localize "PERSISTENT_ZONES.UI.Actions.Clear"}}</span>
-      </button>
+      <div class="persistent-zones-item-config__footer-status">
+        <span class="persistent-zones-item-config__pill {{preview.statusClass}}">
+          {{preview.statusLabel}}
+        </span>
+        <span class="persistent-zones-item-config__footer-status-text">{{preview.statusSummaryText}}</span>
+      </div>
+
+      <div class="persistent-zones-item-config__footer-actions">
+        <button type="submit" class="button default">
+          <i class="fas fa-save"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.Save"}}</span>
+        </button>
+        <button type="button" class="button" data-action="clear">
+          <i class="fas fa-trash"></i>
+          <span>{{localize "PERSISTENT_ZONES.UI.Actions.Clear"}}</span>
+        </button>
+      </div>
     </section>
   </div>
 </form>

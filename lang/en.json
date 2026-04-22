@@ -22,6 +22,7 @@
         "Behaviors": "Effective Part Behaviors",
         "LinksTerrain": "Links & Terrain",
         "Triggers": "Triggers",
+        "ConfigurationState": "Configuration State",
         "OnEnter": "On Enter",
         "OnExit": "On Exit",
         "OnMove": "On Move",
@@ -54,6 +55,7 @@
         "VariantResolutionMode": "Variant Resolution",
         "PreviewTemplateType": "Preview Template Type",
         "Status": "Status",
+        "TargetingMode": "Targeting Mode",
         "TriggerMode": "Mode",
         "MovementMode": "Movement Filter",
         "StepMode": "Step Mode",
@@ -72,7 +74,8 @@
         "PartCount": "Part Count",
         "PartId": "Part ID",
         "GeometryType": "Geometry Type",
-        "TargetFilter": "Target Filter",
+        "PartTargeting": "Targeting for This Zone",
+        "TargetFilter": "Targets",
         "DifficultTerrain": "Difficult Terrain",
         "LinkedWalls": "Linked Walls",
         "LinkedWallsPreset": "Linked Wall Preset",
@@ -103,7 +106,16 @@
         "Allies": "Allies",
         "Enemies": "Enemies",
         "Self": "Self",
-        "NotSelf": "Not Self"
+        "NotSelf": "Not Self",
+        "None": "No Targets"
+      },
+      "TargetingModes": {
+        "All": "All",
+        "Custom": "Custom"
+      },
+      "TargetFilterModes": {
+        "Inherit": "Use Default Rule",
+        "Custom": "Zone-Specific Rule"
       },
       "LinkedWallPresets": {
         "Solid": "Solid",
@@ -128,10 +140,10 @@
         "Distance": "By Distance"
       },
       "BaseTypes": {
-        "Simple": "Simple",
+        "Simple": "Simple Zone",
         "Ring": "Ring",
-        "CompositeLine": "Composite Line",
-        "CompositeRing": "Composite Ring"
+        "CompositeLine": "Linear Wall",
+        "CompositeRing": "Annular Wall"
       },
       "TemplateTypes": {
         "Circle": "Circle",
@@ -232,6 +244,9 @@
         "Valid": "Valid",
         "Invalid": "Invalid",
         "Warning": "Warning",
+        "NeedsAttention": "Needs Attention",
+        "ValidWithWarnings": "Valid with warnings",
+        "Ready": "Ready",
         "NoIssues": "No validation issues detected for the current preview."
       },
       "Actions": {
@@ -250,6 +265,8 @@
         "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
         "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
         "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
+        "PartTargetFilterInherited": "This zone uses the default targeting rule.",
+        "PartTargetFilterCustom": "This zone uses its own targeting rule.",
         "ActiveVariantParts": "Only the effective parts for the currently selected variant are shown here.",
         "LinkedLightRangesHint": "Use the bright and dim ranges to shape the linked light. Leave a field empty to keep the preset default.",
         "ProfileSection": "Load a reusable built-in or user profile into the current editor draft.",

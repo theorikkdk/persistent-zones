@@ -51,7 +51,9 @@ const DEFAULT_SIMPLE_TEMPLATE_TYPE = "circle";
 const DEFAULT_DAMAGE_TYPE = "fire";
 const DEFAULT_LINKED_WALL_PRESET = "solid";
 const DEFAULT_LINKED_LIGHT_PRESET = "glow";
+const DEFAULT_TARGETING_MODE = "all";
 const DEFAULT_TARGET_FILTER = "all";
+const DEFAULT_PART_TARGET_FILTER_MODE = "inherit";
 const DEFAULT_ON_ENTER_MODE = "none";
 const DEFAULT_MOVE_DISTANCE_STEP = 5;
 const DEFAULT_LINE_TEMPLATE_WIDTH = 5;
@@ -136,7 +138,10 @@ class PersistentZonesItemConfig extends FormApplication {
     this._profileNameDraft = String(options.profileName ?? "").trim();
     this._profileFilter = String(options.profileFilter ?? "").trim();
     this._profilesExpanded = Boolean(options.profilesExpanded ?? false);
+    this._sectionOpenState = duplicateData(options.sectionOpenState) ?? {};
     this._pendingProfileFilterCursor = null;
+    this._pendingFocusRestore = null;
+    this._liveRefreshHandle = null;
     this._profileUiReadyLogged = false;
   }
 
@@ -145,7 +150,7 @@ class PersistentZonesItemConfig extends FormApplication {
       id: AUTHORING_APP_ID,
       classes: [MODULE_ID, "persistent-zones-item-config-app"],
       template: `modules/${MODULE_ID}/templates/item-zone-config.hbs`,
-      width: 760,
+      width: 680,
       height: 880,
       resizable: true,
       submitOnChange: false,
@@ -222,6 +227,17 @@ class PersistentZonesItemConfig extends FormApplication {
         { count: globalTriggerSections.length },
         `${globalTriggerSections.length} triggers`
       );
+    const sectionStates = {
+      activation: this.#resolveSectionOpenState("activation", false),
+      profiles: this._profilesExpanded,
+      templateContext: this.#resolveSectionOpenState("templateContext", false),
+      typeVariant: this.#resolveSectionOpenState("typeVariant", false),
+      geometry: this.#resolveSectionOpenState("geometry", false),
+      behaviors: this.#resolveSectionOpenState("behaviors", false),
+      linksTerrain: this.#resolveSectionOpenState("linksTerrain", false),
+      status: this.#resolveSectionOpenState("status", preview.hasIssues),
+      advancedDebug: this.#resolveSectionOpenState("advancedDebug", false)
+    };
 
     return {
       item: this.itemDocument,
@@ -260,6 +276,7 @@ class PersistentZonesItemConfig extends FormApplication {
       showSideThickness: ["composite-line", "composite-ring"].includes(formState.baseType),
       showGlobalTriggers: !compositeMode,
       showCompositePartSections: compositeMode,
+      sectionStates,
       preview
     };
   }
@@ -267,9 +284,9 @@ class PersistentZonesItemConfig extends FormApplication {
   activateListeners(html) {
     super.activateListeners(html);
 
-    html.find("[data-action='preview']").on("click", this.#onPreview.bind(this, html));
     html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
     html.find("[data-action='toggle-profile-section']").on("toggle", this.#onProfileSectionToggled.bind(this));
+    html.find("[data-action='toggle-section']").on("toggle", this.#onSectionToggled.bind(this));
     html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this, html));
     html.find("[data-action='duplicate-profile']").on("click", this.#onDuplicateProfile.bind(this, html));
     html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
@@ -282,6 +299,7 @@ class PersistentZonesItemConfig extends FormApplication {
     html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
     html.find("[name='profileFilter']").on("input", this.#onProfileFilterChanged.bind(this, html));
     html.find("[name='profileName']").on("input", this.#onProfileNameChanged.bind(this));
+    html.find("input, select, textarea").on("input change", this.#onLiveConfigChanged.bind(this, html));
 
     if (!this._profileUiReadyLogged) {
       const sortedProfiles = sortProfilesForUi(getPersistentZoneProfiles());
@@ -306,6 +324,27 @@ class PersistentZonesItemConfig extends FormApplication {
 
         filterInput.focus();
         filterInput.setSelectionRange(cursorPosition, cursorPosition);
+      });
+    }
+
+    if (this._pendingFocusRestore?.name) {
+      const focusState = duplicateData(this._pendingFocusRestore);
+      this._pendingFocusRestore = null;
+
+      requestAnimationFrame(() => {
+        const field = this.form?.querySelector?.(`[name="${focusState.name}"]`);
+        if (!(field instanceof HTMLElement)) {
+          return;
+        }
+
+        field.focus();
+        if (
+          typeof focusState.selectionStart === "number" &&
+          typeof focusState.selectionEnd === "number" &&
+          typeof field.setSelectionRange === "function"
+        ) {
+          field.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+        }
       });
     }
   }
@@ -390,17 +429,6 @@ class PersistentZonesItemConfig extends FormApplication {
     await this.render(false);
   }
 
-  async #onPreview(html, event) {
-    event.preventDefault();
-    const rawFormState = readAuthoringFormState(
-      html[0],
-      this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
-      this.itemDocument
-    );
-    this._draftState = resolveAuthoringSelectionContext(rawFormState, this.itemDocument).state;
-    await this.render(false);
-  }
-
   async #onBaseTypeChanged(html, event) {
     const rawFormState = readAuthoringFormState(
       html[0],
@@ -467,8 +495,43 @@ class PersistentZonesItemConfig extends FormApplication {
     this._profilesExpanded = Boolean(event?.currentTarget?.open);
   }
 
+  #onSectionToggled(event) {
+    const sectionId = String(event?.currentTarget?.dataset?.sectionId ?? "").trim();
+    if (!sectionId) {
+      return;
+    }
+
+    this._sectionOpenState[sectionId] = Boolean(event?.currentTarget?.open);
+  }
+
   #onProfileNameChanged(event) {
     this._profileNameDraft = String(event?.currentTarget?.value ?? "");
+  }
+
+  #onLiveConfigChanged(html, event) {
+    const field = event?.currentTarget;
+    const fieldName = String(field?.name ?? "").trim();
+    const fieldType = String(field?.type ?? "").trim().toLowerCase();
+
+    if (!fieldName || ["profileFilter", "profileName", "selectedProfileId"].includes(fieldName)) {
+      return;
+    }
+
+    if (field?.dataset?.rerender === "true" || fieldType === "hidden" || fieldType === "file") {
+      return;
+    }
+
+    if (this._liveRefreshHandle) {
+      clearTimeout(this._liveRefreshHandle);
+      this._liveRefreshHandle = null;
+    }
+
+    this.#capturePendingFocusRestore(field);
+    this._liveRefreshHandle = setTimeout(async () => {
+      this._liveRefreshHandle = null;
+      this.#captureCurrentDraft(html);
+      await this.render(false);
+    }, 220);
   }
 
   async #onDuplicateProfile(html, event) {
@@ -1032,6 +1095,34 @@ class PersistentZonesItemConfig extends FormApplication {
     );
     this._draftState = resolveAuthoringSelectionContext(rawFormState, this.itemDocument).state;
   }
+
+  #resolveSectionOpenState(sectionId, defaultOpen = false) {
+    if (Object.prototype.hasOwnProperty.call(this._sectionOpenState, sectionId)) {
+      return Boolean(this._sectionOpenState[sectionId]);
+    }
+
+    return Boolean(defaultOpen);
+  }
+
+  #capturePendingFocusRestore(field) {
+    const fieldName = String(field?.name ?? "").trim();
+    if (!fieldName) {
+      this._pendingFocusRestore = null;
+      return;
+    }
+
+    this._pendingFocusRestore = {
+      name: fieldName,
+      selectionStart:
+        typeof field?.selectionStart === "number"
+          ? field.selectionStart
+          : null,
+      selectionEnd:
+        typeof field?.selectionEnd === "number"
+          ? field.selectionEnd
+          : null
+    };
+  }
 }
 
 async function onRenderItemSheet5e(app, html) {
@@ -1189,6 +1280,7 @@ function buildDefinitionPreview(item, formState, definition) {
       ...featureWarnings
     ];
     const isValid = Boolean(normalizedDefinition?.validation?.isValid) && compatibilityIssues.length === 0;
+    const status = buildDefinitionPreviewStatus({ isValid, reasons, warnings });
 
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
@@ -1201,8 +1293,14 @@ function buildDefinitionPreview(item, formState, definition) {
       normalizedDefinition,
       normalizedDefinitionJson: JSON.stringify(normalizedDefinition, null, 2),
       isValid,
+      hasWarnings: warnings.length > 0,
+      hasIssues: reasons.length > 0 || warnings.length > 0,
       reasons,
       warnings,
+      statusLabel: status.label,
+      statusSummaryText: status.summaryText,
+      statusTone: status.tone,
+      statusClass: status.cssClass,
       variantResolution: normalizedDefinition?.variantResolution ?? null,
       debugInspector: buildStructuredDebugInspector({
         item,
@@ -1223,6 +1321,7 @@ function buildDefinitionPreview(item, formState, definition) {
       ...Array.from(selectionContext.warnings ?? []),
       ...collectAuthoringFeatureWarnings(selectionContext.state)
     ];
+    const status = buildDefinitionPreviewStatus({ isValid: false, reasons, warnings });
 
     return {
       previewTemplateType: previewTemplateDocument?.t ?? null,
@@ -1235,8 +1334,14 @@ function buildDefinitionPreview(item, formState, definition) {
       normalizedDefinition: null,
       normalizedDefinitionJson: "",
       isValid: false,
+      hasWarnings: warnings.length > 0,
+      hasIssues: reasons.length > 0 || warnings.length > 0,
       reasons,
       warnings,
+      statusLabel: status.label,
+      statusSummaryText: status.summaryText,
+      statusTone: status.tone,
+      statusClass: status.cssClass,
       variantResolution: null,
       debugInspector: buildStructuredDebugInspector({
         item,
@@ -1251,6 +1356,46 @@ function buildDefinitionPreview(item, formState, definition) {
       })
     };
   }
+}
+
+function buildDefinitionPreviewStatus({
+  isValid = false,
+  reasons = [],
+  warnings = []
+} = {}) {
+  if (!isValid) {
+    return {
+      tone: "invalid",
+      cssClass: "is-invalid",
+      label: localize("PERSISTENT_ZONES.UI.Validation.Invalid", "Invalid"),
+      summaryText: localize(
+        "PERSISTENT_ZONES.UI.Validation.NeedsAttention",
+        "Needs attention"
+      )
+    };
+  }
+
+  if (Array.isArray(warnings) && warnings.length) {
+    return {
+      tone: "warning",
+      cssClass: "is-warning",
+      label: localize("PERSISTENT_ZONES.UI.Validation.Warning", "Warning"),
+      summaryText: localize(
+        "PERSISTENT_ZONES.UI.Validation.ValidWithWarnings",
+        "Valid with warnings"
+      )
+    };
+  }
+
+  return {
+    tone: "valid",
+    cssClass: "is-valid",
+    label: localize("PERSISTENT_ZONES.UI.Validation.Valid", "Valid"),
+    summaryText: localize(
+      "PERSISTENT_ZONES.UI.Validation.Ready",
+      "Ready"
+    )
+  };
 }
 
 function collectAuthoringFeatureWarnings(formState = {}) {
@@ -1292,6 +1437,11 @@ function buildStructuredDebugInspector({
   const effectiveTemplateTypeContext = templateTypeContext ?? effectiveSelectionContext.templateTypeContext;
   const normalizedWarnings = Array.from(warnings ?? []).filter(Boolean);
   const normalizedReasons = Array.from(reasons ?? []).filter(Boolean);
+  const previewStatus = buildDefinitionPreviewStatus({
+    isValid,
+    reasons: normalizedReasons,
+    warnings: normalizedWarnings
+  });
   const partSummaries = buildStructuredDebugPartSummaries({
     item,
     formState: effectiveState,
@@ -1308,9 +1458,7 @@ function buildStructuredDebugInspector({
     overviewRows: [
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.Status", "Status"),
-        isValid
-          ? localize("PERSISTENT_ZONES.UI.Validation.Valid", "Valid")
-          : localize("PERSISTENT_ZONES.UI.Validation.Invalid", "Invalid")
+        previewStatus.label
       ),
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.DetectedTemplateType", "Detected Template Type"),
@@ -1412,6 +1560,10 @@ function buildStructuredDebugPartSummaries({
   });
   const normalizedParts = Array.from(normalizedDefinition?.parts ?? []);
   const partConfigs = normalizeAuthoringPartConfigs(effectiveState.partConfigs);
+  const globalTargeting = normalizeAuthoringTargetingState(
+    normalizedDefinition?.targeting ?? effectiveState,
+    effectiveState
+  );
 
   if (!isCompositeBaseType(effectiveState.baseType)) {
     const normalizedPart = normalizedParts[0] ?? null;
@@ -1421,6 +1573,16 @@ function buildStructuredDebugPartSummaries({
         label: localize("PERSISTENT_ZONES.UI.Parts.PrimaryZone", "Primary Zone"),
         partId: normalizedPart?.id ?? "primary-zone",
         geometryType: normalizedPart?.geometry?.type ?? normalizedDefinition?.geometry?.type ?? "template",
+        targetFilterMode: "inherit",
+        targetingGlobal: globalTargeting,
+        targetingPart: null,
+        targetingEffective: normalizeAuthoringTargetingState(
+          normalizedPart?.targetingEffective ??
+            normalizedPart?.targeting ??
+            normalizedDefinition?.targeting ??
+            effectiveState,
+          effectiveState
+        ),
         triggerConfigs: effectiveState.triggerConfigs
       })
     ];
@@ -1440,6 +1602,25 @@ function buildStructuredDebugPartSummaries({
         ),
         partId,
         geometryType: normalizedPart?.geometry?.type ?? null,
+        targetFilterMode: normalizePartTargetFilterMode(partConfig.targetFilterMode),
+        targetingGlobal: globalTargeting,
+        targetingPart: normalizePartTargetFilterMode(partConfig.targetFilterMode) === "custom"
+          ? normalizeAuthoringTargetingState(
+            normalizedPart?.targeting ??
+              partConfig,
+            partConfig
+          )
+          : null,
+        targetingEffective: normalizeAuthoringTargetingState(
+          normalizedPart?.targetingEffective ??
+            normalizedPart?.targeting ??
+            (normalizePartTargetFilterMode(partConfig.targetFilterMode) === "custom"
+              ? partConfig
+              : globalTargeting),
+          normalizePartTargetFilterMode(partConfig.targetFilterMode) === "custom"
+            ? partConfig
+            : globalTargeting
+        ),
         triggerConfigs: partConfig.triggerConfigs
       });
     });
@@ -1450,15 +1631,43 @@ function buildStructuredDebugPartSummary({
   label = "",
   partId = "",
   geometryType = null,
+  targetFilterMode = DEFAULT_PART_TARGET_FILTER_MODE,
+  targetingGlobal = null,
+  targetingPart = null,
+  targetingEffective = null,
   triggerConfigs = {}
 } = {}) {
   const normalizedTriggerConfigs = normalizeAuthoringTriggerConfigs(triggerConfigs);
+  const normalizedTargetFilterMode = normalizePartTargetFilterMode(targetFilterMode);
+  const normalizedTargetingGlobal = normalizeAuthoringTargetingState(targetingGlobal ?? {});
+  const normalizedTargetingPart = targetingPart
+    ? normalizeAuthoringTargetingState(targetingPart, normalizedTargetingGlobal)
+    : null;
+  const normalizedTargetingEffective = normalizeAuthoringTargetingState(
+    targetingEffective ?? normalizedTargetingPart ?? normalizedTargetingGlobal,
+    normalizedTargetingPart ?? normalizedTargetingGlobal
+  );
+  const targetFilterSummaryText = normalizedTargetFilterMode === "custom"
+    ? `${localizeTargetFilterLabel(normalizedTargetingEffective.targetFilter)} (${localize(
+      "PERSISTENT_ZONES.UI.TargetFilterModes.Custom",
+      "Part Override"
+    )})`
+    : `${localizeTargetFilterLabel(normalizedTargetingEffective.targetFilter)} (${localize(
+      "PERSISTENT_ZONES.UI.TargetFilterModes.Inherit",
+      "Inherit Global"
+    )})`;
 
   return {
     id: partId,
     label,
     geometryType,
     geometryTypeLabel: localizeGeometryType(geometryType),
+    targetFilterSummaryText,
+    targetFilterGlobalLabel: localizeTargetFilterLabel(normalizedTargetingGlobal.targetFilter),
+    targetFilterPartLabel: normalizedTargetingPart
+      ? localizeTargetFilterLabel(normalizedTargetingPart.targetFilter)
+      : null,
+    targetFilterEffectiveLabel: localizeTargetFilterLabel(normalizedTargetingEffective.targetFilter),
     triggerSummaries: AUTHORING_TRIGGER_TIMINGS.map((timing) => ({
       label: getTriggerTimingLabel(timing),
       summaryText: buildStructuredTriggerSummaryText({
@@ -1562,7 +1771,10 @@ function readAuthoringFormState(root, seedState = null, item = null) {
     templateTypeSource: readValue(form, "templateTypeSource"),
     simpleTemplateType: readValue(form, "simpleTemplateType"),
     selectedVariant: readValue(form, "selectedVariant"),
-    targetFilter: readValue(form, "targetFilter"),
+    targetingMode: readOptionalValue(form, "targetingMode", existingState.targetingMode),
+    targetSelf: readCheckbox(form, "targetSelf"),
+    targetAllies: readCheckbox(form, "targetAllies"),
+    targetEnemies: readCheckbox(form, "targetEnemies"),
     triggerConfigs: readTriggerAuthoringFormState(form, existingState.triggerConfigs),
     wallThickness: readOptionalValue(form, "wallThickness", existingState.wallThickness),
     sideThickness: readOptionalValue(form, "sideThickness", existingState.sideThickness),
@@ -1597,7 +1809,7 @@ function normalizeAuthoringFormState(formData = {}, {
     templateTypeSource,
     simpleTemplateType,
     selectedVariant,
-    targetFilter: normalizeAuthoringTargetFilter(formData.targetFilter),
+    ...normalizeAuthoringTargetingState(formData, defaultState),
     triggerConfigs: normalizeAuthoringTriggerConfigs(
       isPlainObject(formData.triggerConfigs)
         ? formData.triggerConfigs
@@ -1642,6 +1854,10 @@ function getDefaultAuthoringState(item = null) {
     templateTypeSource: DEFAULT_TEMPLATE_TYPE_SOURCE,
     simpleTemplateType: detectedTemplateType,
     selectedVariant: DEFAULT_VARIANT_BY_BASE_TYPE["composite-line"],
+    targetingMode: DEFAULT_TARGETING_MODE,
+    targetSelf: true,
+    targetAllies: true,
+    targetEnemies: true,
     targetFilter: DEFAULT_TARGET_FILTER,
     triggerConfigs: buildDefaultAuthoringTriggerConfigs(),
     wallThickness: getDefaultWallThicknessForBaseType("simple"),
@@ -1703,16 +1919,14 @@ function deriveAuthoringStateFromDefinition(rawDefinition, item = null) {
         fallbackState.selectedVariant
       )
     ),
-    targetFilter: normalizeAuthoringTargetFilter(
+    ...normalizeAuthoringTargetingState(
       pickFirstDefined(
-        safeGet(effectiveDefinition, ["targeting", "mode"]),
-        safeGet(rawDefinition, ["targeting", "mode"]),
-        safeGet(normalizedDefinition, ["targeting", "mode"]),
-        safeGet(effectiveDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
-        safeGet(rawDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
-        safeGet(normalizedDefinition, ["targeting", "includeSelf"]) === false ? "not-self" : null,
-        fallbackState.targetFilter
-      )
+        safeGet(effectiveDefinition, ["targeting"]),
+        safeGet(rawDefinition, ["targeting"]),
+        safeGet(normalizedDefinition, ["targeting"]),
+        {}
+      ),
+      fallbackState
     ),
     triggerConfigs: normalizeAuthoringTriggerConfigs(
       rootTriggerConfigs,
@@ -1882,6 +2096,12 @@ function buildDefaultAuthoringTriggerConfigs(overridesByTiming = {}) {
 function getDefaultPartAuthoringConfig(partId = null) {
   return {
     partId,
+    targetFilterMode: DEFAULT_PART_TARGET_FILTER_MODE,
+    targetingMode: DEFAULT_TARGETING_MODE,
+    targetSelf: true,
+    targetAllies: true,
+    targetEnemies: true,
+    targetFilter: DEFAULT_TARGET_FILTER,
     triggerConfigs: buildDefaultAuthoringTriggerConfigs()
   };
 }
@@ -2052,8 +2272,17 @@ function normalizeAuthoringPartConfigs(partConfigs = {}) {
   return AUTHORING_PART_IDS.reduce((configs, partId) => {
     const partLike = partConfigs?.[partId] ?? {};
     const fallbackPartConfig = getDefaultPartAuthoringConfig(partId);
+    const normalizedTargeting = normalizeAuthoringTargetingState(
+      partLike,
+      fallbackPartConfig
+    );
     configs[partId] = {
       partId,
+      targetFilterMode: normalizePartTargetFilterMode(
+        partLike?.targetFilterMode,
+        fallbackPartConfig.targetFilterMode
+      ),
+      ...normalizedTargeting,
       triggerConfigs: normalizeAuthoringTriggerConfigs(
         isPlainObject(partLike?.triggerConfigs)
           ? partLike.triggerConfigs
@@ -2069,32 +2298,61 @@ function normalizeAuthoringPartConfigs(partConfigs = {}) {
 
 function buildAuthoringPartConfigsFromDefinition(rawDefinition, normalizedDefinition) {
   const partConfigs = buildDefaultPartAuthoringConfigs();
-  const applyPartConfig = (partId, triggerConfigs) => {
+  const applyPartConfig = (partId, {
+    triggerConfigs = null,
+    targetingDefinition = undefined
+  } = {}) => {
     if (!partId || !(partId in partConfigs)) {
       return;
     }
 
+    const hasExplicitPartTargeting =
+      isPlainObject(targetingDefinition) &&
+      Object.keys(targetingDefinition).length > 0;
+
     partConfigs[partId] = {
       ...partConfigs[partId],
+      targetFilterMode: hasExplicitPartTargeting
+        ? "custom"
+        : partConfigs[partId]?.targetFilterMode ?? DEFAULT_PART_TARGET_FILTER_MODE,
+      ...(
+        hasExplicitPartTargeting
+          ? normalizeAuthoringTargetingState(
+          targetingDefinition,
+          partConfigs[partId]
+        )
+          : normalizeAuthoringTargetingState(
+            partConfigs[partId],
+            getDefaultPartAuthoringConfig(partId)
+          )
+      ),
       triggerConfigs: normalizeAuthoringTriggerConfigs(
-        triggerConfigs,
+        triggerConfigs ?? {},
         partConfigs[partId]?.triggerConfigs
       )
     };
   };
 
   for (const part of Array.from(rawDefinition?.parts ?? rawDefinition?.zones ?? [])) {
-    applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers ?? {});
+    applyPartConfig(part?.id ?? part?.key ?? null, {
+      triggerConfigs: part?.triggers ?? {},
+      targetingDefinition: part?.targeting
+    });
   }
 
   for (const variant of Array.from(rawDefinition?.variants ?? [])) {
     for (const part of Array.from(variant?.parts ?? variant?.zones ?? [])) {
-      applyPartConfig(part?.id ?? part?.key ?? null, part?.triggers ?? {});
+      applyPartConfig(part?.id ?? part?.key ?? null, {
+        triggerConfigs: part?.triggers ?? {},
+        targetingDefinition: part?.targeting
+      });
     }
   }
 
   for (const part of Array.from(normalizedDefinition?.parts ?? [])) {
-    applyPartConfig(part?.id ?? null, part?.triggers ?? {});
+    applyPartConfig(part?.id ?? null, {
+      triggerConfigs: part?.triggers ?? {}
+    });
   }
 
   return partConfigs;
@@ -2141,6 +2399,30 @@ function getTriggerFieldBaseName(fieldKey, timing) {
     default:
       return normalizedTiming === "onEnter" ? fieldKey : `${timingPrefix}${capitalizeFirst(fieldKey)}`;
   }
+}
+
+function getPartTargetFilterModeFieldName(partId) {
+  return `partTargetFilterMode__${partId}`;
+}
+
+function getPartTargetFilterFieldName(partId) {
+  return `partTargetFilter__${partId}`;
+}
+
+function getPartTargetingModeFieldName(partId) {
+  return `partTargetingMode__${partId}`;
+}
+
+function getPartTargetSelfFieldName(partId) {
+  return `partTargetSelf__${partId}`;
+}
+
+function getPartTargetAlliesFieldName(partId) {
+  return `partTargetAllies__${partId}`;
+}
+
+function getPartTargetEnemiesFieldName(partId) {
+  return `partTargetEnemies__${partId}`;
 }
 
 function getTriggerTimingLabel(timing) {
@@ -2215,6 +2497,19 @@ function readPartAuthoringFormState(form, existingPartConfigs = {}) {
 
     partConfigs[partId] = {
       partId,
+      targetFilterMode: readOptionalValue(
+        form,
+        getPartTargetFilterModeFieldName(partId),
+        existingConfig.targetFilterMode
+      ),
+      targetingMode: readOptionalValue(
+        form,
+        getPartTargetingModeFieldName(partId),
+        existingConfig.targetingMode
+      ),
+      targetSelf: readCheckbox(form, getPartTargetSelfFieldName(partId)),
+      targetAllies: readCheckbox(form, getPartTargetAlliesFieldName(partId)),
+      targetEnemies: readCheckbox(form, getPartTargetEnemiesFieldName(partId)),
       triggerConfigs: readTriggerAuthoringFormState(
         form,
         existingConfig.triggerConfigs,
@@ -2245,7 +2540,7 @@ function buildDefinitionFromAuthoringState(formState, {
     enabled: state.enabled,
     label: item?.name ?? DEFAULT_ZONE_LABEL,
     shapeMode: "template",
-    targeting: buildAuthoringTargetingDefinition(state.targetFilter),
+    targeting: buildAuthoringTargetingDefinition(state),
     terrain: {
       difficult: state.difficultTerrainEnabled
     },
@@ -2326,13 +2621,32 @@ function buildDefinitionFromAuthoringState(formState, {
     }
   }
 
-function buildAuthoringTargetingDefinition(targetFilter) {
-  const normalizedTargetFilter = normalizeAuthoringTargetFilter(targetFilter);
+function buildAuthoringTargetingDefinition(targetingLike = {}) {
+  const normalizedTargeting = normalizeAuthoringTargetingState(targetingLike);
 
   return {
-    mode: normalizedTargetFilter,
-    includeSelf: normalizedTargetFilter !== "not-self"
+    mode: normalizedTargeting.targetingMode,
+    self: normalizedTargeting.targetSelf,
+    allies: normalizedTargeting.targetAllies,
+    enemies: normalizedTargeting.targetEnemies,
+    includeSelf: normalizedTargeting.targetSelf
   };
+}
+
+function buildPartAuthoringTargetingDefinition(partConfig = {}) {
+  const normalizedPartConfig = {
+    targetFilterMode: normalizePartTargetFilterMode(
+      partConfig?.targetFilterMode,
+      DEFAULT_PART_TARGET_FILTER_MODE
+    ),
+    ...normalizeAuthoringTargetingState(partConfig, getDefaultPartAuthoringConfig())
+  };
+
+  if (normalizedPartConfig.targetFilterMode !== "custom") {
+    return null;
+  }
+
+  return buildAuthoringTargetingDefinition(normalizedPartConfig);
 }
 
 function buildAuthoringLinkedWallsDefinition(state = {}) {
@@ -2446,6 +2760,8 @@ function buildCompositeLineVariantDefinition(side, state) {
   const heatedSideConfig =
     state.partConfigs?.[`heated-side-${normalizedSide}`] ??
     getDefaultPartAuthoringConfig(`heated-side-${normalizedSide}`);
+  const wallBodyTargeting = buildPartAuthoringTargetingDefinition(wallBodyConfig);
+  const heatedSideTargeting = buildPartAuthoringTargetingDefinition(heatedSideConfig);
 
   return {
     label: getVariantLabel(normalizedSide === "right" ? "line-right" : "line-left"),
@@ -2461,6 +2777,11 @@ function buildCompositeLineVariantDefinition(side, state) {
         geometry: {
           type: "template"
         },
+        ...(wallBodyTargeting
+          ? {
+              targeting: wallBodyTargeting
+            }
+          : {}),
         triggers: buildConfiguredRootTriggers(wallBodyConfig.triggerConfigs)
       },
       {
@@ -2478,6 +2799,11 @@ function buildCompositeLineVariantDefinition(side, state) {
           offsetStart: 0,
           offsetEnd: state.sideThickness
         },
+        ...(heatedSideTargeting
+          ? {
+              targeting: heatedSideTargeting
+            }
+          : {}),
         triggers: buildConfiguredRootTriggers(heatedSideConfig.triggerConfigs)
       }
     ]
@@ -2490,6 +2816,8 @@ function buildCompositeRingVariantDefinition(side, state) {
   const heatedSideConfig =
     state.partConfigs?.[`heated-side-${normalizedSide}`] ??
     getDefaultPartAuthoringConfig(`heated-side-${normalizedSide}`);
+  const wallBodyTargeting = buildPartAuthoringTargetingDefinition(wallBodyConfig);
+  const heatedSideTargeting = buildPartAuthoringTargetingDefinition(heatedSideConfig);
 
   return {
     label: getVariantLabel(normalizedSide === "outer" ? "ring-outer" : "ring-inner"),
@@ -2507,6 +2835,11 @@ function buildCompositeRingVariantDefinition(side, state) {
           thickness: state.wallThickness,
           segments: 24
         },
+        ...(wallBodyTargeting
+          ? {
+              targeting: wallBodyTargeting
+            }
+          : {}),
         triggers: buildConfiguredRootTriggers(wallBodyConfig.triggerConfigs)
       },
       {
@@ -2526,6 +2859,11 @@ function buildCompositeRingVariantDefinition(side, state) {
           offsetEnd: state.sideThickness,
           segments: 24
         },
+        ...(heatedSideTargeting
+          ? {
+              targeting: heatedSideTargeting
+            }
+          : {}),
         triggers: buildConfiguredRootTriggers(heatedSideConfig.triggerConfigs)
       }
     ]
@@ -3516,6 +3854,8 @@ function buildTriggerEditorSections(triggerConfigs, item, {
 
 function buildCompositePartSections(formState, item) {
   const normalizedPartConfigs = normalizeAuthoringPartConfigs(formState.partConfigs);
+  const globalTargeting = normalizeAuthoringTargetingState(formState);
+  const globalTargetFilter = globalTargeting.targetFilter;
   const effectivePartIds = getEffectivePartIdsForBaseType(
     formState.baseType,
     formState.selectedVariant
@@ -3524,10 +3864,46 @@ function buildCompositePartSections(formState, item) {
   return effectivePartIds.map((partId) => {
     const partConfig = normalizedPartConfigs?.[partId] ??
       getDefaultPartAuthoringConfig(partId);
+    const targetFilterMode = normalizePartTargetFilterMode(partConfig.targetFilterMode);
+    const partTargeting = normalizeAuthoringTargetingState(partConfig);
+    const effectiveTargeting = targetFilterMode === "custom"
+      ? partTargeting
+      : globalTargeting;
 
     return {
       id: partId,
       label: getEffectiveAuthoringPartLabel(partId, formState.baseType, formState.selectedVariant),
+      targetFilterMode,
+      targetingMode: partTargeting.targetingMode,
+      targetingModeFieldName: getPartTargetingModeFieldName(partId),
+      targetSelfFieldName: getPartTargetSelfFieldName(partId),
+      targetAlliesFieldName: getPartTargetAlliesFieldName(partId),
+      targetEnemiesFieldName: getPartTargetEnemiesFieldName(partId),
+      targetingSourceFieldName: getPartTargetFilterModeFieldName(partId),
+      targetingSourceOptions: buildChoiceOptions(
+        getPartTargetingSourceChoices(),
+        targetFilterMode
+      ),
+      targetingModeOptions: buildChoiceOptions(
+        getTargetingModeChoices(),
+        partTargeting.targetingMode
+      ),
+      targetSelectionSummaryText: localizeTargetFilterLabel(effectiveTargeting.targetFilter),
+      targetSelectionOptions: buildChoiceOptions(
+        getTargetFilterChoices(),
+        effectiveTargeting.targetFilter
+      ),
+      targetFilterGlobalLabel: localizeTargetFilterLabel(globalTargetFilter),
+      targetFilterPartLabel: targetFilterMode === "custom"
+        ? localizeTargetFilterLabel(partTargeting.targetFilter)
+        : null,
+      targetFilterEffectiveLabel: localizeTargetFilterLabel(effectiveTargeting.targetFilter),
+      inheritsGlobalTargetFilter: targetFilterMode !== "custom",
+      showCustomTargetingOptions: targetFilterMode === "custom",
+      showCustomTargetSelection: targetFilterMode === "custom" && partTargeting.targetingMode === "custom",
+      targetSelf: partTargeting.targetSelf,
+      targetAllies: partTargeting.targetAllies,
+      targetEnemies: partTargeting.targetEnemies,
       triggerSections: buildTriggerEditorSections(partConfig.triggerConfigs, item, {
         partId
       })
@@ -3625,6 +4001,7 @@ function getLinkedLightPresetChoices() {
 
 function buildLinksTerrainContext(formState = {}) {
   const state = normalizeAuthoringFormState(formState);
+  const targetingState = normalizeAuthoringTargetingState(state);
   const activeLabels = [];
   const wallHeightSupported = isWallHeightSupported();
 
@@ -3633,7 +4010,7 @@ function buildLinksTerrainContext(formState = {}) {
   }
 
   activeLabels.push(
-    `${localize("PERSISTENT_ZONES.UI.Fields.TargetFilter", "Target Filter")}: ${localizeTargetFilterLabel(state.targetFilter)}`
+    `${localize("PERSISTENT_ZONES.UI.Fields.TargetFilter", "Target Filter")}: ${localizeTargetFilterLabel(targetingState.targetFilter)}`
   );
 
   if (state.linkedWallsEnabled) {
@@ -3683,10 +4060,18 @@ function buildLinksTerrainContext(formState = {}) {
     summaryText: activeLabels.length
       ? activeLabels.join(" | ")
       : localize("PERSISTENT_ZONES.UI.NoneOption", "None"),
-    targetFilterOptions: buildChoiceOptions(
-      getTargetFilterChoices(),
-      state.targetFilter
+    targetingModeOptions: buildChoiceOptions(
+      getTargetingModeChoices(),
+      targetingState.targetingMode
     ),
+    targetSelectionOptions: buildChoiceOptions(
+      getTargetFilterChoices(),
+      targetingState.targetFilter
+    ),
+    showCustomTargetSelection: targetingState.targetingMode === "custom",
+    targetSelf: targetingState.targetSelf,
+    targetAllies: targetingState.targetAllies,
+    targetEnemies: targetingState.targetEnemies,
     linkedWallsPresetOptions: buildChoiceOptions(
       getLinkedWallPresetChoices(),
       state.linkedWallsPreset
@@ -3711,8 +4096,8 @@ function buildLinksTerrainContext(formState = {}) {
 function getTargetFilterChoices() {
   return [
     {
-      value: "all",
-      label: localize("PERSISTENT_ZONES.UI.TargetFilters.All", "All")
+      value: "self",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self")
     },
     {
       value: "allies",
@@ -3721,14 +4106,32 @@ function getTargetFilterChoices() {
     {
       value: "enemies",
       label: localize("PERSISTENT_ZONES.UI.TargetFilters.Enemies", "Enemies")
+    }
+  ];
+}
+
+function getTargetingModeChoices() {
+  return [
+    {
+      value: "all",
+      label: localize("PERSISTENT_ZONES.UI.TargetingModes.All", "All")
     },
     {
-      value: "self",
-      label: localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self")
+      value: "custom",
+      label: localize("PERSISTENT_ZONES.UI.TargetingModes.Custom", "Custom")
+    }
+  ];
+}
+
+function getPartTargetingSourceChoices() {
+  return [
+    {
+      value: "inherit",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilterModes.Inherit", "Use Default")
     },
     {
-      value: "not-self",
-      label: localize("PERSISTENT_ZONES.UI.TargetFilters.NotSelf", "Not Self")
+      value: "custom",
+      label: localize("PERSISTENT_ZONES.UI.TargetFilterModes.Custom", "Custom Rule")
     }
   ];
 }
@@ -4152,7 +4555,11 @@ function localizeMovementModeLabel(movementMode) {
 }
 
 function localizeTargetFilterLabel(targetFilter) {
-  switch (normalizeAuthoringTargetFilter(targetFilter)) {
+  const normalizedFilter = normalizeAuthoringTargetFilter(targetFilter);
+
+  switch (normalizedFilter) {
+    case "all":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.All", "All");
     case "allies":
       return localize("PERSISTENT_ZONES.UI.TargetFilters.Allies", "Allies");
     case "enemies":
@@ -4161,9 +4568,21 @@ function localizeTargetFilterLabel(targetFilter) {
       return localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self");
     case "not-self":
       return localize("PERSISTENT_ZONES.UI.TargetFilters.NotSelf", "Not Self");
-    case "all":
+    case "self+allies":
+      return [
+        localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self"),
+        localize("PERSISTENT_ZONES.UI.TargetFilters.Allies", "Allies")
+      ].join(" + ");
+    case "self+enemies":
+      return [
+        localize("PERSISTENT_ZONES.UI.TargetFilters.Self", "Self"),
+        localize("PERSISTENT_ZONES.UI.TargetFilters.Enemies", "Enemies")
+      ].join(" + ");
+    case "none":
+      return localize("PERSISTENT_ZONES.UI.TargetFilters.None", "No Targets");
+    case "custom":
     default:
-      return localize("PERSISTENT_ZONES.UI.TargetFilters.All", "All");
+      return localize("PERSISTENT_ZONES.UI.TargetingModes.Custom", "Custom");
   }
 }
 
@@ -4345,9 +4764,148 @@ function normalizeOnMoveStepMode(value, fallback = "distance") {
 
 function normalizeAuthoringTargetFilter(value) {
   const normalized = String(value ?? DEFAULT_TARGET_FILTER).trim().toLowerCase();
-  return ["all", "allies", "enemies", "self", "not-self"].includes(normalized)
+  return ["all", "allies", "enemies", "self", "not-self", "self+allies", "self+enemies", "none", "custom"].includes(normalized)
     ? normalized
     : DEFAULT_TARGET_FILTER;
+}
+
+function normalizeAuthoringTargetingMode(value, fallback = DEFAULT_TARGETING_MODE) {
+  return String(value ?? fallback).trim().toLowerCase() === "custom"
+    ? "custom"
+    : "all";
+}
+
+function normalizeAuthoringTargetingState(targetingLike = {}, fallbackState = {}) {
+  const definition = isPlainObject(targetingLike)
+    ? targetingLike
+    : {
+        targetFilter: targetingLike
+      };
+  const fallbackSelection = buildAuthoringTargetSelectionsFromFilter(
+    pickFirstDefined(
+      fallbackState?.targetFilter,
+      DEFAULT_TARGET_FILTER
+    )
+  );
+  const explicitSelection = buildAuthoringTargetSelectionsFromFilter(
+    pickFirstDefined(
+      definition.targetFilter,
+      definition.mode,
+      definition.includeSelf === false ? "not-self" : null,
+      fallbackState?.targetFilter,
+      DEFAULT_TARGET_FILTER
+    )
+  );
+  const hasExplicitSelections = ["targetSelf", "targetAllies", "targetEnemies", "self", "allies", "enemies"]
+    .some((key) => definition?.[key] !== undefined);
+  const targetingMode = normalizeAuthoringTargetingMode(
+    pickFirstDefined(
+      definition.targetingMode,
+      definition.mode === "custom" ? "custom" : null,
+      hasExplicitSelections ? "custom" : null,
+      fallbackState?.targetingMode,
+      explicitSelection.all ? "all" : "custom"
+    ),
+    DEFAULT_TARGETING_MODE
+  );
+  const targetSelf = targetingMode === "all"
+    ? true
+    : coerceBoolean(
+      pickFirstDefined(definition.targetSelf, definition.self, definition.includeSelf),
+      explicitSelection.self ?? fallbackSelection.self
+    ) ?? explicitSelection.self ?? fallbackSelection.self;
+  const targetAllies = targetingMode === "all"
+    ? true
+    : coerceBoolean(
+      pickFirstDefined(definition.targetAllies, definition.allies),
+      explicitSelection.allies ?? fallbackSelection.allies
+    ) ?? explicitSelection.allies ?? fallbackSelection.allies;
+  const targetEnemies = targetingMode === "all"
+    ? true
+    : coerceBoolean(
+      pickFirstDefined(definition.targetEnemies, definition.enemies),
+      explicitSelection.enemies ?? fallbackSelection.enemies
+    ) ?? explicitSelection.enemies ?? fallbackSelection.enemies;
+  const targetFilter = summarizeAuthoringTargetSelections({
+    self: targetSelf,
+    allies: targetAllies,
+    enemies: targetEnemies
+  });
+
+  return {
+    targetingMode,
+    targetSelf,
+    targetAllies,
+    targetEnemies,
+    targetFilter
+  };
+}
+
+function buildAuthoringTargetSelectionsFromFilter(targetFilter) {
+  switch (normalizeAuthoringTargetFilter(targetFilter)) {
+    case "self":
+      return { all: false, self: true, allies: false, enemies: false };
+    case "allies":
+      return { all: false, self: false, allies: true, enemies: false };
+    case "enemies":
+      return { all: false, self: false, allies: false, enemies: true };
+    case "not-self":
+      return { all: false, self: false, allies: true, enemies: true };
+    case "self+allies":
+      return { all: false, self: true, allies: true, enemies: false };
+    case "self+enemies":
+      return { all: false, self: true, allies: false, enemies: true };
+    case "none":
+      return { all: false, self: false, allies: false, enemies: false };
+    case "all":
+    default:
+      return { all: true, self: true, allies: true, enemies: true };
+  }
+}
+
+function summarizeAuthoringTargetSelections({
+  self = false,
+  allies = false,
+  enemies = false
+} = {}) {
+  if (self && allies && enemies) {
+    return "all";
+  }
+
+  if (!self && !allies && !enemies) {
+    return "none";
+  }
+
+  if (self && !allies && !enemies) {
+    return "self";
+  }
+
+  if (!self && allies && !enemies) {
+    return "allies";
+  }
+
+  if (!self && !allies && enemies) {
+    return "enemies";
+  }
+
+  if (!self && allies && enemies) {
+    return "not-self";
+  }
+
+  if (self && allies && !enemies) {
+    return "self+allies";
+  }
+
+  if (self && !allies && enemies) {
+    return "self+enemies";
+  }
+
+  return "custom";
+}
+
+function normalizePartTargetFilterMode(value, fallback = DEFAULT_PART_TARGET_FILTER_MODE) {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  return normalized === "custom" ? "custom" : "inherit";
 }
 
 function normalizeAuthoringMovementMode(value) {

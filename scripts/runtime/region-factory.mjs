@@ -749,11 +749,22 @@ function buildPartRuntimeDefinition(normalizedDefinition, zonePart, {
   partIndex,
   partCount
 }) {
+  const targetingGlobal = duplicateData(
+    zonePart?.targetingGlobal ?? normalizedDefinition?.targeting ?? {}
+  );
+  const targetingPart = duplicateData(zonePart?.targetingPart ?? null);
+  const targetingEffective = duplicateData(
+    zonePart?.targetingEffective ?? zonePart?.targeting ?? normalizedDefinition?.targeting ?? {}
+  );
+
   return {
     ...duplicateData(normalizedDefinition),
     label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
     geometry: duplicateData(zonePart?.geometry ?? { type: "template" }),
-    targeting: duplicateData(zonePart?.targeting ?? normalizedDefinition?.targeting ?? {}),
+    targeting: duplicateData(targetingEffective),
+    targetingGlobal,
+    targetingPart,
+    targetingEffective: duplicateData(targetingEffective),
     terrain: duplicateData(zonePart?.terrain ?? normalizedDefinition?.terrain ?? {}),
     linkedWalls: duplicateData(zonePart?.linkedWalls ?? normalizedDefinition?.linkedWalls ?? {}),
     linkedLight: duplicateData(zonePart?.linkedLight ?? normalizedDefinition?.linkedLight ?? {}),
@@ -768,7 +779,8 @@ function buildPartRuntimeDefinition(normalizedDefinition, zonePart, {
     part: {
       id: zonePart?.id ?? `part-${partIndex + 1}`,
       label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
-      geometryType: zonePart?.geometry?.type ?? "template"
+      geometryType: zonePart?.geometry?.type ?? "template",
+      targetFilterMode: zonePart?.targetingInherited ? "inherit" : "part"
     }
   };
 }

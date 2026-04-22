@@ -407,7 +407,7 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   position: sticky;
   bottom: 0;
   z-index: 25;
@@ -421,6 +421,29 @@
     0 -10px 24px rgba(0, 0, 0, 0.18),
     0 8px 22px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.persistent-zones-item-config__footer-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.persistent-zones-item-config__footer-status-text {
+  color: var(--pz-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.persistent-zones-item-config__footer-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .persistent-zones-item-config__card--actions .button {
@@ -535,6 +558,10 @@
   display: grid;
   gap: 0.45rem;
   padding-top: 0.2rem;
+}
+
+.persistent-zones-item-config__section-body > h3:first-child {
+  margin-top: 0;
 }
 
 .persistent-zones-item-config__profile-row {
@@ -700,8 +727,14 @@
     justify-content: stretch;
   }
 
+  .persistent-zones-item-config__footer-status,
+  .persistent-zones-item-config__footer-actions,
   .persistent-zones-item-config__inline-actions .button,
   .persistent-zones-item-config__card--actions .button {
     flex: 1 1 100%;
+  }
+
+  .persistent-zones-item-config__footer-actions {
+    margin-left: 0;
   }
 }
