@@ -13,6 +13,7 @@ import {
   collectTemplateSourceDebugSnapshot,
   resolveTemplateSourceContext
 } from "./template-source-context.mjs";
+import { inspectZoneTriggeredActivity } from "./activity-compatibility.mjs";
 import {
   getZoneDefinitionFromItem,
   normalizeZoneDefinition
@@ -24,6 +25,7 @@ export function createPersistentZonesDebugApi() {
     applyTestDefinitionToItem,
     clearTestDefinitionFromItem,
     inspectItemDefinition,
+    inspectZoneTriggerActivities,
     inspectSelectedVariant,
     inspectTemplateSource,
     markNextMovement
@@ -354,6 +356,41 @@ export async function inspectItemDefinition(itemOrUuid) {
   });
 
   return result;
+}
+
+export async function inspectZoneTriggerActivities(itemOrUuid) {
+  if (!assertDebugGM("inspectZoneTriggerActivities")) {
+    return null;
+  }
+
+  const item = await resolveItemDocument(itemOrUuid);
+  if (!item) {
+    debug("Could not resolve Item for persistent-zones zone-trigger activity inspect.", {
+      itemOrUuid
+    });
+    return null;
+  }
+
+  const activities = Array.from(item?.system?.activities ?? [])
+    .map((entry) => Array.isArray(entry) ? entry[1] : entry)
+    .filter(Boolean)
+    .map((activity) => inspectZoneTriggeredActivity(activity));
+
+  debug("Inspected persistent-zones zone-trigger activities on Item.", {
+    itemUuid: item.uuid,
+    itemName: item.name,
+    activityCount: activities.length,
+    compatibleCount: activities.filter((activity) => activity.compatible).length,
+    activities
+  });
+
+  return {
+    itemUuid: item.uuid,
+    itemName: item.name,
+    activityCount: activities.length,
+    compatibleCount: activities.filter((activity) => activity.compatible).length,
+    activities
+  };
 }
 
 export async function inspectSelectedVariant(itemOrUuid, options = {}) {

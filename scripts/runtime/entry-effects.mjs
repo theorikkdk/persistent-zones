@@ -221,9 +221,13 @@ async function applyActivityTriggerEffect({
     triggerMode,
     selectedActivity,
     activityFound: true,
+    activityTypeRaw: activityCompatibility.activityTypeRaw,
     activityType: activityCompatibility.activityType,
+    healCompatibilityMode: activityCompatibility.healCompatibilityMode ?? null,
     activityCompatibility: activityCompatibility.code,
     activitySupported: activityCompatibility.supported,
+    supportsHealing: activityCompatibility.supportsHealing ?? false,
+    supportsTempHp: activityCompatibility.supportsTempHp ?? false,
     usedFullActivityFlow: false,
     templateCreationPrevented: activityCompatibility.templateCreationPrevented,
     consumptionPrevented: activityCompatibility.consumptionPrevented,
@@ -241,8 +245,12 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
+      healCompatibilityMode: activityCompatibility.healCompatibilityMode ?? null,
       activityCompatibility: activityCompatibility.code,
+      supportsHealing: activityCompatibility.supportsHealing ?? false,
+      supportsTempHp: activityCompatibility.supportsTempHp ?? false,
       usedFullActivityFlow: false,
       templateCreationPrevented: activityCompatibility.templateCreationPrevented,
       consumptionPrevented: activityCompatibility.consumptionPrevented,
@@ -256,6 +264,7 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
       activityCompatibility: activityCompatibility.code,
       usedFullActivityFlow: false,
@@ -287,9 +296,13 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
+      healCompatibilityMode: activityCompatibility.healCompatibilityMode ?? null,
       activityCompatibility: activityCompatibility.code,
       activityTriggered,
+      supportsHealing: activityCompatibility.supportsHealing ?? false,
+      supportsTempHp: activityCompatibility.supportsTempHp ?? false,
       usedFullActivityFlow: false,
       templateCreationPrevented: activityCompatibility.templateCreationPrevented,
       consumptionPrevented: activityCompatibility.consumptionPrevented,
@@ -304,7 +317,9 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
+      healCompatibilityMode: activityCompatibility.healCompatibilityMode ?? null,
       activityCompatibility: activityCompatibility.code,
       activityTriggered,
       itemUuid: item?.uuid ?? null,
@@ -325,6 +340,7 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
       activityCompatibility: activityCompatibility.code
     });
@@ -335,8 +351,11 @@ async function applyActivityTriggerEffect({
       triggerMode,
       selectedActivity,
       activityFound: true,
+      activityTypeRaw: activityCompatibility.activityTypeRaw,
       activityType: activityCompatibility.activityType,
       activityCompatibility: activityCompatibility.code,
+      supportsHealing: activityCompatibility.supportsHealing ?? false,
+      supportsTempHp: activityCompatibility.supportsTempHp ?? false,
       usedFullActivityFlow: false,
       templateCreationPrevented: activityCompatibility.templateCreationPrevented,
       consumptionPrevented: activityCompatibility.consumptionPrevented,
@@ -373,6 +392,15 @@ async function executeZoneTriggeredActivity({
         timing,
         compatibility
       });
+    case "heal":
+      return executeZoneTriggeredHealActivity({
+        activity,
+        item,
+        regionDocument,
+        tokenDocument,
+        timing,
+        compatibility
+      });
     default:
       return {
         triggered: false,
@@ -399,6 +427,7 @@ async function executeZoneTriggeredDamageActivity({
   });
   const rawDamages = buildDamageEntriesFromRolls(damageRolls);
   const appliedDamage = await applyDamageEntriesToActor(actor, rawDamages);
+  const entrySummary = summarizeDamageEntries(rawDamages);
 
   return {
     triggered: rawDamages.length > 0,
@@ -409,7 +438,8 @@ async function executeZoneTriggeredDamageActivity({
       rollCount: Array.isArray(damageRolls) ? damageRolls.length : 0,
       damageCount: rawDamages.length,
       damages: rawDamages,
-      appliedDamage
+      appliedDamage,
+      summary: entrySummary
     }
   };
 }
@@ -447,6 +477,7 @@ async function executeZoneTriggeredSaveActivity({
     String(activity?.damage?.onSave ?? "half").toLowerCase()
   );
   const appliedDamage = await applyDamageEntriesToActor(actor, adjustedDamages);
+  const entrySummary = summarizeDamageEntries(adjustedDamages);
 
   return {
     triggered: Boolean(saveResult || adjustedDamages.length),
@@ -458,7 +489,72 @@ async function executeZoneTriggeredSaveActivity({
       damageCount: adjustedDamages.length,
       damages: adjustedDamages,
       appliedDamage,
-      damageOnSave: String(activity?.damage?.onSave ?? "half").toLowerCase()
+      damageOnSave: String(activity?.damage?.onSave ?? "half").toLowerCase(),
+      summary: entrySummary
+    }
+  };
+}
+
+async function executeZoneTriggeredHealActivity({
+  activity,
+  item,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  compatibility = {}
+}) {
+  const actor = tokenDocument?.actor ?? null;
+  const healingResolutionPath = resolveHealingResolutionPath(compatibility);
+  const healingRolls = await rollZoneTriggeredActivityDamage({
+    activity,
+    item,
+    regionDocument,
+    tokenDocument,
+    timing
+  });
+  const healingEntries = buildDamageEntriesFromRolls(healingRolls, {
+    defaultType: compatibility.healingTypes?.[0] ?? "healing"
+  });
+  const appliedHealing = await applyDamageEntriesToActor(actor, healingEntries);
+  const entrySummary = summarizeDamageEntries(healingEntries);
+
+  debug(`Applied ${timing} activity healing.`, {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    actorUuid: actor?.uuid ?? null,
+    itemUuid: item?.uuid ?? null,
+    timing,
+    triggerMode: "activity",
+    activityType: compatibility.activityType ?? "heal",
+    healCompatibilityMode: compatibility.healCompatibilityMode ?? null,
+    compatibilityReason: compatibility.reasonsText ?? "",
+    healingResolutionPath,
+    activityTriggered: healingEntries.length > 0,
+    supportsHealing: compatibility.supportsHealing ?? false,
+    supportsTempHp: compatibility.supportsTempHp ?? false,
+    usedFullActivityFlow: false,
+    templateCreationPrevented: compatibility.templateCreationPrevented ?? false,
+    consumptionPrevented: compatibility.consumptionPrevented ?? true,
+    rollCount: Array.isArray(healingRolls) ? healingRolls.length : 0,
+    healingCount: entrySummary.healingCount,
+    healingTotal: entrySummary.healingTotal,
+    tempHpCount: entrySummary.tempHpCount,
+    tempHpTotal: entrySummary.tempHpTotal
+  });
+
+  return {
+    triggered: healingEntries.length > 0,
+    activityType: compatibility.activityType ?? "heal",
+    healCompatibilityMode: compatibility.healCompatibilityMode ?? null,
+    healingResolutionPath,
+    save: null,
+    healing: {
+      type: "activity",
+      rollCount: Array.isArray(healingRolls) ? healingRolls.length : 0,
+      healingCount: healingEntries.length,
+      effects: healingEntries,
+      appliedDamage: appliedHealing,
+      summary: entrySummary
     }
   };
 }
@@ -527,30 +623,43 @@ async function rollZoneTriggeredActivityDamage({
     return [];
   }
 
+  const activityType = normalizeZoneTriggerActivityType(activity?.type ?? activity?.metadata?.type, {
+    activity
+  });
+  const activityTypeRaw = String(
+    activity?.type ??
+    activity?.metadata?.type ??
+    activity?.constructor?.metadata?.type ??
+    ""
+  ).trim().toLowerCase();
+
   const rolls = await activity.rollDamage({}, {
     configure: false
   }, {
     create: true,
     data: {
-      flavor: `${item?.name ?? regionDocument?.name ?? "Persistent Zone"}: ${timing} activity damage`
+      flavor: `${item?.name ?? regionDocument?.name ?? "Persistent Zone"}: ${timing} activity ${activityType || "effect"}`
     }
   });
 
-  debug(`Calculated ${timing} activity damage.`, {
+  debug(`Calculated ${timing} activity roll.`, {
     regionId: regionDocument?.id ?? null,
     tokenId: tokenDocument?.id ?? null,
     actorUuid: tokenDocument?.actor?.uuid ?? null,
     itemUuid: item?.uuid ?? null,
     timing,
     triggerMode: "activity",
-    activityType: normalizeZoneTriggerActivityType(activity?.type ?? activity?.metadata?.type),
+    activityTypeRaw,
+    activityType,
     rollCount: Array.isArray(rolls) ? rolls.length : 0
   });
 
   return Array.isArray(rolls) ? rolls : [];
 }
 
-function buildDamageEntriesFromRolls(rolls) {
+function buildDamageEntriesFromRolls(rolls, {
+  defaultType = null
+} = {}) {
   if (!Array.isArray(rolls) || !rolls.length) {
     return [];
   }
@@ -559,7 +668,6 @@ function buildDamageEntriesFromRolls(rolls) {
     .map((roll) => {
       const total = coerceNumber(roll?.total, 0);
       const damageType = roll?.options?.type ?? null;
-      const isHealing = Boolean(damageType && CONFIG?.DND5E?.healingTypes?.[damageType]);
       const properties = Array.isArray(roll?.options?.properties)
         ? roll.options.properties
         : roll?.options?.properties instanceof Set
@@ -567,12 +675,59 @@ function buildDamageEntriesFromRolls(rolls) {
           : [];
 
       return {
-        value: isHealing ? -Math.max(total, 0) : Math.max(total, 0),
-        type: damageType,
+        value: Math.max(total, 0),
+        type: damageType ?? defaultType,
         properties: new Set(properties)
       };
     })
     .filter((entry) => entry.value !== 0);
+}
+
+function resolveHealingResolutionPath(compatibility = {}) {
+  switch (String(compatibility?.healCompatibilityMode ?? "").trim().toLowerCase()) {
+    case "healing-formula":
+      return "rollDamage-healing-formula";
+    case "healing-damage-parts":
+      return "rollDamage-healing-damage-parts";
+    case "typed-heal-field":
+    case "typed-heal-types":
+    case "typed-heal":
+      return "rollDamage-typed-heal";
+    case "healing-field":
+      return "rollDamage-healing-field";
+    default:
+      return "rollDamage";
+  }
+}
+
+function summarizeDamageEntries(entries) {
+  return Array.from(entries ?? []).reduce((summary, entry) => {
+    const value = Math.max(coerceNumber(entry?.value, 0), 0);
+    const type = String(entry?.type ?? "").trim().toLowerCase();
+
+    if (type === "healing") {
+      summary.healingCount += 1;
+      summary.healingTotal += value;
+      return summary;
+    }
+
+    if (type === "temphp") {
+      summary.tempHpCount += 1;
+      summary.tempHpTotal += value;
+      return summary;
+    }
+
+    summary.damageCount += 1;
+    summary.damageTotal += value;
+    return summary;
+  }, {
+    damageCount: 0,
+    damageTotal: 0,
+    healingCount: 0,
+    healingTotal: 0,
+    tempHpCount: 0,
+    tempHpTotal: 0
+  });
 }
 
 function adjustDamageEntriesForSave(damages, saveResult, onSuccess = "half") {
@@ -609,13 +764,17 @@ async function applyDamageEntriesToActor(actor, damages) {
     calculatedDamage?.amount,
     damages.reduce((sum, entry) => sum + coerceNumber(entry?.value, 0), 0)
   );
+  const appliedTempHp = coerceNumber(calculatedDamage?.temp, 0);
 
   if (typeof actor.applyDamage === "function") {
     await actor.applyDamage(damages);
     return appliedDamage;
   }
 
-  await applyDamageToActor(actor, Math.max(appliedDamage, 0));
+  await applyDamageEntriesFallbackToActor(actor, {
+    amount: appliedDamage,
+    temp: appliedTempHp
+  });
   return appliedDamage;
 }
 
@@ -787,6 +946,39 @@ async function applyDamageToActor(actor, appliedDamage) {
   await actor.update({
     "system.attributes.hp.temp": newTempHp,
     "system.attributes.hp.value": newHpValue
+  });
+}
+
+async function applyDamageEntriesFallbackToActor(actor, {
+  amount = 0,
+  temp = 0
+} = {}) {
+  const hpValue = coerceNumber(actor?.system?.attributes?.hp?.value, null);
+  if (hpValue === null) {
+    return;
+  }
+
+  const hpMax = coerceNumber(actor?.system?.attributes?.hp?.max, hpValue);
+  const tempHp = coerceNumber(actor?.system?.attributes?.hp?.temp, 0);
+  let nextHpValue = hpValue;
+  let nextTempHp = tempHp;
+
+  if (amount > 0) {
+    let remainingDamage = amount;
+    nextTempHp = Math.max(tempHp - remainingDamage, 0);
+    remainingDamage -= tempHp - nextTempHp;
+    nextHpValue = Math.max(hpValue - remainingDamage, 0);
+  } else if (amount < 0) {
+    nextHpValue = Math.min(hpValue + Math.abs(amount), hpMax);
+  }
+
+  if (temp > nextTempHp) {
+    nextTempHp = temp;
+  }
+
+  await actor.update({
+    "system.attributes.hp.temp": nextTempHp,
+    "system.attributes.hp.value": nextHpValue
   });
 }
 

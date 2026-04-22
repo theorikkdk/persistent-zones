@@ -37,6 +37,7 @@ import {
   resolveItemTemplateTypeDetection
 } from "../runtime/zone-definition.mjs";
 import {
+  inspectZoneTriggeredActivity,
   resolveZoneTriggeredActivityCompatibility,
   ZONE_TRIGGER_SUPPORTED_ACTIVITY_TYPES
 } from "../runtime/activity-compatibility.mjs";
@@ -4171,23 +4172,45 @@ function getTriggerModeChoices() {
 }
 
 function getItemZoneTriggerActivities(item) {
-  return Array.from(item?.system?.activities ?? [])
+  const activities = Array.from(item?.system?.activities ?? [])
     .map((entry) => Array.isArray(entry) ? entry[1] : entry)
     .filter(Boolean)
     .map((activity) => {
-      const value = String(activity?.id ?? "").trim();
-      const label = String(activity?.name ?? activity?.id ?? "").trim();
+      const inspection = inspectZoneTriggeredActivity(activity);
+      const value = String(activity?.id ?? activity?._id ?? inspection.activityId ?? "").trim();
+      const label = String(activity?.name ?? activity?._source?.name ?? inspection.visibleLabel ?? value).trim();
       const compatibility = resolveZoneTriggeredActivityCompatibility(activity);
+
+      debug("Evaluated zone-trigger activity compatibility.", {
+        itemUuid: item?.uuid ?? null,
+        itemName: item?.name ?? null,
+        activityId: inspection.activityId ?? value,
+        activityName: inspection.activityName ?? label,
+        visibleLabel: inspection.visibleLabel ?? label,
+        typeDeclared: inspection.typeDeclared ?? null,
+        metadataType: inspection.metadataType ?? null,
+        constructorType: inspection.constructorType ?? null,
+        activityTypeRaw: inspection.activityTypeRaw ?? null,
+        activityType: inspection.activityType ?? null,
+        healCompatibilityMode: inspection.healCompatibilityMode ?? null,
+        nativeSignals: inspection.nativeSignals,
+        activityCompatibility: inspection.compatibility,
+        compatibilityReason: inspection.compatibilityReason || null,
+        supported: inspection.compatible === true
+      });
 
       return {
         value,
         label,
         compatibility,
+        inspection,
         compatibilityReasonLabel: localizeActivityCompatibilityReason(compatibility)
       };
     })
     .filter((choice) => choice.value && choice.label)
     .sort((left, right) => left.label.localeCompare(right.label, game.i18n?.lang ?? "en"));
+
+  return activities;
 }
 
 function buildZoneTriggerActivityFieldContext(item, selectedActivityId = "") {
@@ -4403,6 +4426,12 @@ function localizeActivityCompatibilityReason(compatibility = {}) {
         "The activity has no resolved save DC."
       );
 
+    case "missing-healing-parts":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityCompatibility.MissingHealingParts",
+        "The activity has no healing formula."
+      );
+
     default:
       return compatibility?.reasonsText || localize(
         "PERSISTENT_ZONES.UI.ActivityCompatibility.Incompatible",
@@ -4433,6 +4462,12 @@ function formatActivityTypeLabel(activityType) {
       return localize(
         "PERSISTENT_ZONES.UI.ActivityTypes.Save",
         "Save"
+      );
+
+    case "heal":
+      return localize(
+        "PERSISTENT_ZONES.UI.ActivityTypes.Heal",
+        "Healing"
       );
 
     default:

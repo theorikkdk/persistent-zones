@@ -178,6 +178,7 @@
       "ActivityTypes": {
         "Damage": "D\u00e9g\u00e2ts",
         "Save": "Save",
+        "Heal": "Soin",
         "Unknown": "Inconnue"
       },
       "ActivityCompatibility": {
@@ -192,7 +193,8 @@
         "UnsupportedType": "Type d'activit\u00e9 non pris en charge",
         "MissingDamageParts": "L'activit\u00e9 n'a aucune partie de d\u00e9g\u00e2ts.",
         "MissingSaveAbility": "L'activit\u00e9 n'a pas de caract\u00e9ristique de save cible.",
-        "MissingSaveDc": "L'activit\u00e9 n'a pas de DD de save r\u00e9solu."
+        "MissingSaveDc": "L'activit\u00e9 n'a pas de DD de save r\u00e9solu.",
+        "MissingHealingParts": "L'activit\u00e9 n'a pas de formule de soin."
       },
       "Compatibility": {
         "CompatibleBaseTypes": "Types de base compatibles",

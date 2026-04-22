@@ -178,6 +178,7 @@
       "ActivityTypes": {
         "Damage": "Damage",
         "Save": "Save",
+        "Heal": "Healing",
         "Unknown": "Unknown"
       },
       "ActivityCompatibility": {
@@ -192,7 +193,8 @@
         "UnsupportedType": "Unsupported activity type",
         "MissingDamageParts": "The activity has no damage parts.",
         "MissingSaveAbility": "The activity has no target save ability.",
-        "MissingSaveDc": "The activity has no resolved save DC."
+        "MissingSaveDc": "The activity has no resolved save DC.",
+        "MissingHealingParts": "The activity has no healing formula."
       },
       "Compatibility": {
         "CompatibleBaseTypes": "Compatible base types",
