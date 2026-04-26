@@ -21,6 +21,10 @@ import {
   rebuildActiveRegionsForItem
 } from "../runtime/concentration-cleanup.mjs";
 import {
+  detectLegacyMovementStopFlags,
+  isMovementStopGlobalEnabled
+} from "../settings.mjs";
+import {
   deleteUserPersistentZoneProfile,
   duplicatePersistentZoneProfile,
   evaluatePersistentZoneProfileCompatibility,
@@ -174,7 +178,13 @@ class PersistentZonesItemConfig extends FormApplication {
     const draftDefinition = buildDefinitionFromAuthoringState(formState, {
       item: this.itemDocument
     });
-    const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition);
+    const movementStopContext = buildMovementStopContext({
+      definition: rawDefinition
+    });
+    const preview = buildDefinitionPreview(this.itemDocument, formState, draftDefinition, {
+      storedDefinition: rawDefinition,
+      movementStopContext
+    });
     const profileListContext = buildProfileListContext({
       selectedProfileId: this._selectedProfileId,
       filterText: this._profileFilter
@@ -254,6 +264,7 @@ class PersistentZonesItemConfig extends FormApplication {
       profileListContext,
       selectedProfileContext,
       linksTerrainContext,
+      movementStopContext,
       templateContextSummaryText,
       typeVariantSummaryText,
       geometrySummaryText,
@@ -1253,10 +1264,16 @@ function getItemAuthoringButtonState(item) {
   };
 }
 
-function buildDefinitionPreview(item, formState, definition) {
+function buildDefinitionPreview(item, formState, definition, {
+  storedDefinition = null,
+  movementStopContext = null
+} = {}) {
   const selectionContext = resolveAuthoringSelectionContext(formState, item);
   const templateTypeContext = selectionContext.templateTypeContext;
   const previewTemplateDocument = buildPreviewTemplateDocument(selectionContext.state, item);
+  const effectiveMovementStopContext = movementStopContext ?? buildMovementStopContext({
+    definition: storedDefinition ?? definition
+  });
 
   try {
     const normalizedDefinition = normalizeZoneDefinition(definition, {
@@ -1309,6 +1326,7 @@ function buildDefinitionPreview(item, formState, definition) {
         selectionContext,
         previewTemplateDocument,
         templateTypeContext,
+        movementStopContext: effectiveMovementStopContext,
         normalizedDefinition,
         isValid,
         reasons,
@@ -1350,6 +1368,7 @@ function buildDefinitionPreview(item, formState, definition) {
         selectionContext,
         previewTemplateDocument,
         templateTypeContext,
+        movementStopContext: effectiveMovementStopContext,
         normalizedDefinition: null,
         isValid: false,
         reasons,
@@ -1399,6 +1418,48 @@ function buildDefinitionPreviewStatus({
   };
 }
 
+function buildMovementStopContext({
+  definition = null
+} = {}) {
+  const globalEnabled = isMovementStopGlobalEnabled();
+  const legacyFlagDetected = detectLegacyMovementStopFlags(definition);
+  const supportedTriggerLabels = [
+    getTriggerTimingLabel("onEnter"),
+    getTriggerTimingLabel("onMove")
+  ].join(" / ");
+
+  return {
+    globalEnabled,
+    legacyFlagDetected,
+    supportedTriggerLabels,
+    statusLabel: globalEnabled
+      ? localize("PERSISTENT_ZONES.UI.Common.Enabled", "Enabled")
+      : localize("PERSISTENT_ZONES.UI.Common.Disabled", "Disabled"),
+    statusSummaryText: globalEnabled
+      ? localize("PERSISTENT_ZONES.UI.Common.EnabledGlobally", "Enabled globally")
+      : localize("PERSISTENT_ZONES.UI.Common.DisabledGlobally", "Disabled globally"),
+    statusHint: globalEnabled
+      ? formatLocalize(
+        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalEnabled",
+        { triggers: supportedTriggerLabels },
+        `Movement stop is enabled globally for ${supportedTriggerLabels}.`
+      )
+      : localize(
+        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalDisabled",
+        "Movement stop is disabled globally in the module settings."
+      ),
+    legacyStatusLabel: legacyFlagDetected
+      ? localize("PERSISTENT_ZONES.UI.Common.Detected", "Detected")
+      : localize("PERSISTENT_ZONES.UI.Common.NotDetected", "Not detected"),
+    legacyHint: legacyFlagDetected
+      ? localize(
+        "PERSISTENT_ZONES.UI.Help.MovementStopLegacyDetected",
+        "Legacy local movement-stop flags were detected on the stored definition. The global module setting now controls movement stop."
+      )
+      : null
+  };
+}
+
 function collectAuthoringFeatureWarnings(formState = {}) {
   const warnings = [];
   const normalizedState = normalizeAuthoringFormState(formState);
@@ -1425,6 +1486,7 @@ function buildStructuredDebugInspector({
   selectionContext = null,
   previewTemplateDocument = null,
   templateTypeContext = null,
+  movementStopContext = null,
   normalizedDefinition = null,
   isValid = false,
   reasons = [],
@@ -1436,6 +1498,9 @@ function buildStructuredDebugInspector({
   });
   const effectiveSelectionContext = selectionContext ?? resolveAuthoringSelectionContext(effectiveState, item);
   const effectiveTemplateTypeContext = templateTypeContext ?? effectiveSelectionContext.templateTypeContext;
+  const effectiveMovementStopContext = movementStopContext ?? buildMovementStopContext({
+    definition: normalizedDefinition
+  });
   const normalizedWarnings = Array.from(warnings ?? []).filter(Boolean);
   const normalizedReasons = Array.from(reasons ?? []).filter(Boolean);
   const previewStatus = buildDefinitionPreviewStatus({
@@ -1493,6 +1558,14 @@ function buildStructuredDebugInspector({
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.PartCount", "Part Count"),
         String(partSummaries.length)
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.MovementStop", "Movement Stop"),
+        effectiveMovementStopContext.statusSummaryText
+      ),
+      buildDebugInspectorRow(
+        localize("PERSISTENT_ZONES.UI.Fields.LegacyMovementStop", "Legacy Local Stop Flags"),
+        effectiveMovementStopContext.legacyStatusLabel
       ),
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.TargetFilter", "Target Filter"),
@@ -2081,7 +2154,6 @@ function getDefaultTriggerAuthoringConfig(overrides = {}) {
     cellStep: 1,
     movementMode: "any",
     distanceStep: getDefaultOnMoveDistanceStep(),
-    stopMovementOnTrigger: false,
     activityId: "",
     ...(duplicateData(overrides) ?? {})
   };
@@ -2236,14 +2308,6 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
         fallback.distanceStep
       ),
       fallback.distanceStep
-    ),
-    stopMovementOnTrigger: coerceBoolean(
-      pickFirstDefined(
-        definition.stopMovementOnTrigger,
-        definition.stopOnTrigger,
-        fallback.stopMovementOnTrigger
-      ),
-      fallback.stopMovementOnTrigger
     ),
     activityId
   };
@@ -2482,7 +2546,6 @@ function readTriggerAuthoringFormState(form, existingTriggerConfigs = {}, {
       stepMode: readOptionalValue(form, getTriggerFieldName("stepMode", timing, { partId }), existingConfig.stepMode),
       cellStep: readOptionalValue(form, getTriggerFieldName("cellStep", timing, { partId }), existingConfig.cellStep),
       distanceStep: readOptionalValue(form, getTriggerFieldName("distanceStep", timing, { partId }), existingConfig.distanceStep),
-      stopMovementOnTrigger: existingConfig.stopMovementOnTrigger,
       activityId: readOptionalValue(form, getTriggerFieldName("activityId", timing, { partId }), existingConfig.activityId)
     };
   }
@@ -2733,9 +2796,6 @@ function buildConfiguredTriggerDefinition(triggerConfig = {}, timing = "onEnter"
     cellStep,
     movementMode,
     distanceStep,
-    stopMovementOnTrigger: normalizedTiming === "onMove"
-      ? false
-      : coerceBoolean(config.stopMovementOnTrigger, false),
     damage: {
       enabled: mode === "simple" && Boolean(damageFormula),
       formula: damageFormula || null,

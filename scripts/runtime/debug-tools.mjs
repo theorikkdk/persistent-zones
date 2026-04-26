@@ -232,16 +232,14 @@ export function buildTestDefinition(preset = "basic") {
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createEntryDamageSaveTestDefinition({
         preset: normalizedPreset,
-        label: "Persistent Zone Debug Entry Stop Movement",
-        stopMovementOnTrigger: true
+        label: "Persistent Zone Debug Entry Stop Movement"
       }));
     case "move-stop-movement":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createMoveDamageTestDefinition({
         preset: normalizedPreset,
         label: "Persistent Zone Debug Move Stop Movement",
-        movementMode: "any",
-        stopMovementOnTrigger: false
+        movementMode: "any"
       }));
     case "basic":
     default:
@@ -688,8 +686,7 @@ function createBasicTestDefinition() {
 
 function createEntryDamageSaveTestDefinition({
   preset = "entry-damage-save",
-  label = "Persistent Zone Debug Entry Damage Save",
-  stopMovementOnTrigger = false
+  label = "Persistent Zone Debug Entry Damage Save"
 } = {}) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -714,7 +711,6 @@ function createEntryDamageSaveTestDefinition({
     triggers: {
       onEnter: {
         enabled: true,
-        stopMovementOnTrigger,
         damage: {
           enabled: true,
           formula: "2d6",
@@ -887,8 +883,7 @@ function createMovementFilteredTestDefinition({
 function createMoveDamageTestDefinition({
   preset,
   label,
-  movementMode,
-  stopMovementOnTrigger = false
+  movementMode
 }) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -920,7 +915,6 @@ function createMoveDamageTestDefinition({
       onMove: {
         enabled: true,
         movementMode,
-        stopMovementOnTrigger,
         distanceStep: 5,
         damage: {
           enabled: true,

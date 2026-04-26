@@ -192,7 +192,22 @@
               <strong>{{localize "PERSISTENT_ZONES.UI.Fields.EffectiveTemplateType"}}:</strong>
               <span>{{templateTypeContext.effectiveTemplateTypeLabel}}</span>
             </div>
+            <div>
+              <strong>{{localize "PERSISTENT_ZONES.UI.Fields.MovementStop"}}:</strong>
+              <span>{{movementStopContext.statusSummaryText}}</span>
+            </div>
+            {{#if movementStopContext.legacyFlagDetected}}
+              <div>
+                <strong>{{localize "PERSISTENT_ZONES.UI.Fields.LegacyMovementStop"}}:</strong>
+                <span>{{movementStopContext.legacyStatusLabel}}</span>
+              </div>
+            {{/if}}
           </div>
+
+          <p class="hint">{{movementStopContext.statusHint}}</p>
+          {{#if movementStopContext.legacyHint}}
+            <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Fields.LegacyMovementStop"}}:</strong> {{movementStopContext.legacyHint}}</p>
+          {{/if}}
 
           {{#if templateTypeContext.warningReason}}
             <p class="hint"><strong>{{localize "PERSISTENT_ZONES.UI.Validation.Warning"}}:</strong> {{templateTypeContext.warningReason}}</p>

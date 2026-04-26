@@ -1,5 +1,6 @@
 export const MODULE_ID = "persistent-zones";
 export const MODULE_API_NAMESPACE = "persistentZones";
+export const MOVEMENT_STOP_GLOBAL_SETTING_KEY = "movementStopGlobalEnabled";
 
 export const DEFINITION_FLAG_KEY = "definition";
 export const RUNTIME_FLAG_KEY = "runtime";

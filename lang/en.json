@@ -49,6 +49,8 @@
         "DetectedTemplateType": "Detected Template Type",
         "DetectedTemplateSource": "Detected Template Source",
         "EffectiveTemplateType": "Effective Template Type",
+        "MovementStop": "Movement Stop",
+        "LegacyMovementStop": "Legacy Local Stop Flags",
         "SelectedVariant": "Selected Variant",
         "DefaultVariant": "Default Variant",
         "AvailableVariants": "Available Variants",
@@ -90,7 +92,11 @@
       },
       "Common": {
         "Enabled": "Enabled",
-        "Disabled": "Disabled"
+        "Disabled": "Disabled",
+        "EnabledGlobally": "Enabled globally",
+        "DisabledGlobally": "Disabled globally",
+        "Detected": "Detected",
+        "NotDetected": "Not detected"
       },
       "SectionSummaries": {
         "GlobalTriggers": "{count} triggers",
@@ -265,6 +271,9 @@
       },
       "Help": {
         "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
+        "MovementStopGlobalEnabled": "Movement stop is enabled globally for {triggers}.",
+        "MovementStopGlobalDisabled": "Movement stop is disabled globally in the module settings.",
+        "MovementStopLegacyDetected": "Legacy local movement-stop flags were detected on the stored definition. The global module setting now controls movement stop.",
         "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
         "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
         "PartTargetFilterInherited": "This zone uses the default targeting rule.",
@@ -305,6 +314,12 @@
       "ProfileRenamePrompt": "Enter a new name for this Persistent Zones profile.",
       "ProfileDeleteTitle": "Delete Persistent Zones Profile",
       "ProfileDeleteConfirm": "Delete the selected Persistent Zones profile?"
+    },
+    "Settings": {
+      "MovementStopGlobal": {
+        "Name": "Interrupt movement in persistent zones",
+        "Hint": "When enabled, persistent-zones can interrupt movement globally for supported movement triggers (currently On Enter and On Move)."
+      }
     }
   }
 }

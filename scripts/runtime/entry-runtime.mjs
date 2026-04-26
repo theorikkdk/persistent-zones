@@ -1,4 +1,5 @@
 import { ENTRY_DEDUP_TTL_MS, MODULE_ID } from "../constants.mjs";
+import { resolveMovementStopGlobalState } from "../settings.mjs";
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import {
   coerceNumber,
@@ -149,7 +150,7 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
       evaluation?.normalizedDefinition?.enabled &&
       evaluation?.filterResult?.allowed &&
       evaluation?.onEnter?.enabled &&
-      evaluation?.onEnter?.stopMovementOnTrigger
+      evaluation?.enterMovementStopResolution?.enabled
     );
   });
   const candidateEvaluation = evaluations.find((evaluation) => {
@@ -157,7 +158,7 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
       evaluation?.normalizedDefinition?.enabled &&
       evaluation?.filterResult?.allowed &&
       evaluation?.onEnter?.enabled &&
-      evaluation?.onEnter?.stopMovementOnTrigger &&
+      evaluation?.enterMovementStopResolution?.enabled &&
       evaluation?.enterDetected
     );
   });
@@ -212,6 +213,7 @@ async function onMoveToken(tokenDocument, movement) {
     return;
   }
   const movementSequenceId = buildMovementSequenceId(tokenDocument, movement, movementPath);
+  const movementFamilyId = buildMovementFamilyId(tokenDocument, movement, movementPath);
 
   if (consumeInternalStopDestinationIfMatched(tokenDocument, movementPath.toState)) {
     markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
@@ -227,7 +229,11 @@ async function onMoveToken(tokenDocument, movement) {
     return;
   }
 
-  const handledInterruption = getHandledMovementInterruption(tokenDocument, movementSequenceId);
+  const handledInterruption = getHandledMovementInterruption(
+    tokenDocument,
+    movementSequenceId,
+    movementFamilyId
+  );
 
   if (handledInterruption) {
     tokenDocument.stopMovement?.();
@@ -241,6 +247,8 @@ async function onMoveToken(tokenDocument, movement) {
       trigger: handledInterruption.trigger ?? null,
       stopReason: handledInterruption.stopReason ?? null,
       stopMode: handledInterruption.stopMode ?? "sampled-fallback",
+      stepMode: handledInterruption.stepMode ?? null,
+      configuredStep: roundDistanceValue(handledInterruption.configuredStep),
       firstInsideCell: handledInterruption.firstInsideCell ?? null,
       originalFrom: buildSimplePositionPayload(movementPath.fromState),
       originalTo: buildSimplePositionPayload(movementPath.toState),
@@ -248,9 +256,14 @@ async function onMoveToken(tokenDocument, movement) {
       appliedStopPoint: handledInterruption.stopPoint ?? null,
       finalTokenPosition: buildSimplePositionPayload(snapshotTokenState(tokenDocument)),
       onMoveThresholdPoint: handledInterruption.onMoveThresholdPoint ?? null,
+      stopApplied: false,
+      onMoveSuppressed: handledInterruption.trigger === "onMove",
+      effectiveTriggerCount: handledInterruption.trigger === "onMove" ? 1 : 0,
+      movementAlreadyHandled: true,
       interruptionApplied: false,
       movementInterrupted: false,
       interruptionSkippedBecauseAlreadyHandled: true,
+      usedFallback: handledInterruption.usedRollbackFallback ?? false,
       usedNativeTruncation: !(handledInterruption.usedRollbackFallback ?? false),
       usedRollbackFallback: handledInterruption.usedRollbackFallback ?? false
     });
@@ -271,6 +284,7 @@ async function onMoveToken(tokenDocument, movement) {
     fromState: movementPath.fromState,
     toState: movementPath.toState,
     pathStates: movementPath.pathStates,
+    movementFamilyId,
     movement
   });
 
@@ -289,14 +303,25 @@ async function onMoveToken(tokenDocument, movement) {
       truncatedTo: evaluation.truncatedTo ?? null,
       stopReason: evaluation.stopReason ?? null,
       stopMode: evaluation.stopMode ?? "sampled-fallback",
+      stepMode: evaluation.stopStepMode ?? null,
+      configuredStep: roundDistanceValue(evaluation.stopConfiguredStep),
       firstInsideCell: evaluation.firstInsideCell ?? null,
       selectedStopPoint: evaluation.selectedStopPoint ?? null,
       appliedStopPoint: evaluation.appliedStopPoint ?? null,
       finalTokenPosition: buildSimplePositionPayload(snapshotTokenState(tokenDocument)),
       onMoveThresholdPoint: evaluation.onMoveThresholdPoint ?? null,
+      stopApplied: evaluation.movementInterrupted,
+      onMoveSuppressed: evaluation.onMoveSuppressed ?? false,
+      effectiveTriggerCount: evaluation.effectiveTriggerCount ?? null,
+      movementAlreadyHandled: false,
       interruptionApplied: evaluation.movementInterrupted,
       movementInterrupted: evaluation.movementInterrupted,
       interruptionSkippedBecauseAlreadyHandled: false,
+      usedFallback: Boolean(
+        evaluation.usedRollbackFallback ||
+        evaluation.usedTeleportFallback ||
+        evaluation.animationRestartedToStop
+      ),
       usedSnapFallback: evaluation.usedSnapFallback ?? false,
       animationRedirected: evaluation.animationRedirected ?? false,
       animationRestartedToStop: evaluation.animationRestartedToStop ?? false,
@@ -386,6 +411,7 @@ function onDeleteToken(tokenDocument) {
 async function evaluateTokenEntry(tokenDocument, {
   moveSource,
   movementSequenceId = null,
+  movementFamilyId = null,
   movementMode,
   movementModeRaw,
   movementMarkConsumed = false,
@@ -451,21 +477,26 @@ async function evaluateTokenEntry(tokenDocument, {
     truncatedTo = buildSimplePositionPayload(plannedEnterStopDecision.stopState);
     usedSnapFallback = plannedEnterStopDecision.stopMode === "grid-cell";
 
-    debug("Skipped managed Region onEnter stop because stop application is temporarily disabled.", {
+    debug("Prepared managed Region onEnter stop decision.", {
       movementSequenceId,
       tokenId: tokenDocument?.id ?? null,
       regionId: plannedEnterStopDecision.regionId ?? null,
       moveSource,
       movementMode,
       trigger: "onEnter",
-      stopSupported: false,
+      stopReason: plannedEnterStopDecision.stopReason ?? "entry",
+      stopMode: plannedEnterStopDecision.stopMode ?? "sampled-fallback",
+      stopSupported: true,
       plannedStopAvailable: true,
       truncatedDestinationApplied: false,
+      entryPoint: plannedEnterStopDecision.entryPoint ?? null,
+      entryCell: plannedEnterStopDecision.entryCell ?? null,
       selectedStopPoint: plannedEnterStopDecision.selectedStopPoint ?? null,
-      truncatedTo
+      truncatedTo,
+      skippedBecauseAlreadyHandled: Boolean(plannedEnterStopDecision.alreadyApplied)
     });
   }
-  const stopDecision = chooseStopDecision(initialEvaluations, {
+  const stopDecision = plannedEnterStopDecision ?? chooseStopDecision(initialEvaluations, {
     tokenDocument,
     moveSource,
     movementSequenceId,
@@ -480,8 +511,12 @@ async function evaluateTokenEntry(tokenDocument, {
   let appliedStopPoint = null;
   let stopReason = null;
   let stopMode = null;
+  let stopStepMode = null;
+  let stopConfiguredStep = null;
   let firstInsideCell = null;
   let onMoveThresholdPoint = null;
+  let onMoveSuppressed = false;
+  let effectiveTriggerCount = null;
   let usedNativeTruncation = false;
   let usedRollbackFallback = false;
   let animationRedirected = false;
@@ -493,6 +528,8 @@ async function evaluateTokenEntry(tokenDocument, {
     selectedStopPoint = buildSimplePositionPayload(stopDecision.stopState);
     stopReason = stopDecision.stopReason ?? null;
     stopMode = stopDecision.stopMode ?? null;
+    stopStepMode = stopDecision.stepMode ?? null;
+    stopConfiguredStep = stopDecision.configuredStep ?? null;
     firstInsideCell = buildGridCellPayload(stopDecision.firstInsideCellState);
     onMoveThresholdPoint = buildSimplePositionPayload(stopDecision.onMoveThresholdState);
     const interruption = stopDecision.trigger === "onEnter" && stopDecision.planKey
@@ -501,6 +538,7 @@ async function evaluateTokenEntry(tokenDocument, {
         movement,
         moveSource,
         movementSequenceId,
+        movementFamilyId,
         originalFromState: fromState ?? basePathStates[0] ?? null,
         originalToState: toState ?? fallbackFinalState,
         stopDecision
@@ -510,6 +548,7 @@ async function evaluateTokenEntry(tokenDocument, {
         movement,
         moveSource,
         movementSequenceId,
+        movementFamilyId,
         originalFromState: fromState ?? basePathStates[0] ?? null,
         originalToState: toState ?? fallbackFinalState,
         stopDecision
@@ -544,7 +583,7 @@ async function evaluateTokenEntry(tokenDocument, {
     : initialEvaluations;
 
   for (const evaluation of evaluations) {
-    await applyRegionEvaluation(tokenDocument, evaluation, {
+    const evaluationResult = await applyRegionEvaluation(tokenDocument, evaluation, {
       moveSource,
       movementSequenceId,
       movementMode,
@@ -555,6 +594,10 @@ async function evaluateTokenEntry(tokenDocument, {
       stopDecision,
       movementInterrupted
     });
+    if (evaluation?.regionDocument?.id === stopDecision?.regionId) {
+      onMoveSuppressed = Boolean(evaluationResult?.onMoveSuppressed);
+      effectiveTriggerCount = evaluationResult?.effectiveTriggerCount ?? effectiveTriggerCount;
+    }
   }
 
   return {
@@ -565,8 +608,12 @@ async function evaluateTokenEntry(tokenDocument, {
     appliedStopPoint,
     stopReason,
     stopMode,
+    stopStepMode,
+    stopConfiguredStep,
     firstInsideCell,
     onMoveThresholdPoint,
+    onMoveSuppressed,
+    effectiveTriggerCount,
     usedNativeTruncation,
     usedRollbackFallback,
     animationRedirected,
@@ -619,9 +666,13 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
         crossedBoundary: toInside,
         sawEntry: toInside,
         sawExit: false,
+        movementStartedInside: false,
+        entryConsumedFirstMoveStep: false,
         pathLengthPixels: 0,
         insideDistancePixels: 0,
+        remainingInsideDistancePixels: 0,
         insideCellCount: 0,
+        remainingInsideCellCount: 0,
         firstEntryState: toInside ? lastPathState : null,
         firstEntryPathDistancePixels: toInside ? 0 : null,
         firstEntrySegmentIndex: 1,
@@ -655,18 +706,29 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
       ? false
       : fromInside && !toInside && movementAnalysis.sawExit;
     const pathLength = pixelsToDistance(movementAnalysis.pathLengthPixels, scene);
+    const movementStartedInside = Boolean(movementAnalysis.movementStartedInside ?? fromInside);
+    const entryConsumedFirstMoveStep = Boolean(movementAnalysis.entryConsumedFirstMoveStep);
     const insideDistance = pixelsToDistance(movementAnalysis.insideDistancePixels, scene);
+    const remainingInsideDistance = pixelsToDistance(
+      movementAnalysis.remainingInsideDistancePixels ?? movementAnalysis.insideDistancePixels,
+      scene
+    );
     const insideCellCount = movementAnalysis.insideCellCount ?? 0;
+    const remainingInsideCellCount = movementAnalysis.remainingInsideCellCount ?? insideCellCount;
     const moveTriggerCount = calculateMoveTriggerCount({
       stepMode,
-      insideDistance,
+      insideDistance: remainingInsideDistance,
       stepDistance,
-      insideCellCount,
+      insideCellCount: remainingInsideCellCount,
       cellStep
     });
+    const onMoveEligibleAfterEntry = moveTriggerCount > 0;
     const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
     const exitMovementModeMatched = movementModeMatches(movementMode, onExit.movementMode);
     const moveMovementModeMatched = movementModeMatches(movementMode, onMove.movementMode);
+    const enterMovementStopResolution = resolveMovementStopGlobalState(onEnter, "onEnter");
+    const exitMovementStopResolution = resolveMovementStopGlobalState(onExit, "onExit");
+    const moveMovementStopResolution = resolveMovementStopGlobalState(onMove, "onMove");
     const filterResult = shouldAffectToken(tokenDocument, regionDocument, normalizedDefinition);
 
     return {
@@ -682,19 +744,27 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
       fromInside,
       toInside,
       movementAnalysis,
+      movementStartedInside,
+      entryConsumedFirstMoveStep,
       pathLength,
       insideDistance,
+      remainingInsideDistance,
       insideCellCount,
+      remainingInsideCellCount,
       stepMode,
       configuredStep,
       cellStep,
       stepDistance,
       moveTriggerCount,
+      onMoveEligibleAfterEntry,
       enterDetected,
       exitDetected,
       enterMovementModeMatched,
       exitMovementModeMatched,
       moveMovementModeMatched,
+      enterMovementStopResolution,
+      exitMovementStopResolution,
+      moveMovementStopResolution,
       filterResult
     };
   });
@@ -722,19 +792,27 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     fromInside,
     toInside,
     movementAnalysis,
+    movementStartedInside,
+    entryConsumedFirstMoveStep,
     pathLength,
     insideDistance,
+    remainingInsideDistance,
     insideCellCount,
+    remainingInsideCellCount,
     stepMode,
     configuredStep,
     cellStep,
     stepDistance,
     moveTriggerCount,
+    onMoveEligibleAfterEntry,
     enterDetected,
     exitDetected,
     enterMovementModeMatched,
     exitMovementModeMatched,
     moveMovementModeMatched,
+    enterMovementStopResolution,
+    exitMovementStopResolution,
+    moveMovementStopResolution,
     filterResult
   } = evaluation;
 
@@ -750,6 +828,10 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     stopDecision &&
     stopDecision.regionId === regionDocument.id
   );
+  const stopApplied = Boolean(
+    movementInterrupted &&
+    ["onEnter", "onMove"].includes(stopDecision?.trigger)
+  );
   const stopPoint = stopHandledByRegion ? buildStopPointPayload(stopDecision.stopState) : null;
   const stopMode = stopHandledByRegion ? stopDecision.stopMode ?? "sampled-fallback" : null;
   const firstInsideCell = stopHandledByRegion
@@ -762,13 +844,23 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         ? movementAnalysis.firstGridMoveTriggerState ?? movementAnalysis.firstInsideCellState
         : movementAnalysis.firstMoveTriggerState
     );
+  let effectiveTriggerCount = moveTriggerCount;
+  let onEnterSuppressed = false;
+  let onMoveSuppressed = false;
+  let onExitSuppressed = false;
+  let triggerSuppressedBecauseMovementAlreadyStopped = false;
+  let onEnterTriggered = false;
+  let onMoveTriggered = false;
 
   if (!normalizedDefinition?.enabled) {
     debug("Skipped managed Region effect because the normalized definition is disabled.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id
     });
-    return;
+    return {
+      onMoveSuppressed,
+      effectiveTriggerCount
+    };
   }
 
   if (!enterDetected && !exitDetected && moveTriggerCount <= 0) {
@@ -806,48 +898,110 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         reason: filterResult.reason
       });
     } else {
-      effectApplied = await applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
-        moveSource,
-        movementMode,
-        enterDetected,
-        enterMovementModeMatched,
-        entryCenter: movementAnalysis.firstEntryState?.center ?? toState?.center,
-        stopPoint,
-        stopHandledByRegion,
-        stopDecision
-      });
+      if (stopApplied && !stopHandledByRegion) {
+        onEnterSuppressed = Boolean(enterDetected);
+        onMoveSuppressed = moveTriggerCount > 0;
+        onExitSuppressed = Boolean(exitDetected);
+        effectiveTriggerCount = 0;
+        triggerSuppressedBecauseMovementAlreadyStopped =
+          onEnterSuppressed || onMoveSuppressed || onExitSuppressed;
+      } else {
+        effectApplied = await applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
+          moveSource,
+          movementMode,
+          enterDetected,
+          enterMovementModeMatched,
+          entryCenter: movementAnalysis.firstEntryState?.center ?? toState?.center,
+          movementStopResolution: enterMovementStopResolution,
+          stopPoint,
+          stopHandledByRegion,
+          stopDecision
+        });
+        onEnterTriggered = effectApplied;
 
-      const moveApplied = await applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
-        moveSource,
-        movementMode,
-        moveTriggerCount,
-        stepMode,
-        configuredStep,
-        insideCellCount,
-        moveMovementModeMatched,
-        fromState,
-        toState,
-        insideDistance,
-        pathLength,
-        stepDistance,
-        stopPoint,
-        onMoveThresholdPoint,
-        stopHandledByRegion,
-        stopDecision
-      });
-      effectApplied = effectApplied || moveApplied;
+        if (stopApplied && stopDecision?.trigger === "onEnter") {
+          onMoveSuppressed = moveTriggerCount > 0;
+          onExitSuppressed = Boolean(exitDetected);
+          effectiveTriggerCount = 0;
+          triggerSuppressedBecauseMovementAlreadyStopped = onMoveSuppressed || onExitSuppressed;
+        } else {
+          if (stopApplied && stopDecision?.trigger === "onMove") {
+            onMoveSuppressed = moveTriggerCount > 1;
+            onExitSuppressed = Boolean(exitDetected);
+            effectiveTriggerCount = Math.min(Math.max(moveTriggerCount, 0), 1);
+            triggerSuppressedBecauseMovementAlreadyStopped = onMoveSuppressed || onExitSuppressed;
+          }
 
-      const exitApplied = await applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
-        moveSource,
-        movementMode,
-        exitDetected,
-        exitMovementModeMatched,
-        exitCenter: toState?.center,
-        stopPoint,
-        stopHandledByRegion,
-        stopDecision
-      });
-      effectApplied = effectApplied || exitApplied;
+          const moveApplied = await applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
+            moveSource,
+            movementMode,
+            moveTriggerCount: effectiveTriggerCount,
+            stepMode,
+            configuredStep,
+            rawInsideCellCount: insideCellCount,
+            remainingInsideCellCount,
+            moveMovementModeMatched,
+            movementStopResolution: moveMovementStopResolution,
+            fromState,
+            toState,
+            rawInsideDistance: insideDistance,
+            remainingInsideDistance,
+            movementStartedInside,
+            entryConsumedFirstMoveStep,
+            onMoveEligibleAfterEntry,
+            pathLength,
+            stepDistance,
+            stopPoint,
+            onMoveThresholdPoint,
+            stopHandledByRegion,
+            stopDecision
+          });
+          effectApplied = effectApplied || moveApplied;
+          onMoveTriggered = moveApplied;
+
+          if (!(stopApplied && stopDecision?.trigger === "onMove")) {
+            const exitApplied = await applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
+              moveSource,
+              movementMode,
+              exitDetected,
+              exitMovementModeMatched,
+              exitCenter: toState?.center,
+              stopPoint,
+              stopHandledByRegion,
+              stopDecision
+            });
+            effectApplied = effectApplied || exitApplied;
+          }
+        }
+      }
+
+      if (triggerSuppressedBecauseMovementAlreadyStopped) {
+        debug("Suppressed managed Region movement triggers because movement sequence was already stopped.", {
+          movementSequenceId,
+          tokenId: tokenDocument.id,
+          regionId: regionDocument.id,
+          partId: filterResult.partId ?? null,
+          moveSource,
+          stopApplied: true,
+          triggerSuppressedBecauseMovementAlreadyStopped: true,
+          onMoveSuppressed,
+          onEnterSuppressed,
+          onExitSuppressed,
+          stepMode: stopDecision?.stepMode ?? stepMode,
+          configuredStep: roundDistanceValue(stopDecision?.configuredStep ?? configuredStep),
+          movementStartedInside,
+          entryConsumedFirstMoveStep,
+          onMoveEligibleAfterEntry,
+          remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+          remainingInsideCells: remainingInsideCellCount,
+          effectiveTriggerCount,
+          stopReason: stopDecision?.stopReason ?? "entry",
+          stopMode: stopDecision?.stopMode ?? "sampled-fallback",
+          selectedStopPoint: stopDecision?.selectedStopPoint ?? stopPoint,
+          appliedStopPoint: stopPoint,
+          finalTokenPosition: buildSimplePositionPayload(toState)
+        });
+      }
     }
   }
 
@@ -879,9 +1033,31 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     moveStepMode: stepMode,
     moveConfiguredStep: roundDistanceValue(configuredStep),
     moveInsideCellCount: insideCellCount,
+    remainingInsideCells: remainingInsideCellCount,
     computedSteps: moveTriggerCount,
-    onEnterStopMovementOnTrigger: onEnter.stopMovementOnTrigger ?? false,
-    onMoveStopMovementOnTrigger: onMove.stopMovementOnTrigger ?? false,
+    effectiveTriggerCount,
+    movementStopGlobalEnabled: Boolean(
+      enterMovementStopResolution?.globalEnabled ||
+      moveMovementStopResolution?.globalEnabled ||
+      exitMovementStopResolution?.globalEnabled
+    ),
+    movementStopLegacyFlagDetected: Boolean(
+      enterMovementStopResolution?.legacyFlagDetected ||
+      moveMovementStopResolution?.legacyFlagDetected ||
+      exitMovementStopResolution?.legacyFlagDetected
+    ),
+    movementStopResolvedFrom: {
+      onEnter: enterMovementStopResolution?.resolvedFrom ?? null,
+      onMove: moveMovementStopResolution?.resolvedFrom ?? null,
+      onExit: exitMovementStopResolution?.resolvedFrom ?? null
+    },
+    stopSkippedBecauseGlobalDisabled: {
+      onEnter: enterMovementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
+      onMove: moveMovementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
+      onExit: exitMovementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false
+    },
+    onEnterMovementStopEnabled: enterMovementStopResolution?.enabled ?? false,
+    onMoveMovementStopEnabled: moveMovementStopResolution?.enabled ?? false,
     fromX: fromState?.position?.x ?? null,
     fromY: fromState?.position?.y ?? null,
     toX: toState?.position?.x ?? null,
@@ -889,22 +1065,38 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     fromInside,
     toInside,
     crossedBoundary: movementAnalysis.crossedBoundary,
+    movementStartedInside,
+    entryConsumedFirstMoveStep,
+    onMoveEligibleAfterEntry,
     pathLength: roundDistanceValue(pathLength),
     insideDistance: roundDistanceValue(insideDistance),
+    remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
     stepDistance: roundDistanceValue(stepDistance),
     triggerCount: moveTriggerCount,
     enterDetected,
     exitDetected,
+    onEnterTriggered,
+    onMoveTriggered,
     stopTrigger: stopHandledByRegion ? stopDecision.trigger : null,
     stopReason: stopHandledByRegion ? stopDecision.stopReason ?? null : null,
     stopMode,
     firstInsideCell,
     stopPoint,
     onMoveThresholdPoint,
+    stopApplied,
+    triggerSuppressedBecauseMovementAlreadyStopped,
+    onMoveSuppressed,
+    onEnterSuppressed,
+    onExitSuppressed,
     movementInterrupted: stopHandledByRegion,
     effectApplied,
     skipped: !effectApplied && (enterDetected || exitDetected || moveTriggerCount > 0)
   });
+
+  return {
+    onMoveSuppressed,
+    effectiveTriggerCount
+  };
 }
 
 async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
@@ -913,6 +1105,7 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
   enterDetected,
   enterMovementModeMatched,
   entryCenter,
+  movementStopResolution = null,
   stopPoint,
   stopHandledByRegion,
   stopDecision
@@ -964,7 +1157,10 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
     movementMode,
     requiredMovementMode: onEnter.movementMode ?? "any",
     movementModeMatched: true,
-    stopMovementOnTrigger: onEnter.stopMovementOnTrigger ?? false,
+    movementStopGlobalEnabled: movementStopResolution?.globalEnabled ?? false,
+    movementStopLegacyFlagDetected: movementStopResolution?.legacyFlagDetected ?? false,
+    movementStopResolvedFrom: movementStopResolution?.resolvedFrom ?? null,
+    stopSkippedBecauseGlobalDisabled: movementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
     stopPoint,
     stopReason: stopHandledByRegion ? stopDecision?.stopReason ?? null : null,
     movementInterrupted: stopHandledByRegion && stopDecision.trigger === "onEnter",
@@ -982,11 +1178,17 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   moveTriggerCount,
   stepMode,
   configuredStep,
-  insideCellCount,
+  rawInsideCellCount,
+  remainingInsideCellCount,
   moveMovementModeMatched,
+  movementStopResolution = null,
   fromState,
   toState,
-  insideDistance,
+  rawInsideDistance,
+  remainingInsideDistance,
+  movementStartedInside,
+  entryConsumedFirstMoveStep,
+  onMoveEligibleAfterEntry,
   pathLength,
   stepDistance,
   stopPoint,
@@ -1026,9 +1228,14 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
         configuredStep: roundDistanceValue(configuredStep),
         computedSteps: effectiveTriggerCount,
         moveSource,
+        movementStartedInside,
+        entryConsumedFirstMoveStep,
+        onMoveEligibleAfterEntry,
         pathLength: roundDistanceValue(pathLength),
-        insideDistance: roundDistanceValue(insideDistance),
-        insideCellCount,
+        insideDistance: roundDistanceValue(rawInsideDistance),
+        remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+        insideCellCount: rawInsideCellCount,
+        remainingInsideCells: remainingInsideCellCount,
         stepDistance: roundDistanceValue(stepDistance),
         triggerCount: effectiveTriggerCount
       });
@@ -1044,9 +1251,14 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
         configuredStep: roundDistanceValue(configuredStep),
         computedSteps: effectiveTriggerCount,
         moveSource,
+        movementStartedInside,
+        entryConsumedFirstMoveStep,
+        onMoveEligibleAfterEntry,
         pathLength: roundDistanceValue(pathLength),
-        insideDistance: roundDistanceValue(insideDistance),
-        insideCellCount,
+        insideDistance: roundDistanceValue(rawInsideDistance),
+        remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+        insideCellCount: rawInsideCellCount,
+        remainingInsideCells: remainingInsideCellCount,
         stepDistance: roundDistanceValue(stepDistance),
         triggerCount: effectiveTriggerCount
       });
@@ -1070,9 +1282,14 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
       movementMode,
       requiredMovementMode: onMove.movementMode ?? "any",
       movementModeMatched: false,
+      movementStartedInside,
+      entryConsumedFirstMoveStep,
+      onMoveEligibleAfterEntry,
       pathLength: roundDistanceValue(pathLength),
-      insideDistance: roundDistanceValue(insideDistance),
-      insideCellCount,
+      insideDistance: roundDistanceValue(rawInsideDistance),
+      remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+      insideCellCount: rawInsideCellCount,
+      remainingInsideCells: remainingInsideCellCount,
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: effectiveTriggerCount
     });
@@ -1086,11 +1303,11 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     fromState,
     toState,
     effectiveTriggerCount,
-    insideDistance,
+    remainingInsideDistance,
     {
       stepMode,
       configuredStep,
-      insideCellCount
+      insideCellCount: remainingInsideCellCount
     }
   )) {
     debug("Skipped managed Region effect because the onMove trigger was deduplicated.", {
@@ -1104,9 +1321,14 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
       configuredStep: roundDistanceValue(configuredStep),
       computedSteps: effectiveTriggerCount,
       moveSource,
+      movementStartedInside,
+      entryConsumedFirstMoveStep,
+      onMoveEligibleAfterEntry,
       pathLength: roundDistanceValue(pathLength),
-      insideDistance: roundDistanceValue(insideDistance),
-      insideCellCount,
+      insideDistance: roundDistanceValue(rawInsideDistance),
+      remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+      insideCellCount: rawInsideCellCount,
+      remainingInsideCells: remainingInsideCellCount,
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: effectiveTriggerCount
     });
@@ -1157,7 +1379,13 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     movementMode,
     requiredMovementMode: onMove.movementMode ?? "any",
     movementModeMatched: true,
-    stopMovementOnTrigger: onMove.stopMovementOnTrigger ?? false,
+    movementStopGlobalEnabled: movementStopResolution?.globalEnabled ?? false,
+    movementStopLegacyFlagDetected: movementStopResolution?.legacyFlagDetected ?? false,
+    movementStopResolvedFrom: movementStopResolution?.resolvedFrom ?? null,
+    stopSkippedBecauseGlobalDisabled: movementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
+    movementStartedInside,
+    entryConsumedFirstMoveStep,
+    onMoveEligibleAfterEntry,
     stopPoint,
     stopReason: stopHandledByRegion ? stopDecision?.stopReason ?? null : null,
     onMoveThresholdPoint,
@@ -1166,8 +1394,10 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     activityTriggered,
     simpleEffectApplied,
     pathLength: roundDistanceValue(pathLength),
-    insideDistance: roundDistanceValue(insideDistance),
-    insideCellCount,
+    insideDistance: roundDistanceValue(rawInsideDistance),
+    remainingInsideDistance: roundDistanceValue(remainingInsideDistance),
+    insideCellCount: rawInsideCellCount,
+    remainingInsideCells: remainingInsideCellCount,
     stepDistance: roundDistanceValue(stepDistance),
     triggerCount: effectiveTriggerCount,
     appliedCount,
@@ -1291,34 +1521,166 @@ function chooseStopDecision(evaluations, {
   movementSequenceId,
   movementMode
 }) {
+  const candidates = [];
+
   for (const evaluation of evaluations) {
     const {
       regionDocument,
       normalizedDefinition,
       onMove,
-      filterResult
+      moveMovementModeMatched,
+      moveMovementStopResolution,
+      movementAnalysis,
+      filterResult,
+      stepMode,
+      configuredStep,
+      fromState
     } = evaluation;
 
     if (!normalizedDefinition?.enabled || !filterResult.allowed) {
       continue;
     }
 
-    if (onMove.enabled && onMove.stopMovementOnTrigger) {
-      debug("Skipped managed Region movement stop because stopMovementOnTrigger is temporarily disabled.", {
+    if (!onMove.enabled) {
+      continue;
+    }
+
+    if (!moveMovementStopResolution?.enabled) {
+      if (moveMovementStopResolution?.stopSkippedBecauseGlobalDisabled) {
+        debug("Skipped managed Region movement stop because the global movement-stop setting is disabled.", {
+          movementSequenceId,
+          tokenId: tokenDocument?.id ?? null,
+          regionId: regionDocument?.id ?? null,
+          moveSource,
+          movementMode,
+          trigger: "onMove",
+          movementStopGlobalEnabled: moveMovementStopResolution?.globalEnabled ?? false,
+          movementStopLegacyFlagDetected: moveMovementStopResolution?.legacyFlagDetected ?? false,
+          movementStopResolvedFrom: moveMovementStopResolution?.resolvedFrom ?? null,
+          stopSkippedBecauseGlobalDisabled: true
+        });
+      }
+      continue;
+    }
+
+    if (!moveMovementModeMatched) {
+      debug("Skipped managed Region movement stop because movement mode did not match.", {
         movementSequenceId,
         tokenId: tokenDocument?.id ?? null,
         regionId: regionDocument?.id ?? null,
         moveSource,
         movementMode,
         trigger: "onMove",
-        stopSupported: false,
+        stopSupported: true,
         stopRequested: true,
-        requiredMovementMode: onMove.movementMode ?? "any"
+        requiredMovementMode: onMove.movementMode ?? "any",
+        movementModeMatched: false
       });
+      continue;
     }
+
+    const resolvedStepMode = normalizeOnMoveStepMode(stepMode);
+    const stopState = resolvedStepMode === "grid-cell"
+      ? movementAnalysis.firstGridMoveTriggerState
+      : movementAnalysis.firstMoveTriggerState;
+    const stopPathDistancePixels = resolvedStepMode === "grid-cell"
+      ? movementAnalysis.firstGridMoveTriggerPathDistancePixels
+      : movementAnalysis.firstMoveTriggerPathDistancePixels;
+    const stopSegmentIndex = resolvedStepMode === "grid-cell"
+      ? movementAnalysis.firstGridMoveTriggerSegmentIndex
+      : movementAnalysis.firstMoveTriggerSegmentIndex;
+    const dedupInsideDistance = resolvedStepMode === "distance"
+      ? coerceNumber(configuredStep, 0)
+      : 0;
+    const dedupInsideCellCount = resolvedStepMode === "grid-cell"
+      ? normalizeOnMoveCellStep(configuredStep, 1)
+      : 0;
+
+    if (!stopState) {
+      debug("Skipped managed Region movement stop because no onMove threshold state was available.", {
+        movementSequenceId,
+        tokenId: tokenDocument?.id ?? null,
+        regionId: regionDocument?.id ?? null,
+        moveSource,
+        movementMode,
+        trigger: "onMove",
+        stopSupported: true,
+        stopRequested: true,
+        stopReason: "move",
+        stepMode: resolvedStepMode,
+        configuredStep: roundDistanceValue(configuredStep)
+      });
+      continue;
+    }
+
+    if (
+      checkOnMoveTriggerDedup(
+        regionDocument,
+        tokenDocument,
+        moveSource,
+        fromState,
+        stopState,
+        1,
+        dedupInsideDistance,
+        {
+          stepMode: resolvedStepMode,
+          configuredStep,
+          insideCellCount: dedupInsideCellCount
+        },
+        { record: false }
+      )
+    ) {
+      continue;
+    }
+
+    candidates.push({
+      regionDocument,
+      regionId: regionDocument.id,
+      trigger: "onMove",
+      stopReason: "move",
+      stopMode: resolvedStepMode,
+      stepMode: resolvedStepMode,
+      configuredStep,
+      firstInsideCellState: movementAnalysis.firstInsideCellState ?? null,
+      pathDistancePixels: stopPathDistancePixels ?? 0,
+      stopState,
+      segmentIndex: stopSegmentIndex ?? 1,
+      onMoveThresholdState: stopState,
+      selectedStopPoint: buildStopPointPayload(stopState)
+    });
   }
 
-  return null;
+  if (!candidates.length) {
+    return null;
+  }
+
+  candidates.sort((left, right) => {
+    const distanceDelta = (left.pathDistancePixels ?? 0) - (right.pathDistancePixels ?? 0);
+    if (distanceDelta !== 0) {
+      return distanceDelta;
+    }
+
+    return String(left.regionId ?? "").localeCompare(String(right.regionId ?? ""));
+  });
+
+  const decision = candidates[0];
+
+  debug("Selected managed Region movement stop decision.", {
+    movementSequenceId,
+    tokenId: tokenDocument?.id ?? null,
+    regionId: decision.regionId ?? null,
+    moveSource,
+    movementMode,
+    trigger: "onMove",
+    stopReason: decision.stopReason ?? "move",
+    stopMode: decision.stopMode ?? "distance",
+    stepMode: decision.stepMode ?? null,
+    configuredStep: roundDistanceValue(decision.configuredStep),
+    selectedStopPoint: decision.selectedStopPoint ?? buildSimplePositionPayload(decision.stopState),
+    onMoveThresholdPoint: buildSimplePositionPayload(decision.onMoveThresholdState)
+  });
+
+  return decision;
 }
 
 function planManagedRegionOnEnterStops(tokenDocument, evaluations, {
@@ -1357,6 +1719,7 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
     regionDocument,
     normalizedDefinition,
     onEnter,
+    enterMovementStopResolution,
     filterResult,
     enterDetected,
     enterMovementModeMatched,
@@ -1373,7 +1736,25 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
     return null;
   }
 
-  if (!enterDetected || !onEnter.enabled || !onEnter.stopMovementOnTrigger || !enterMovementModeMatched) {
+  if (!enterDetected || !onEnter.enabled || !enterMovementModeMatched) {
+    return null;
+  }
+
+  if (!enterMovementStopResolution?.enabled) {
+    if (enterMovementStopResolution?.stopSkippedBecauseGlobalDisabled) {
+      debug("Skipped managed Region onEnter stop plan because the global movement-stop setting is disabled.", {
+        tokenUuid: tokenDocument?.uuid ?? null,
+        movementSequenceId,
+        regionId: regionDocument?.id ?? null,
+        moveSource,
+        movementMode,
+        trigger: "onEnter",
+        movementStopGlobalEnabled: enterMovementStopResolution?.globalEnabled ?? false,
+        movementStopLegacyFlagDetected: enterMovementStopResolution?.legacyFlagDetected ?? false,
+        movementStopResolvedFrom: enterMovementStopResolution?.resolvedFrom ?? null,
+        stopSkippedBecauseGlobalDisabled: true
+      });
+    }
     return null;
   }
 
@@ -1722,6 +2103,8 @@ function chooseGridCellStopDecision(evaluations, {
       normalizedDefinition,
       onEnter,
       onMove,
+      enterMovementStopResolution,
+      moveMovementStopResolution,
       enterDetected,
       enterMovementModeMatched,
       moveMovementModeMatched,
@@ -1736,7 +2119,7 @@ function chooseGridCellStopDecision(evaluations, {
     if (
       enterDetected &&
       onEnter.enabled &&
-      onEnter.stopMovementOnTrigger &&
+      enterMovementStopResolution?.enabled &&
       enterMovementModeMatched &&
       movementAnalysis.firstInsideCellState &&
       !checkMovementTriggerDedup(
@@ -1764,7 +2147,7 @@ function chooseGridCellStopDecision(evaluations, {
 
     if (
       onMove.enabled &&
-      onMove.stopMovementOnTrigger &&
+      moveMovementStopResolution?.enabled &&
       moveMovementModeMatched &&
       movementAnalysis.firstInsideCellState &&
       !checkOnMoveTriggerDedup(
@@ -1846,6 +2229,7 @@ async function interruptTokenMovementForTrigger({
   movement,
   moveSource,
   movementSequenceId,
+  movementFamilyId = null,
   originalFromState,
   originalToState,
   stopDecision
@@ -1873,7 +2257,7 @@ async function interruptTokenMovementForTrigger({
       regionId: stopDecision?.regionId ?? null,
       moveSource,
       trigger: stopDecision?.trigger ?? null,
-      stopMovementOnTrigger: false,
+      movementStopGlobalEnabled: true,
       stopSupported: false,
       originalFrom: buildSimplePositionPayload(originalFromState),
       originalTo: buildSimplePositionPayload(originalToState),
@@ -1934,7 +2318,8 @@ async function interruptTokenMovementForTrigger({
 
   markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
     stopPoint,
-    usedRollbackFallback: false
+    usedRollbackFallback: false,
+    movementFamilyId
   });
 
   try {
@@ -1997,7 +2382,8 @@ async function interruptTokenMovementForTrigger({
 
     markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
       stopPoint,
-      usedRollbackFallback: false
+      usedRollbackFallback: false,
+      movementFamilyId
     });
 
     tokenDocument.stopMovement?.();
@@ -2046,7 +2432,8 @@ async function interruptTokenMovementForTrigger({
 
     markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
       stopPoint,
-      usedRollbackFallback: true
+      usedRollbackFallback: true,
+      movementFamilyId
     });
 
     tokenDocument.stopMovement?.();
@@ -2117,7 +2504,7 @@ async function interruptTokenMovementForTrigger({
       usedRollbackFallback: true,
       error: caughtError?.message ?? "unknown"
     });
-    deleteHandledMovementInterruption(tokenDocument, movementSequenceId);
+    deleteHandledMovementInterruption(tokenDocument, movementSequenceId, movementFamilyId);
 
     return {
       interrupted: false,
@@ -2136,6 +2523,7 @@ async function applyManagedRegionOnEnterStopFromPlan({
   movement,
   moveSource,
   movementSequenceId,
+  movementFamilyId = null,
   originalFromState,
   originalToState,
   stopDecision
@@ -2151,6 +2539,7 @@ async function applyManagedRegionOnEnterStopFromPlan({
     movement,
     moveSource,
     movementSequenceId,
+    movementFamilyId,
     originalFromState,
     originalToState,
     stopDecision
@@ -2160,6 +2549,8 @@ async function applyManagedRegionOnEnterStopFromPlan({
     tokenUuid,
     movementSequenceId,
     regionId: stopDecision?.regionId ?? null,
+    stopReason: stopDecision?.stopReason ?? "entry",
+    stopMode: stopDecision?.stopMode ?? "sampled-fallback",
     entryPoint,
     entryCell,
     selectedStopPoint,
@@ -2168,7 +2559,13 @@ async function applyManagedRegionOnEnterStopFromPlan({
     animationRedirected: Boolean(interruption?.animationRedirected),
     animationRestartedToStop: Boolean(interruption?.animationRestartedToStop),
     usedTeleportFallback: Boolean(interruption?.usedTeleportFallback),
-    usedFallback: Boolean(interruption?.usedTeleportFallback),
+    usedNativeTruncation: Boolean(interruption?.usedNativeTruncation),
+    usedFallback: Boolean(
+      interruption?.usedRollbackFallback ||
+      interruption?.usedTeleportFallback ||
+      interruption?.animationRestartedToStop
+    ),
+    skippedBecauseAlreadyHandled: Boolean(alreadyApplied),
     alreadyApplied
   });
 
@@ -2176,6 +2573,8 @@ async function applyManagedRegionOnEnterStopFromPlan({
     tokenUuid,
     movementSequenceId,
     regionId: stopDecision?.regionId ?? null,
+    stopReason: stopDecision?.stopReason ?? "entry",
+    stopMode: stopDecision?.stopMode ?? "sampled-fallback",
     entryPoint,
     entryCell,
     selectedStopPoint,
@@ -2184,7 +2583,13 @@ async function applyManagedRegionOnEnterStopFromPlan({
     animationRedirected: Boolean(interruption?.animationRedirected),
     animationRestartedToStop: Boolean(interruption?.animationRestartedToStop),
     usedTeleportFallback: Boolean(interruption?.usedTeleportFallback),
-    usedFallback: Boolean(interruption?.usedTeleportFallback),
+    usedNativeTruncation: Boolean(interruption?.usedNativeTruncation),
+    usedFallback: Boolean(
+      interruption?.usedRollbackFallback ||
+      interruption?.usedTeleportFallback ||
+      interruption?.animationRestartedToStop
+    ),
+    skippedBecauseAlreadyHandled: Boolean(alreadyApplied),
     alreadyApplied
   });
 
@@ -2440,8 +2845,12 @@ function explainPreUpdateOnEnterTruncationFailure(evaluation) {
     return "onenter-disabled";
   }
 
-  if (!evaluation.onEnter?.stopMovementOnTrigger) {
-    return "stop-not-requested";
+  if (evaluation.enterMovementStopResolution?.stopSkippedBecauseGlobalDisabled) {
+    return "global-stop-disabled";
+  }
+
+  if (!evaluation.enterMovementStopResolution?.enabled) {
+    return "stop-not-supported";
   }
 
   if (!evaluation.enterDetected) {
@@ -2674,55 +3083,111 @@ function buildMovementSequenceId(tokenDocument, movement, movementPath) {
   return `${tokenDocument?.uuid ?? tokenDocument?.id ?? "token"}|${pointKey}`;
 }
 
-function getHandledMovementInterruption(tokenDocument, movementSequenceId) {
-  const key = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId);
-  if (!key) {
+function buildMovementFamilyId(tokenDocument, movement, movementPath) {
+  cleanupExpiredManagedRegionOnEnterStopState();
+  cleanupExpiredHandledMovementInterruptions();
+
+  const points = compactMovementPoints([
+    movement?.origin,
+    ...(Array.isArray(movement?.history?.waypoints) ? movement.history.waypoints : []),
+    ...(Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints : []),
+    ...(Array.isArray(movement?.waypoints) ? movement.waypoints : []),
+    movement?.destination,
+    movementPath?.toState?.position
+  ]);
+
+  const firstPoint = points[0] ?? movementPath?.fromState?.position ?? null;
+  const lastPoint = points[points.length - 1] ?? movementPath?.toState?.position ?? null;
+  if (!firstPoint || !lastPoint) {
     return null;
   }
 
+  return [
+    buildMovementPointKey(firstPoint),
+    buildMovementPointKey(lastPoint)
+  ].join(">");
+}
+
+function buildMovementPointKey(point) {
+  return [
+    Math.round(coerceNumber(point?.x, 0)),
+    Math.round(coerceNumber(point?.y, 0)),
+    Math.round(coerceNumber(point?.elevation, 0))
+  ].join(":");
+}
+
+function getHandledMovementInterruption(tokenDocument, movementSequenceId, movementFamilyId = null) {
   cleanupExpiredHandledMovementInterruptions();
-  return handledMovementInterruptions.get(key) ?? null;
+
+  const sequenceKey = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId, "sequence");
+  if (sequenceKey && handledMovementInterruptions.has(sequenceKey)) {
+    return handledMovementInterruptions.get(sequenceKey) ?? null;
+  }
+
+  const familyKey = buildHandledMovementInterruptionKey(tokenDocument, movementFamilyId, "family");
+  if (familyKey && handledMovementInterruptions.has(familyKey)) {
+    return handledMovementInterruptions.get(familyKey) ?? null;
+  }
+
+  return null;
 }
 
 function markHandledMovementInterruption(tokenDocument, movementSequenceId, stopDecision, {
   stopPoint = null,
-  usedRollbackFallback = false
+  usedRollbackFallback = false,
+  movementFamilyId = null
 } = {}) {
-  const key = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId);
-  if (!key || !stopDecision) {
+  const sequenceKey = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId, "sequence");
+  const familyKey = buildHandledMovementInterruptionKey(tokenDocument, movementFamilyId, "family");
+  if ((!sequenceKey && !familyKey) || !stopDecision) {
     return;
   }
 
-  handledMovementInterruptions.set(key, {
+  const record = {
     regionId: stopDecision.regionId ?? null,
     trigger: stopDecision.trigger ?? null,
     stopReason: stopDecision.stopReason ?? null,
     stopMode: stopDecision.stopMode ?? "sampled-fallback",
+    stepMode: stopDecision.stepMode ?? null,
+    configuredStep: stopDecision.configuredStep ?? null,
     firstInsideCell: buildGridCellPayload(stopDecision.firstInsideCellState),
     stopPoint: stopPoint ?? buildStopPointPayload(stopDecision.stopState),
     onMoveThresholdPoint: buildSimplePositionPayload(stopDecision.onMoveThresholdState),
     stopState: duplicateStopState(stopDecision.stopState),
     usedRollbackFallback,
+    movementFamilyId,
     expiresAt: Date.now() + MOVEMENT_SEQUENCE_TTL_MS
-  });
-}
+  };
 
-function deleteHandledMovementInterruption(tokenDocument, movementSequenceId) {
-  const key = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId);
-  if (!key) {
-    return;
+  if (sequenceKey) {
+    handledMovementInterruptions.set(sequenceKey, record);
   }
 
-  handledMovementInterruptions.delete(key);
+  if (familyKey) {
+    handledMovementInterruptions.set(familyKey, record);
+  }
 }
 
-function buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId) {
+function deleteHandledMovementInterruption(tokenDocument, movementSequenceId, movementFamilyId = null) {
+  const sequenceKey = buildHandledMovementInterruptionKey(tokenDocument, movementSequenceId, "sequence");
+  const familyKey = buildHandledMovementInterruptionKey(tokenDocument, movementFamilyId, "family");
+
+  if (sequenceKey) {
+    handledMovementInterruptions.delete(sequenceKey);
+  }
+
+  if (familyKey) {
+    handledMovementInterruptions.delete(familyKey);
+  }
+}
+
+function buildHandledMovementInterruptionKey(tokenDocument, keyValue, scope = "sequence") {
   const tokenUuid = tokenDocument?.uuid ?? null;
-  if (!tokenUuid || !movementSequenceId) {
+  if (!tokenUuid || !keyValue) {
     return null;
   }
 
-  return `${tokenUuid}|${movementSequenceId}`;
+  return `${tokenUuid}|${scope}|${keyValue}`;
 }
 
 function cleanupExpiredHandledMovementInterruptions() {
@@ -2918,9 +3383,13 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       crossedBoundary: false,
       sawEntry: false,
       sawExit: false,
+      movementStartedInside: Boolean(fromInside),
+      entryConsumedFirstMoveStep: false,
       pathLengthPixels: 0,
       insideDistancePixels: 0,
+      remainingInsideDistancePixels: 0,
       insideCellCount: 0,
+      remainingInsideCellCount: 0,
       firstEntryState: null,
       firstEntryPathDistancePixels: null,
       firstEntrySegmentIndex: null,
@@ -2943,9 +3412,13 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let crossedBoundary = false;
   let sawEntry = false;
   let sawExit = false;
+  const movementStartedInside = Boolean(fromInside);
+  let entryConsumedFirstMoveStep = false;
   let pathLengthPixels = 0;
   let insideDistancePixels = 0;
+  let remainingInsideDistancePixels = 0;
   let insideCellCount = 0;
+  let remainingInsideCellCount = 0;
   let firstEntryState = null;
   let firstEntryPathDistancePixels = null;
   let firstEntrySegmentIndex = null;
@@ -2962,6 +3435,8 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let firstGridMoveTriggerPathDistancePixels = null;
   let firstGridMoveTriggerSegmentIndex = null;
   let gridPathDistancePixels = 0;
+  let entryGridCellConsumed = Boolean(fromInside);
+  let entryDistanceConsumed = Boolean(fromInside);
 
   for (let index = 1; index < states.length; index += 1) {
     const gridTraversalStates = buildGridCellTraversalStates(states[index - 1], states[index]);
@@ -2979,12 +3454,19 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
 
       if (gridInside) {
         insideCellCount += 1;
+        const consumeEntryGridCell = !entryGridCellConsumed;
+        if (consumeEntryGridCell) {
+          entryGridCellConsumed = true;
+          entryConsumedFirstMoveStep = true;
+        } else {
+          remainingInsideCellCount += 1;
+        }
 
         if (
           !firstGridMoveTriggerState &&
           gridCellStep !== null &&
           gridCellStep > 0 &&
-          insideCellCount >= gridCellStep
+          remainingInsideCellCount >= gridCellStep
         ) {
           firstGridMoveTriggerState = gridState;
           firstGridMoveTriggerPathDistancePixels = gridPathDistancePixels;
@@ -3002,8 +3484,22 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       const sampleInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, sampleState);
       const segmentDistancePixels = measureStateDistance(previousState, sampleState);
       const previousInsideDistancePixels = insideDistancePixels;
+      const previousRemainingInsideDistancePixels = remainingInsideDistancePixels;
+      const insideContributionPixels = segmentDistancePixels * estimateInsideDistanceFactor(previousInside, sampleInside);
       pathLengthPixels += segmentDistancePixels;
-      insideDistancePixels += segmentDistancePixels * estimateInsideDistanceFactor(previousInside, sampleInside);
+      insideDistancePixels += insideContributionPixels;
+
+      const consumeEntryDistance =
+        !entryDistanceConsumed &&
+        !previousInside &&
+        sampleInside &&
+        insideContributionPixels > 0;
+      if (consumeEntryDistance) {
+        entryDistanceConsumed = true;
+        entryConsumedFirstMoveStep = true;
+      } else {
+        remainingInsideDistancePixels += insideContributionPixels;
+      }
 
       if (!firstInsideStepState && sampleInside && segmentDistancePixels > 0) {
         firstInsideStepState = sampleState;
@@ -3030,8 +3526,8 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
         !firstMoveTriggerState &&
         stepDistancePixels !== null &&
         stepDistancePixels > 0 &&
-        previousInsideDistancePixels < stepDistancePixels &&
-        insideDistancePixels >= stepDistancePixels
+        previousRemainingInsideDistancePixels < stepDistancePixels &&
+        remainingInsideDistancePixels >= stepDistancePixels
       ) {
         firstMoveTriggerState = sampleState;
         firstMoveTriggerPathDistancePixels = pathLengthPixels;
@@ -3047,9 +3543,13 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     crossedBoundary,
     sawEntry,
     sawExit,
+    movementStartedInside,
+    entryConsumedFirstMoveStep,
     pathLengthPixels,
     insideDistancePixels,
+    remainingInsideDistancePixels,
     insideCellCount,
+    remainingInsideCellCount,
     firstEntryState,
     firstEntryPathDistancePixels,
     firstEntrySegmentIndex,

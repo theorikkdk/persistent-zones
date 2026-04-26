@@ -49,6 +49,8 @@
         "DetectedTemplateType": "Type de gabarit d\u00e9tect\u00e9",
         "DetectedTemplateSource": "Source d\u00e9tect\u00e9e",
         "EffectiveTemplateType": "Type de gabarit effectif",
+        "MovementStop": "Arr\u00eat de mouvement",
+        "LegacyMovementStop": "Anciennes options locales d'arr\u00eat",
         "SelectedVariant": "Variante s\u00e9lectionn\u00e9e",
         "DefaultVariant": "Variante par d\u00e9faut",
         "AvailableVariants": "Variantes disponibles",
@@ -90,7 +92,11 @@
       },
       "Common": {
         "Enabled": "Activ\u00e9",
-        "Disabled": "D\u00e9sactiv\u00e9"
+        "Disabled": "D\u00e9sactiv\u00e9",
+        "EnabledGlobally": "Activ\u00e9 globalement",
+        "DisabledGlobally": "D\u00e9sactiv\u00e9 globalement",
+        "Detected": "D\u00e9tect\u00e9",
+        "NotDetected": "Non d\u00e9tect\u00e9"
       },
       "SectionSummaries": {
         "GlobalTriggers": "{count} d\u00e9clenchements",
@@ -265,6 +271,9 @@
       },
       "Help": {
         "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
+        "MovementStopGlobalEnabled": "L'arr\u00eat de mouvement est activ\u00e9 globalement pour {triggers}.",
+        "MovementStopGlobalDisabled": "L'arr\u00eat de mouvement est d\u00e9sactiv\u00e9 globalement dans les r\u00e9glages du module.",
+        "MovementStopLegacyDetected": "D'anciennes options locales d'arr\u00eat de mouvement ont \u00e9t\u00e9 d\u00e9tect\u00e9es sur la d\u00e9finition enregistr\u00e9e. Le r\u00e9glage global du module pilote d\u00e9sormais ce comportement.",
         "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
         "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
         "PartTargetFilterInherited": "Cette zone utilise le ciblage par d\u00e9faut.",
@@ -305,6 +314,12 @@
       "ProfileRenamePrompt": "Saisissez un nouveau nom pour ce profil Persistent Zones.",
       "ProfileDeleteTitle": "Supprimer le profil Persistent Zones",
       "ProfileDeleteConfirm": "Supprimer le profil Persistent Zones s\u00e9lectionn\u00e9 ?"
+    },
+    "Settings": {
+      "MovementStopGlobal": {
+        "Name": "Interrompre le mouvement dans les zones persistantes",
+        "Hint": "Quand ce r\u00e9glage est activ\u00e9, persistent-zones peut interrompre globalement le mouvement pour les triggers de mouvement pris en charge (actuellement \u00c0 l'entr\u00e9e et Pendant le d\u00e9placement)."
+      }
     }
   }
 }
