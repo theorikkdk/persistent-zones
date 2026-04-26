@@ -15,21 +15,21 @@
         "Basics": "Basics",
         "Activation": "Activation",
         "Profiles": "Profiles",
-        "TemplateContext": "Detected Template Context",
-        "TypeVariant": "Type / Variant",
+        "TemplateContext": "Detected Template",
+        "TypeVariant": "Zone Type & Variant",
         "Geometry": "Geometry",
         "DerivedGeometry": "Derived Geometry / Parameters",
-        "Behaviors": "Effective Part Behaviors",
+        "Behaviors": "Zone Behaviors",
         "LinksTerrain": "Links & Terrain",
         "Triggers": "Triggers",
-        "ConfigurationState": "Configuration State",
+        "ConfigurationState": "Configuration Status",
         "OnEnter": "On Enter",
         "OnExit": "On Exit",
         "OnMove": "On Move",
         "OnStartTurn": "On Start Turn",
         "OnEndTurn": "On End Turn",
         "Validation": "Validation",
-        "StructuredDebug": "Structured Summary",
+        "StructuredDebug": "Structured Inspector",
         "AdvancedDebug": "Advanced / Debug",
         "RawDefinition": "Raw Definition",
         "NormalizedDefinition": "Normalized Definition"
@@ -49,7 +49,7 @@
         "DetectedTemplateType": "Detected Template Type",
         "DetectedTemplateSource": "Detected Template Source",
         "EffectiveTemplateType": "Effective Template Type",
-        "MovementStop": "Movement Stop",
+        "MovementStop": "Movement Interruption",
         "LegacyMovementStop": "Legacy Local Stop Flags",
         "SelectedVariant": "Selected Variant",
         "DefaultVariant": "Default Variant",
@@ -59,10 +59,10 @@
         "Status": "Status",
         "TargetingMode": "Targeting Mode",
         "TriggerMode": "Mode",
-        "MovementMode": "Movement Filter",
+        "MovementMode": "Movement Type",
         "StepMode": "Step Mode",
-        "CellStep": "Cell Count",
-        "DistanceStep": "Distance Step",
+        "CellStep": "Cells per Trigger",
+        "DistanceStep": "Distance per Trigger",
         "OnEnterEnabled": "Enable onEnter",
         "OnEnterMode": "onEnter Mode",
         "DamageFormula": "Damage Formula",
@@ -80,10 +80,10 @@
         "TargetFilter": "Targets",
         "DifficultTerrain": "Difficult Terrain",
         "LinkedWalls": "Linked Walls",
-        "LinkedWallsPreset": "Linked Wall Preset",
+        "LinkedWallsPreset": "Linked Wall Style",
         "LinkedWallHeight": "Linked Wall Height",
         "LinkedLight": "Linked Light",
-        "LinkedLightPreset": "Linked Light Preset",
+        "LinkedLightPreset": "Linked Light Style",
         "LinkedLightRange": "Linked Light Range",
         "LinkedLightBright": "Bright Range",
         "LinkedLightDim": "Dim Range",
@@ -98,9 +98,19 @@
         "Detected": "Detected",
         "NotDetected": "Not detected"
       },
+      "MovementStopModes": {
+        "Off": "Off",
+        "OnEnter": "On Enter only",
+        "OnEnterAndMove": "On Enter + On Move"
+      },
+      "DebugLogLevels": {
+        "Minimal": "Minimal",
+        "Standard": "Standard",
+        "Verbose": "Verbose"
+      },
       "SectionSummaries": {
-        "GlobalTriggers": "{count} triggers",
-        "CompositeParts": "{count} parts"
+        "GlobalTriggers": "{count} active triggers",
+        "CompositeParts": "{count} active zones"
       },
       "MovementModes": {
         "Any": "Any",
@@ -190,7 +200,7 @@
       "ActivityCompatibility": {
         "Compatible": "Compatible zone-trigger",
         "Incompatible": "Incompatible",
-        "OnlyCompatibleListed": "Only zone-trigger compatible activities are listed in this selector.",
+        "OnlyCompatibleListed": "Only activities compatible with zone triggers are listed here.",
         "SupportedTypes": "Supported types",
         "CurrentIncompatibleSelection": "Current incompatible selection",
         "NoCompatibleActivities": "No compatible zone-trigger activities were found on this Item.",
@@ -271,8 +281,9 @@
       },
       "Help": {
         "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
-        "MovementStopGlobalEnabled": "Movement stop is enabled globally for {triggers}.",
-        "MovementStopGlobalDisabled": "Movement stop is disabled globally in the module settings.",
+        "MovementStopGlobalEnabled": "Movement interruption is enabled globally for {triggers}.",
+        "MovementStopGlobalEnabledGeneric": "Movement interruption is enabled globally for supported movement triggers.",
+        "MovementStopGlobalDisabled": "Movement interruption is disabled in the module settings.",
         "MovementStopLegacyDetected": "Legacy local movement-stop flags were detected on the stored definition. The global module setting now controls movement stop.",
         "PartOnEnterModes": "Composite definitions can configure onEnter separately for each part.",
         "PartTriggerModes": "Composite definitions can configure onEnter, onStartTurn, and onEndTurn separately for each part.",
@@ -316,9 +327,31 @@
       "ProfileDeleteConfirm": "Delete the selected Persistent Zones profile?"
     },
     "Settings": {
-      "MovementStopGlobal": {
-        "Name": "Interrupt movement in persistent zones",
-        "Hint": "When enabled, persistent-zones can interrupt movement globally for supported movement triggers (currently On Enter and On Move)."
+      "MovementStopGlobalLegacy": {
+        "Name": "Legacy movement interruption setting",
+        "Hint": "Internal legacy setting preserved for movement interruption migration."
+      },
+      "MovementStopGlobalMode": {
+        "Name": "Movement interruption",
+        "Hint": "Choose which supported movement triggers can interrupt token movement globally.",
+        "Choices": {
+          "Off": "Off",
+          "OnEnter": "On Enter only",
+          "OnEnterAndMove": "On Enter + On Move"
+        }
+      },
+      "MovementStopGlobalModeMigrated": {
+        "Name": "Movement interruption migrated",
+        "Hint": "Internal flag used to track legacy movement interruption migration."
+      },
+      "DebugLogLevel": {
+        "Name": "Debug log verbosity",
+        "Hint": "Control how much diagnostic output Persistent Zones writes to the console.",
+        "Choices": {
+          "Minimal": "Minimal",
+          "Standard": "Standard",
+          "Verbose": "Verbose"
+        }
       }
     }
   }

@@ -15,8 +15,8 @@
         "Basics": "Base",
         "Activation": "Activation",
         "Profiles": "Profils",
-        "TemplateContext": "Contexte du gabarit d\u00e9tect\u00e9",
-        "TypeVariant": "Type / Variante",
+        "TemplateContext": "Gabarit d\u00e9tect\u00e9",
+        "TypeVariant": "Type de zone / Variante",
         "Geometry": "G\u00e9om\u00e9trie",
         "DerivedGeometry": "G\u00e9om\u00e9trie d\u00e9riv\u00e9e / Param\u00e8tres",
         "Behaviors": "Comportements des parts effectives",
@@ -29,7 +29,7 @@
         "OnStartTurn": "Au d\u00e9but du tour",
         "OnEndTurn": "\u00c0 la fin du tour",
         "Validation": "Validation",
-        "StructuredDebug": "R\u00e9sum\u00e9 structur\u00e9",
+        "StructuredDebug": "Inspecteur structur\u00e9",
         "AdvancedDebug": "Avanc\u00e9 / Debug",
         "RawDefinition": "D\u00e9finition brute",
         "NormalizedDefinition": "D\u00e9finition normalis\u00e9e"
@@ -49,7 +49,7 @@
         "DetectedTemplateType": "Type de gabarit d\u00e9tect\u00e9",
         "DetectedTemplateSource": "Source d\u00e9tect\u00e9e",
         "EffectiveTemplateType": "Type de gabarit effectif",
-        "MovementStop": "Arr\u00eat de mouvement",
+        "MovementStop": "Interruption du mouvement",
         "LegacyMovementStop": "Anciennes options locales d'arr\u00eat",
         "SelectedVariant": "Variante s\u00e9lectionn\u00e9e",
         "DefaultVariant": "Variante par d\u00e9faut",
@@ -59,7 +59,7 @@
         "Status": "Statut",
         "TargetingMode": "Mode de ciblage",
         "TriggerMode": "Mode",
-        "MovementMode": "Filtre de mouvement",
+        "MovementMode": "Type de mouvement",
         "StepMode": "Mode de pas",
         "CellStep": "Nombre de cases",
         "DistanceStep": "Distance par d\u00e9clenchement",
@@ -80,10 +80,10 @@
         "TargetFilter": "Cibles",
         "DifficultTerrain": "Terrain difficile",
         "LinkedWalls": "Murs li\u00e9s",
-        "LinkedWallsPreset": "Preset de murs li\u00e9s",
+        "LinkedWallsPreset": "Style de murs li\u00e9s",
         "LinkedWallHeight": "Hauteur des murs li\u00e9s",
         "LinkedLight": "Lumi\u00e8re li\u00e9e",
-        "LinkedLightPreset": "Preset de lumi\u00e8re li\u00e9e",
+        "LinkedLightPreset": "Style de lumi\u00e8re li\u00e9e",
         "LinkedLightRange": "Port\u00e9e de la lumi\u00e8re li\u00e9e",
         "LinkedLightBright": "Port\u00e9e vive",
         "LinkedLightDim": "Port\u00e9e tamis\u00e9e",
@@ -98,9 +98,19 @@
         "Detected": "D\u00e9tect\u00e9",
         "NotDetected": "Non d\u00e9tect\u00e9"
       },
+      "MovementStopModes": {
+        "Off": "D\u00e9sactiv\u00e9",
+        "OnEnter": "\u00c0 l'entr\u00e9e uniquement",
+        "OnEnterAndMove": "\u00c0 l'entr\u00e9e + pendant le d\u00e9placement"
+      },
+      "DebugLogLevels": {
+        "Minimal": "Minimal",
+        "Standard": "Standard",
+        "Verbose": "Verbeux"
+      },
       "SectionSummaries": {
-        "GlobalTriggers": "{count} d\u00e9clenchements",
-        "CompositeParts": "{count} parts"
+        "GlobalTriggers": "{count} d\u00e9clenchements actifs",
+        "CompositeParts": "{count} zones actives"
       },
       "MovementModes": {
         "Any": "Tous",
@@ -271,8 +281,9 @@
       },
       "Help": {
         "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
-        "MovementStopGlobalEnabled": "L'arr\u00eat de mouvement est activ\u00e9 globalement pour {triggers}.",
-        "MovementStopGlobalDisabled": "L'arr\u00eat de mouvement est d\u00e9sactiv\u00e9 globalement dans les r\u00e9glages du module.",
+        "MovementStopGlobalEnabled": "L'interruption du mouvement est activ\u00e9e globalement pour {triggers}.",
+        "MovementStopGlobalEnabledGeneric": "L'interruption du mouvement est activ\u00e9e globalement pour les d\u00e9clenchements de mouvement pris en charge.",
+        "MovementStopGlobalDisabled": "L'interruption du mouvement est d\u00e9sactiv\u00e9e dans les r\u00e9glages du module.",
         "MovementStopLegacyDetected": "D'anciennes options locales d'arr\u00eat de mouvement ont \u00e9t\u00e9 d\u00e9tect\u00e9es sur la d\u00e9finition enregistr\u00e9e. Le r\u00e9glage global du module pilote d\u00e9sormais ce comportement.",
         "PartOnEnterModes": "Les d\u00e9finitions composites peuvent configurer onEnter s\u00e9par\u00e9ment pour chaque part.",
         "PartTriggerModes": "Les d\u00e9finitions composites peuvent configurer onEnter, onStartTurn et onEndTurn s\u00e9par\u00e9ment pour chaque part.",
@@ -316,9 +327,31 @@
       "ProfileDeleteConfirm": "Supprimer le profil Persistent Zones s\u00e9lectionn\u00e9 ?"
     },
     "Settings": {
-      "MovementStopGlobal": {
-        "Name": "Interrompre le mouvement dans les zones persistantes",
-        "Hint": "Quand ce r\u00e9glage est activ\u00e9, persistent-zones peut interrompre globalement le mouvement pour les triggers de mouvement pris en charge (actuellement \u00c0 l'entr\u00e9e et Pendant le d\u00e9placement)."
+      "MovementStopGlobalLegacy": {
+        "Name": "Ancien r\u00e9glage d'interruption du mouvement",
+        "Hint": "R\u00e9glage interne conserv\u00e9 pour migrer l'ancien comportement d'interruption du mouvement."
+      },
+      "MovementStopGlobalMode": {
+        "Name": "Interruption du mouvement",
+        "Hint": "Choisissez quels d\u00e9clenchements de mouvement pris en charge peuvent interrompre globalement le mouvement.",
+        "Choices": {
+          "Off": "D\u00e9sactiv\u00e9",
+          "OnEnter": "\u00c0 l'entr\u00e9e uniquement",
+          "OnEnterAndMove": "\u00c0 l'entr\u00e9e + pendant le d\u00e9placement"
+        }
+      },
+      "MovementStopGlobalModeMigrated": {
+        "Name": "Interruption du mouvement migr\u00e9e",
+        "Hint": "Indicateur interne utilis\u00e9 pour suivre la migration de l'ancien r\u00e9glage d'interruption du mouvement."
+      },
+      "DebugLogLevel": {
+        "Name": "Niveau de verbosit\u00e9 des logs",
+        "Hint": "Contr\u00f4lez la quantit\u00e9 de diagnostics envoy\u00e9s dans la console par Persistent Zones.",
+        "Choices": {
+          "Minimal": "Minimal",
+          "Standard": "Standard",
+          "Verbose": "Verbeux"
+        }
       }
     }
   }

@@ -4,6 +4,7 @@ import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import {
   coerceNumber,
   debug,
+  debugVerbose,
   distanceToPixels,
   evaluateManagedRegionTargetFilter,
   findManagedRegions,
@@ -170,7 +171,7 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
       ? "no-eligible-onenter-stop"
       : explainPreUpdateOnEnterTruncationFailure(eligibleStopEvaluation);
 
-  debug("Observed managed Region preUpdate diagnostic.", {
+  debugVerbose("Observed managed Region preUpdate diagnostic.", {
     tokenUuid: tokenDocument?.uuid ?? null,
     "changed.x": changed?.x ?? null,
     "changed.y": changed?.y ?? null,
@@ -219,7 +220,7 @@ async function onMoveToken(tokenDocument, movement) {
     markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
     lastKnownTokenStates.set(tokenDocument.uuid, movementPath.toState);
 
-    debug("Skipped managed Region evaluation for internal stop-movement sync.", {
+    debugVerbose("Skipped managed Region evaluation for internal stop-movement sync.", {
       movementSequenceId,
       tokenId: tokenDocument?.id ?? null,
       moveSource: movementPath.moveSource,
@@ -1041,6 +1042,11 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
       moveMovementStopResolution?.globalEnabled ||
       exitMovementStopResolution?.globalEnabled
     ),
+    movementStopGlobalMode: {
+      onEnter: enterMovementStopResolution?.globalMode ?? "off",
+      onMove: moveMovementStopResolution?.globalMode ?? "off",
+      onExit: exitMovementStopResolution?.globalMode ?? "off"
+    },
     movementStopLegacyFlagDetected: Boolean(
       enterMovementStopResolution?.legacyFlagDetected ||
       moveMovementStopResolution?.legacyFlagDetected ||
@@ -1158,6 +1164,7 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
     requiredMovementMode: onEnter.movementMode ?? "any",
     movementModeMatched: true,
     movementStopGlobalEnabled: movementStopResolution?.globalEnabled ?? false,
+    movementStopGlobalMode: movementStopResolution?.globalMode ?? "off",
     movementStopLegacyFlagDetected: movementStopResolution?.legacyFlagDetected ?? false,
     movementStopResolvedFrom: movementStopResolution?.resolvedFrom ?? null,
     stopSkippedBecauseGlobalDisabled: movementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
@@ -1380,6 +1387,7 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     requiredMovementMode: onMove.movementMode ?? "any",
     movementModeMatched: true,
     movementStopGlobalEnabled: movementStopResolution?.globalEnabled ?? false,
+    movementStopGlobalMode: movementStopResolution?.globalMode ?? "off",
     movementStopLegacyFlagDetected: movementStopResolution?.legacyFlagDetected ?? false,
     movementStopResolvedFrom: movementStopResolution?.resolvedFrom ?? null,
     stopSkippedBecauseGlobalDisabled: movementStopResolution?.stopSkippedBecauseGlobalDisabled ?? false,
@@ -1555,6 +1563,7 @@ function chooseStopDecision(evaluations, {
           movementMode,
           trigger: "onMove",
           movementStopGlobalEnabled: moveMovementStopResolution?.globalEnabled ?? false,
+          movementStopGlobalMode: moveMovementStopResolution?.globalMode ?? "off",
           movementStopLegacyFlagDetected: moveMovementStopResolution?.legacyFlagDetected ?? false,
           movementStopResolvedFrom: moveMovementStopResolution?.resolvedFrom ?? null,
           stopSkippedBecauseGlobalDisabled: true
@@ -1750,6 +1759,7 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
         movementMode,
         trigger: "onEnter",
         movementStopGlobalEnabled: enterMovementStopResolution?.globalEnabled ?? false,
+        movementStopGlobalMode: enterMovementStopResolution?.globalMode ?? "off",
         movementStopLegacyFlagDetected: enterMovementStopResolution?.legacyFlagDetected ?? false,
         movementStopResolvedFrom: enterMovementStopResolution?.resolvedFrom ?? null,
         stopSkippedBecauseGlobalDisabled: true
@@ -2950,7 +2960,7 @@ function refreshTrackedTokenStates(scene) {
     lastKnownTokenStates.set(tokenDocument.uuid, snapshotTokenState(tokenDocument));
   }
 
-  debug("Refreshed tracked token states.", {
+  debugVerbose("Refreshed tracked token states.", {
     sceneId: scene?.id ?? null,
     trackedTokens: tokenDocuments.length
   });
@@ -3863,7 +3873,7 @@ function resolveMovementModeForEvaluation(tokenDocument, {
   const resolvedMovementMode = normalizeMovementMode(rawMovementMode ?? "voluntary");
   const consumed = Boolean(consume && rawMovementMode);
 
-  debug("Resolved token movement mode for Region evaluation.", {
+  debugVerbose("Resolved token movement mode for Region evaluation.", {
     tokenId: tokenDocument?.id ?? null,
     moveSource,
     movementModeRaw: rawMovementMode,

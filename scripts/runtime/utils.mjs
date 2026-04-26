@@ -1,16 +1,31 @@
 import {
+  DEBUG_LOG_LEVEL_SETTING_KEY,
   DEBUG_PREFIX,
   MODULE_ID,
   RUNTIME_FLAG_KEY
 } from "../constants.mjs";
 
-export function debug(message, data = undefined) {
+const PERSISTENT_ZONES_LOG_LEVEL_PRIORITY = Object.freeze({
+  minimal: 0,
+  standard: 1,
+  verbose: 2
+});
+
+export function debug(message, data = undefined, { level = "standard" } = {}) {
+  if (!shouldEmitPersistentZonesDebug(level)) {
+    return;
+  }
+
   if (data === undefined) {
     console.debug(`${DEBUG_PREFIX} ${message}`);
     return;
   }
 
   console.debug(`${DEBUG_PREFIX} ${message}`, data);
+}
+
+export function debugVerbose(message, data = undefined) {
+  debug(message, data, { level: "verbose" });
 }
 
 export function error(message, caughtError, data = undefined) {
@@ -365,6 +380,46 @@ export function isPrimaryGM() {
 
 export async function wait(milliseconds = 0) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
+function shouldEmitPersistentZonesDebug(requiredLevel = "standard") {
+  const configuredLevel = getConfiguredPersistentZonesLogLevel();
+  return (
+    PERSISTENT_ZONES_LOG_LEVEL_PRIORITY[configuredLevel] >=
+    PERSISTENT_ZONES_LOG_LEVEL_PRIORITY[normalizePersistentZonesLogLevel(requiredLevel)]
+  );
+}
+
+function getConfiguredPersistentZonesLogLevel() {
+  if (!hasPersistentZonesSetting(DEBUG_LOG_LEVEL_SETTING_KEY)) {
+    return "standard";
+  }
+
+  try {
+    return normalizePersistentZonesLogLevel(
+      game.settings.get(MODULE_ID, DEBUG_LOG_LEVEL_SETTING_KEY)
+    );
+  } catch (_caughtError) {
+    return "standard";
+  }
+}
+
+function hasPersistentZonesSetting(settingKey) {
+  return Boolean(game?.settings?.settings?.has?.(`${MODULE_ID}.${settingKey}`));
+}
+
+function normalizePersistentZonesLogLevel(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+
+  if (normalizedValue === "minimal") {
+    return "minimal";
+  }
+
+  if (normalizedValue === "verbose") {
+    return "verbose";
+  }
+
+  return "standard";
 }
 
 export function getTokenCenter(tokenLike, fallback = null) {

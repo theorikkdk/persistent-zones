@@ -9,6 +9,7 @@ import {
   coerceBoolean,
   coerceNumber,
   debug,
+  debugVerbose,
   duplicateData,
   fromUuidSafe,
   isWallHeightSupported,
@@ -22,6 +23,9 @@ import {
 } from "../runtime/concentration-cleanup.mjs";
 import {
   detectLegacyMovementStopFlags,
+  getMovementStopGlobalMode,
+  getPersistentZonesLogLevel,
+  getSupportedMovementStopTimingsForMode,
   isMovementStopGlobalEnabled
 } from "../settings.mjs";
 import {
@@ -315,7 +319,7 @@ class PersistentZonesItemConfig extends FormApplication {
 
     if (!this._profileUiReadyLogged) {
       const sortedProfiles = sortProfilesForUi(getPersistentZoneProfiles());
-      debug("Prepared persistent-zones profile library UI.", {
+      debugVerbose("Prepared persistent-zones profile library UI.", {
         profileSorted: true,
         sortMode: "scope-label",
         totalCount: sortedProfiles.length,
@@ -492,7 +496,7 @@ class PersistentZonesItemConfig extends FormApplication {
       filterText: this._profileFilter
     });
 
-    debug("Filtered persistent-zones profile library.", {
+    debugVerbose("Filtered persistent-zones profile library.", {
       profileFiltered: true,
       filterText: this._profileFilter,
       filteredCount: profileListContext.filteredCount,
@@ -1422,32 +1426,22 @@ function buildMovementStopContext({
   definition = null
 } = {}) {
   const globalEnabled = isMovementStopGlobalEnabled();
+  const globalMode = getMovementStopGlobalMode();
   const legacyFlagDetected = detectLegacyMovementStopFlags(definition);
-  const supportedTriggerLabels = [
-    getTriggerTimingLabel("onEnter"),
-    getTriggerTimingLabel("onMove")
-  ].join(" / ");
+  const supportedTimings = getSupportedMovementStopTimingsForMode(globalMode);
+  const supportedTriggerLabels = supportedTimings
+    .map((timing) => getTriggerTimingLabel(timing))
+    .join(" / ");
 
   return {
     globalEnabled,
+    globalMode,
     legacyFlagDetected,
+    supportedTimings,
     supportedTriggerLabels,
-    statusLabel: globalEnabled
-      ? localize("PERSISTENT_ZONES.UI.Common.Enabled", "Enabled")
-      : localize("PERSISTENT_ZONES.UI.Common.Disabled", "Disabled"),
-    statusSummaryText: globalEnabled
-      ? localize("PERSISTENT_ZONES.UI.Common.EnabledGlobally", "Enabled globally")
-      : localize("PERSISTENT_ZONES.UI.Common.DisabledGlobally", "Disabled globally"),
-    statusHint: globalEnabled
-      ? formatLocalize(
-        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalEnabled",
-        { triggers: supportedTriggerLabels },
-        `Movement stop is enabled globally for ${supportedTriggerLabels}.`
-      )
-      : localize(
-        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalDisabled",
-        "Movement stop is disabled globally in the module settings."
-      ),
+    statusLabel: localizeMovementStopGlobalModeLabel(globalMode),
+    statusSummaryText: localizeMovementStopGlobalModeLabel(globalMode),
+    statusHint: buildMovementStopStatusHint(globalMode, supportedTriggerLabels),
     legacyStatusLabel: legacyFlagDetected
       ? localize("PERSISTENT_ZONES.UI.Common.Detected", "Detected")
       : localize("PERSISTENT_ZONES.UI.Common.NotDetected", "Not detected"),
@@ -1562,6 +1556,13 @@ function buildStructuredDebugInspector({
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.MovementStop", "Movement Stop"),
         effectiveMovementStopContext.statusSummaryText
+      ),
+      buildDebugInspectorRow(
+        localize(
+          "PERSISTENT_ZONES.Settings.DebugLogLevel.Name",
+          "Debug log verbosity"
+        ),
+        localizeDebugLogLevelLabel(getPersistentZonesLogLevel())
       ),
       buildDebugInspectorRow(
         localize("PERSISTENT_ZONES.UI.Fields.LegacyMovementStop", "Legacy Local Stop Flags"),
@@ -4634,6 +4635,64 @@ function localizeTriggerModeLabel(mode) {
     case "none":
     default:
       return localize("PERSISTENT_ZONES.UI.OnEnterModes.None", "None");
+  }
+}
+
+function localizeMovementStopGlobalModeLabel(mode) {
+  switch (String(mode ?? "").trim().toLowerCase()) {
+    case "on-enter":
+      return localize(
+        "PERSISTENT_ZONES.UI.MovementStopModes.OnEnter",
+        "On Enter only"
+      );
+    case "on-enter-and-move":
+      return localize(
+        "PERSISTENT_ZONES.UI.MovementStopModes.OnEnterAndMove",
+        "On Enter + On Move"
+      );
+    case "off":
+    default:
+      return localize(
+        "PERSISTENT_ZONES.UI.MovementStopModes.Off",
+        "Off"
+      );
+  }
+}
+
+function buildMovementStopStatusHint(globalMode, supportedTriggerLabels = "") {
+  switch (String(globalMode ?? "").trim().toLowerCase()) {
+    case "on-enter":
+    case "on-enter-and-move":
+      if (!supportedTriggerLabels) {
+        return localize(
+          "PERSISTENT_ZONES.UI.Help.MovementStopGlobalEnabledGeneric",
+          "Movement interruption is enabled globally for supported movement triggers."
+        );
+      }
+
+      return formatLocalize(
+        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalEnabled",
+        { triggers: supportedTriggerLabels },
+        `Movement interruption is enabled globally for ${supportedTriggerLabels}.`
+      );
+    case "off":
+    default:
+      return localize(
+        "PERSISTENT_ZONES.UI.Help.MovementStopGlobalDisabled",
+        "Movement interruption is disabled in the module settings."
+      );
+  }
+}
+
+function localizeDebugLogLevelLabel(logLevel) {
+  switch (String(logLevel ?? "").trim().toLowerCase()) {
+    case "minimal":
+      return localize("PERSISTENT_ZONES.UI.DebugLogLevels.Minimal", "Minimal");
+    case "verbose":
+      return localize("PERSISTENT_ZONES.UI.DebugLogLevels.Verbose", "Verbose");
+    case "standard":
+    default:
+      return localize("PERSISTENT_ZONES.UI.DebugLogLevels.Standard", "Standard");
   }
 }
 

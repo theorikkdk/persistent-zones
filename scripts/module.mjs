@@ -1,7 +1,10 @@
 import { createPersistentZonesApi } from "./api.mjs";
 import { MODULE_API_NAMESPACE, MODULE_ID } from "./constants.mjs";
 import { registerPersistentZoneProfileSettings } from "./profiles.mjs";
-import { registerPersistentZoneModuleSettings } from "./settings.mjs";
+import {
+  migrateLegacyMovementStopGlobalSetting,
+  registerPersistentZoneModuleSettings
+} from "./settings.mjs";
 import { registerPersistentZonesItemConfigUi } from "./ui/item-config-app.mjs";
 import {
   cleanupSceneRegions,
@@ -47,6 +50,11 @@ async function onReady() {
 
   if (!isPrimaryGM()) {
     return;
+  }
+
+  const movementStopMigration = await migrateLegacyMovementStopGlobalSetting();
+  if (movementStopMigration?.migrated) {
+    debug("Resolved persistent-zones movement interruption module setting.", movementStopMigration);
   }
 
   debug("GM debug helpers available on game.persistentZones.debug.");

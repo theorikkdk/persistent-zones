@@ -10,6 +10,14 @@ It owns its own data contract, runtime behaviors, and Item authoring UI. Other m
 - Runtime Region metadata lives on `flags["persistent-zones"].runtime`.
 - The public API is exposed on `game.persistentZones`.
 
+## Module Settings
+
+- `Movement interruption`
+  Controls movement interruption globally with three modes: `Off`, `On Enter only`, or `On Enter + On Move`.
+
+- `Debug log verbosity`
+  Controls how much diagnostic output Persistent Zones writes to the browser console: `Minimal`, `Standard`, or `Verbose`.
+
 ## Supported Zone Shapes
 
 - `simple`
@@ -239,4 +247,5 @@ ui.notifications.info("Persistent Zones definition saved.");
 
 - The recommended integration path is to use the public API rather than writing flags manually.
 - The Item editor remains the easiest way to author compatible definitions by hand.
-- Movement stop is still intentionally disabled in the current stable runtime.
+- Movement interruption is now controlled globally in the module settings rather than per Item definition.
+- Saving an Item definition automatically rebuilds linked active Regions when it can do so safely.
