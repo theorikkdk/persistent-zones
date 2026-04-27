@@ -79,15 +79,81 @@ export async function applyConfiguredTriggerEffect({
     });
   }
 
-  if (!configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
+  const simpleEffect = resolveSimpleEffectConfig(configuredTrigger);
+
+  if (simpleEffect.type !== "damage" && !simpleEffect.formula) {
+    return buildSkippedResult(`${normalizedTiming} has no enabled simple effect formula.`, {
+      timing: normalizedTiming,
+      partId,
+      triggerMode,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null
+    });
+  }
+
+  if (simpleEffect.type === "damage" && !configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
     return buildSkippedResult(`${normalizedTiming} has no enabled save or damage.`, {
       timing: normalizedTiming,
       partId,
-      triggerMode
+      triggerMode,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null
     });
   }
 
   try {
+    if (simpleEffect.type === "heal" || simpleEffect.type === "tempHP") {
+      const simpleRecoveryResult = await resolveSimpleRecoveryResult(
+        simpleEffect,
+        regionDocument,
+        tokenDocument,
+        normalizedTiming
+      );
+      const effectEntries = simpleRecoveryResult.rolledTotal > 0
+        ? [{
+          value: simpleRecoveryResult.rolledTotal,
+          type: simpleEffect.type === "heal" ? "healing" : "temphp",
+          properties: new Set()
+        }]
+        : [];
+      await applyDamageEntriesToActor(actor, effectEntries);
+      const effectSummary = summarizeDamageEntries(effectEntries);
+
+      debug(`Applied ${normalizedTiming} simple effect.`, {
+        regionId: regionDocument?.id ?? null,
+        tokenId: tokenDocument?.id ?? null,
+        actorUuid: actor.uuid,
+        partId,
+        timing: normalizedTiming,
+        triggerMode,
+        simpleEffectType: simpleEffect.type,
+        simpleEffectFormula: simpleEffect.formula ?? null,
+        simpleEffectApplied: effectEntries.length > 0,
+        healApplied: effectSummary.healingTotal,
+        tempHpApplied: effectSummary.tempHpTotal
+      });
+
+      return {
+        applied: effectEntries.length > 0,
+        skipped: effectEntries.length === 0,
+        partId,
+        triggerMode,
+        timing: normalizedTiming,
+        simpleEffectType: simpleEffect.type,
+        simpleEffectFormula: simpleEffect.formula ?? null,
+        simpleEffectApplied: effectEntries.length > 0,
+        healApplied: effectSummary.healingTotal,
+        tempHpApplied: effectSummary.tempHpTotal,
+        healing: {
+          type: "simple",
+          effectType: simpleEffect.type,
+          formula: simpleRecoveryResult.formula,
+          rolledTotal: simpleRecoveryResult.rolledTotal,
+          summary: effectSummary
+        }
+      };
+    }
+
     const saveResult = configuredTrigger.save?.enabled
       ? await resolveSaveResult(actor, configuredTrigger.save, regionDocument, tokenDocument, normalizedTiming)
       : null;
@@ -123,9 +189,14 @@ export async function applyConfiguredTriggerEffect({
       partId,
       timing: normalizedTiming,
       triggerMode,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null,
+      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
       save: saveResult,
       damage: damageResult,
-      appliedDamage
+      appliedDamage,
+      healApplied: 0,
+      tempHpApplied: 0
     });
 
     return {
@@ -134,9 +205,14 @@ export async function applyConfiguredTriggerEffect({
       partId,
       triggerMode,
       timing: normalizedTiming,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null,
+      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
       save: saveResult,
       damage: damageResult,
-      appliedDamage
+      appliedDamage,
+      healApplied: 0,
+      tempHpApplied: 0
     };
   } catch (caughtError) {
     error("Failed to apply configured trigger effect.", caughtError, {
@@ -757,14 +833,15 @@ async function applyDamageEntriesToActor(actor, damages) {
     return 0;
   }
 
+  const entrySummary = summarizeDamageEntries(damages);
   const calculatedDamage = typeof actor.calculateDamage === "function"
     ? actor.calculateDamage(damages)
     : null;
   const appliedDamage = coerceNumber(
     calculatedDamage?.amount,
-    damages.reduce((sum, entry) => sum + coerceNumber(entry?.value, 0), 0)
+    entrySummary.damageTotal - entrySummary.healingTotal
   );
-  const appliedTempHp = coerceNumber(calculatedDamage?.temp, 0);
+  const appliedTempHp = coerceNumber(calculatedDamage?.temp, entrySummary.tempHpTotal);
 
   if (typeof actor.applyDamage === "function") {
     await actor.applyDamage(damages);
@@ -915,6 +992,37 @@ async function resolveDamageResult(damageConfig, saveResult, regionDocument, tok
   return result;
 }
 
+async function resolveSimpleRecoveryResult(simpleEffectConfig, regionDocument, tokenDocument, timing = "custom") {
+  const timingLabel = String(timing || "custom");
+  const effectType = normalizeSimpleEffectType(simpleEffectConfig?.type);
+  const formula = String(simpleEffectConfig?.formula ?? "").trim();
+  const roll = formula ? new Roll(formula) : null;
+
+  if (roll) {
+    await roll.evaluate();
+    await roll.toMessage({
+      flavor: `Persistent Zones ${timingLabel} ${effectType === "heal" ? "healing" : "temporary HP"}`
+    });
+  }
+
+  const rolledTotal = Math.max(coerceNumber(roll?.total, 0), 0);
+
+  debug(`Calculated ${timingLabel} simple effect.`, {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    timing: timingLabel,
+    simpleEffectType: effectType,
+    simpleEffectFormula: formula || null,
+    rolledTotal
+  });
+
+  return {
+    type: effectType,
+    formula: formula || null,
+    rolledTotal
+  };
+}
+
 function adjustDamageForSave(baseDamage, saveResult) {
   if (!saveResult?.success) {
     return baseDamage;
@@ -1046,6 +1154,51 @@ function normalizeSaveDcMode(dcMode, dcSource, dc) {
 function normalizeSaveDcSource(value) {
   const normalized = String(value ?? "caster").toLowerCase();
   return ["caster", "actor", "token"].includes(normalized) ? normalized : "caster";
+}
+
+function normalizeSimpleEffectType(value) {
+  const normalized = String(value ?? "damage").trim().toLowerCase();
+  if (normalized === "heal") {
+    return "heal";
+  }
+
+  if (normalized === "temphp") {
+    return "tempHP";
+  }
+
+  return "damage";
+}
+
+function resolveSimpleEffectConfig(triggerConfig = {}) {
+  const simpleEffectDefinition =
+    typeof triggerConfig?.simpleEffect === "object" && triggerConfig.simpleEffect
+      ? triggerConfig.simpleEffect
+      : typeof triggerConfig?.effect === "object" && triggerConfig.effect
+        ? triggerConfig.effect
+        : {};
+  const simpleEffectType = normalizeSimpleEffectType(
+    pickFirstDefined(
+      simpleEffectDefinition.type,
+      triggerConfig?.simpleEffectType,
+      triggerConfig?.damage?.enabled ? "damage" : null,
+      "damage"
+    )
+  );
+  const simpleEffectFormula = String(
+    pickFirstDefined(
+      simpleEffectDefinition.formula,
+      triggerConfig?.damage?.formula,
+      ""
+    )
+  ).trim();
+
+  return {
+    type: simpleEffectType,
+    formula: simpleEffectFormula || null,
+    damageType: simpleEffectType === "damage"
+      ? pickFirstDefined(simpleEffectDefinition.damageType, triggerConfig?.damage?.type, "force")
+      : null
+  };
 }
 
 function resolveTriggerEffectMode(triggerConfig = {}) {

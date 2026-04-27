@@ -59,6 +59,7 @@
         "Status": "Statut",
         "TargetingMode": "Mode de ciblage",
         "TriggerMode": "Mode",
+        "SimpleEffectType": "Effet simple",
         "MovementMode": "Type de mouvement",
         "StepMode": "Mode de pas",
         "CellStep": "Nombre de cases",
@@ -66,6 +67,8 @@
         "OnEnterEnabled": "Activer onEnter",
         "OnEnterMode": "Mode onEnter",
         "DamageFormula": "Formule de d\u00e9g\u00e2ts",
+        "HealingFormula": "Formule de soin",
+        "TempHpFormula": "Formule de PV temporaires",
         "DamageType": "Type de d\u00e9g\u00e2ts",
         "SaveAbility": "Caract\u00e9ristique du save",
         "SaveDcMode": "Source du DD",
@@ -116,6 +119,11 @@
         "Any": "Tous",
         "Voluntary": "Volontaire",
         "Forced": "Forc\u00e9"
+      },
+      "SimpleEffectTypes": {
+        "Damage": "D\u00e9g\u00e2ts",
+        "Heal": "Soin",
+        "TempHp": "PV temporaires"
       },
       "TargetFilters": {
         "All": "Tous",

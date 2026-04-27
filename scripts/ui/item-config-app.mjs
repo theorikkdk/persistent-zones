@@ -64,6 +64,7 @@ const DEFAULT_TARGETING_MODE = "all";
 const DEFAULT_TARGET_FILTER = "all";
 const DEFAULT_PART_TARGET_FILTER_MODE = "inherit";
 const DEFAULT_ON_ENTER_MODE = "none";
+const DEFAULT_SIMPLE_EFFECT_TYPE = "damage";
 const DEFAULT_MOVE_DISTANCE_STEP = 5;
 const DEFAULT_LINE_TEMPLATE_WIDTH = 5;
 const DEFAULT_RING_WALL_THICKNESS = 5;
@@ -1787,18 +1788,25 @@ function buildStructuredTriggerSummaryText({
   }
 
   if (state.mode === "simple") {
+    const simpleEffectType = normalizeSimpleEffectType(
+      state.simpleEffectType,
+      DEFAULT_SIMPLE_EFFECT_TYPE
+    );
+    segments.push(localizeSimpleEffectTypeLabel(simpleEffectType));
     if (state.damageFormula) {
-      const damageTypeLabel = getChoiceLabelByValue(
-        getDamageTypeChoices(),
-        state.damageType,
-        state.damageType
-      );
+      const damageTypeLabel = simpleEffectType === "damage"
+        ? getChoiceLabelByValue(
+          getDamageTypeChoices(),
+          state.damageType,
+          state.damageType
+        )
+        : null;
       segments.push(
-        `${localize("PERSISTENT_ZONES.UI.Fields.DamageFormula", "Damage Formula")}: ${state.damageFormula}${damageTypeLabel ? ` ${damageTypeLabel}` : ""}`
+        `${localizeSimpleEffectFormulaLabel(simpleEffectType)}: ${state.damageFormula}${damageTypeLabel ? ` ${damageTypeLabel}` : ""}`
       );
     }
 
-    if (state.saveAbility) {
+    if (simpleEffectType === "damage" && state.saveAbility) {
       const abilityLabel = getChoiceLabelByValue(
         getAbilityChoices(),
         state.saveAbility,
@@ -2146,6 +2154,7 @@ function collectRemovedLegacyDefinitionFields(previousDefinition, nextDefinition
 function getDefaultTriggerAuthoringConfig(overrides = {}) {
   return {
     mode: DEFAULT_ON_ENTER_MODE,
+    simpleEffectType: DEFAULT_SIMPLE_EFFECT_TYPE,
     damageFormula: "2d6",
     damageType: DEFAULT_DAMAGE_TYPE,
     saveAbility: "",
@@ -2241,6 +2250,15 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
       fallback.movementMode
     )
   );
+  const simpleEffectType = normalizeSimpleEffectType(
+    pickFirstDefined(
+      definition.simpleEffectType,
+      safeGet(definition, ["simpleEffect", "type"]),
+      safeGet(definition, ["effect", "type"]),
+      fallback.simpleEffectType
+    ),
+    fallback.simpleEffectType
+  );
   const stepMode = explicitStepMode ??
     (hasExplicitCellStep
       ? "grid-cell"
@@ -2262,6 +2280,8 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
     ),
     damageFormula: String(
       pickFirstDefined(
+        safeGet(definition, ["simpleEffect", "formula"]),
+        safeGet(definition, ["effect", "formula"]),
         definition.damageFormula,
         safeGet(definition, ["damage", "formula"]),
         safeGet(definition, ["damage", "roll"]),
@@ -2271,11 +2291,14 @@ function normalizeAuthoringTriggerConfig(triggerLike = {}, fallbackState = {}) {
     ).trim(),
     damageType: normalizeDamageType(
       pickFirstDefined(
+        safeGet(definition, ["simpleEffect", "damageType"]),
+        safeGet(definition, ["effect", "damageType"]),
         definition.damageType,
         safeGet(definition, ["damage", "type"]),
         fallback.damageType
       )
     ),
+    simpleEffectType,
     saveAbility,
     saveDcMode,
     saveDc: Math.max(
@@ -2444,6 +2467,8 @@ function getTriggerFieldBaseName(fieldKey, timing) {
       return normalizedTiming === "onEnter" ? "onEnterMode" : `${timingPrefix}Mode`;
     case "damageFormula":
       return normalizedTiming === "onEnter" ? "damageFormula" : `${timingPrefix}DamageFormula`;
+    case "simpleEffectType":
+      return normalizedTiming === "onEnter" ? "simpleEffectType" : `${timingPrefix}SimpleEffectType`;
     case "damageType":
       return normalizedTiming === "onEnter" ? "damageType" : `${timingPrefix}DamageType`;
     case "saveAbility":
@@ -2538,6 +2563,7 @@ function readTriggerAuthoringFormState(form, existingTriggerConfigs = {}, {
 
     triggerConfigs[timing] = {
       mode: readOptionalValue(form, getTriggerFieldName("mode", timing, { partId }), existingConfig.mode),
+      simpleEffectType: readOptionalValue(form, getTriggerFieldName("simpleEffectType", timing, { partId }), existingConfig.simpleEffectType),
       damageFormula: readOptionalValue(form, getTriggerFieldName("damageFormula", timing, { partId }), existingConfig.damageFormula),
       damageType: readOptionalValue(form, getTriggerFieldName("damageType", timing, { partId }), existingConfig.damageType),
       saveAbility: readOptionalValue(form, getTriggerFieldName("saveAbility", timing, { partId }), existingConfig.saveAbility),
@@ -2772,6 +2798,10 @@ function buildConfiguredTriggerDefinition(triggerConfig = {}, timing = "onEnter"
   const config = normalizeAuthoringTriggerConfig(triggerConfig);
   const normalizedTiming = normalizeAuthoringTriggerTiming(timing);
   const mode = normalizeTriggerEffectMode(config.mode, DEFAULT_ON_ENTER_MODE);
+  const simpleEffectType = normalizeSimpleEffectType(
+    config.simpleEffectType,
+    DEFAULT_SIMPLE_EFFECT_TYPE
+  );
   const damageFormula = String(config.damageFormula ?? "").trim();
   const saveAbility = normalizeAbilityId(config.saveAbility);
   const saveDcMode = normalizeSaveDcMode(config.saveDcMode);
@@ -2793,17 +2823,25 @@ function buildConfiguredTriggerDefinition(triggerConfig = {}, timing = "onEnter"
   return {
     enabled: mode !== "none",
     mode,
+    simpleEffect: {
+      enabled: mode === "simple" && Boolean(damageFormula),
+      type: simpleEffectType,
+      formula: damageFormula || null,
+      damageType: simpleEffectType === "damage"
+        ? normalizeDamageType(config.damageType)
+        : null
+    },
     stepMode,
     cellStep,
     movementMode,
     distanceStep,
     damage: {
-      enabled: mode === "simple" && Boolean(damageFormula),
+      enabled: mode === "simple" && simpleEffectType === "damage" && Boolean(damageFormula),
       formula: damageFormula || null,
       type: normalizeDamageType(config.damageType)
     },
     save: {
-      enabled: mode === "simple" && Boolean(saveAbility),
+      enabled: mode === "simple" && simpleEffectType === "damage" && Boolean(saveAbility),
       ability: saveAbility || null,
       dcMode: saveDcMode,
       dcSource: saveAbility && saveDcMode === "auto" ? DEFAULT_SAVE_DC_SOURCE : null,
@@ -3860,6 +3898,10 @@ function buildTriggerEditorSections(triggerConfigs, item, {
 
   return AUTHORING_TRIGGER_TIMINGS.map((timing) => {
     const triggerState = normalizedConfigs[timing] ?? getDefaultTriggerAuthoringConfig();
+    const simpleEffectType = normalizeSimpleEffectType(
+      triggerState.simpleEffectType,
+      DEFAULT_SIMPLE_EFFECT_TYPE
+    );
     const activityField = buildZoneTriggerActivityFieldContext(item, triggerState.activityId);
 
     return {
@@ -3867,6 +3909,7 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       label: getTriggerTimingLabel(timing),
       state: triggerState,
       modeFieldName: getTriggerFieldName("mode", timing, { partId }),
+      simpleEffectTypeFieldName: getTriggerFieldName("simpleEffectType", timing, { partId }),
       damageFormulaFieldName: getTriggerFieldName("damageFormula", timing, { partId }),
       damageTypeFieldName: getTriggerFieldName("damageType", timing, { partId }),
       saveAbilityFieldName: getTriggerFieldName("saveAbility", timing, { partId }),
@@ -3880,6 +3923,7 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       modeOptions: buildChoiceOptions(getTriggerModeChoices(), triggerState.mode),
       movementModeOptions: buildChoiceOptions(getMovementModeChoices(), triggerState.movementMode),
       stepModeOptions: buildChoiceOptions(getOnMoveStepModeChoices(), triggerState.stepMode),
+      simpleEffectTypeOptions: buildChoiceOptions(getSimpleEffectTypeChoices(), simpleEffectType),
       damageTypeOptions: buildChoiceOptions(getDamageTypeChoices(), triggerState.damageType),
       saveDcModeOptions: buildChoiceOptions(getSaveDcModeChoices(), triggerState.saveDcMode),
       abilityOptions: buildChoiceOptions(
@@ -3894,6 +3938,9 @@ function buildTriggerEditorSections(triggerConfigs, item, {
       ),
       activityField,
       showSimpleFields: triggerState.mode === "simple",
+      showSimpleEffectType: triggerState.mode === "simple",
+      simpleEffectFormulaLabel: localizeSimpleEffectFormulaLabel(simpleEffectType),
+      showDamageType: triggerState.mode === "simple" && simpleEffectType === "damage",
       showActivityField: triggerState.mode === "activity",
       showMovementMode: isMovementTriggerTiming(timing) && triggerState.mode !== "none",
       showStepMode: timing === "onMove" && triggerState.mode !== "none",
@@ -3905,9 +3952,13 @@ function buildTriggerEditorSections(triggerConfigs, item, {
         timing === "onMove" &&
         triggerState.mode !== "none" &&
         triggerState.stepMode === "distance",
-      showSaveDcMode: triggerState.mode === "simple" && Boolean(triggerState.saveAbility),
+      showSaveDcMode:
+        triggerState.mode === "simple" &&
+        simpleEffectType === "damage" &&
+        Boolean(triggerState.saveAbility),
       showManualSaveDc:
         triggerState.mode === "simple" &&
+        simpleEffectType === "damage" &&
         Boolean(triggerState.saveAbility) &&
         triggerState.saveDcMode === "manual"
     };
@@ -3998,6 +4049,23 @@ function getSaveDcModeChoices() {
     {
       value: "manual",
       label: localize("PERSISTENT_ZONES.UI.Fields.SaveDcModeManual", "Manual")
+    }
+  ];
+}
+
+function getSimpleEffectTypeChoices() {
+  return [
+    {
+      value: "damage",
+      label: localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.Damage", "Damage")
+    },
+    {
+      value: "heal",
+      label: localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.Heal", "Healing")
+    },
+    {
+      value: "tempHP",
+      label: localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.TempHp", "Temporary HP")
     }
   ];
 }
@@ -4638,6 +4706,30 @@ function localizeTriggerModeLabel(mode) {
   }
 }
 
+function localizeSimpleEffectTypeLabel(effectType) {
+  switch (normalizeSimpleEffectType(effectType, DEFAULT_SIMPLE_EFFECT_TYPE)) {
+    case "heal":
+      return localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.Heal", "Healing");
+    case "tempHP":
+      return localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.TempHp", "Temporary HP");
+    case "damage":
+    default:
+      return localize("PERSISTENT_ZONES.UI.SimpleEffectTypes.Damage", "Damage");
+  }
+}
+
+function localizeSimpleEffectFormulaLabel(effectType) {
+  switch (normalizeSimpleEffectType(effectType, DEFAULT_SIMPLE_EFFECT_TYPE)) {
+    case "heal":
+      return localize("PERSISTENT_ZONES.UI.Fields.HealingFormula", "Healing Formula");
+    case "tempHP":
+      return localize("PERSISTENT_ZONES.UI.Fields.TempHpFormula", "Temporary HP Formula");
+    case "damage":
+    default:
+      return localize("PERSISTENT_ZONES.UI.Fields.DamageFormula", "Damage Formula");
+  }
+}
+
 function localizeMovementStopGlobalModeLabel(mode) {
   switch (String(mode ?? "").trim().toLowerCase()) {
     case "on-enter":
@@ -4873,6 +4965,19 @@ function normalizeDamageType(value) {
   return normalized || DEFAULT_DAMAGE_TYPE;
 }
 
+function normalizeSimpleEffectType(value, fallback = DEFAULT_SIMPLE_EFFECT_TYPE) {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  if (normalized === "heal") {
+    return "heal";
+  }
+
+  if (normalized === "temphp") {
+    return "tempHP";
+  }
+
+  return "damage";
+}
+
 function normalizeLinkedWallPreset(value) {
   const normalized = String(value ?? DEFAULT_LINKED_WALL_PRESET).trim().toLowerCase();
   return getLinkedWallPresetChoices().some((choice) => choice.value === normalized)
@@ -5100,9 +5205,19 @@ function extractActivityIdFromTriggerConfig(triggerLike = {}) {
 }
 
 function hasSimpleTriggerConfiguration(triggerLike = {}) {
+  const explicitSimpleEffectType = String(
+    pickFirstDefined(
+      triggerLike.simpleEffectType,
+      safeGet(triggerLike, ["simpleEffect", "type"]),
+      safeGet(triggerLike, ["effect", "type"]),
+      ""
+    )
+  ).trim();
   return Boolean(
     String(
       pickFirstDefined(
+        safeGet(triggerLike, ["simpleEffect", "formula"]),
+        safeGet(triggerLike, ["effect", "formula"]),
         triggerLike.damageFormula,
         safeGet(triggerLike, ["damage", "formula"]),
         safeGet(triggerLike, ["damage", "roll"]),
@@ -5110,6 +5225,7 @@ function hasSimpleTriggerConfiguration(triggerLike = {}) {
       )
     ).trim()
   ) ||
+    Boolean(explicitSimpleEffectType) ||
     coerceNumber(
       pickFirstDefined(
         safeGet(triggerLike, ["damage", "amount"]),

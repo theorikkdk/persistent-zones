@@ -1590,6 +1590,11 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
   scene = null
 } = {}) {
   const definition = isPlainObject(triggerLikeDefinition) ? triggerLikeDefinition : {};
+  const simpleEffectDefinition = isPlainObject(definition.simpleEffect)
+    ? definition.simpleEffect
+    : isPlainObject(definition.effect)
+      ? definition.effect
+      : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
   const activityDefinition = isPlainObject(definition.activity) ? definition.activity : {};
@@ -1632,6 +1637,28 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     definition.stepDistance,
     definition.distanceEvery
   ) !== undefined;
+  const simpleEffectType = normalizeSimpleEffectType(
+    pickFirstDefined(
+      definition.simpleEffectType,
+      simpleEffectDefinition.type,
+      damageDefinition.enabled === true ? "damage" : null,
+      "damage"
+    )
+  );
+  const simpleEffectFormula = pickFirstDefined(
+    simpleEffectDefinition.formula,
+    definition.damageFormula,
+    damageDefinition.formula,
+    damageDefinition.roll,
+    null
+  );
+  const simpleEffectDamageType = simpleEffectType === "damage"
+    ? pickFirstDefined(
+      simpleEffectDefinition.damageType,
+      damageDefinition.type,
+      "force"
+    )
+    : null;
   const stepMode = explicitStepMode ??
     (hasExplicitCellStep
       ? "grid-cell"
@@ -1682,20 +1709,34 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       ),
       false
     ),
+    simpleEffect: {
+      enabled: Boolean(simpleEffectFormula),
+      type: simpleEffectType,
+      formula: simpleEffectFormula,
+      damageType: simpleEffectDamageType
+    },
     damage: {
       enabled: coerceBoolean(
-        pickFirstDefined(damageDefinition.enabled, definition.damage, false),
+        pickFirstDefined(
+          damageDefinition.enabled,
+          definition.damage,
+          simpleEffectType === "damage" && Boolean(simpleEffectFormula)
+        ),
         false
-      ),
-      formula: pickFirstDefined(damageDefinition.formula, damageDefinition.roll, null),
+      ) && simpleEffectType === "damage",
+      formula: simpleEffectType === "damage"
+        ? pickFirstDefined(damageDefinition.formula, damageDefinition.roll, simpleEffectFormula, null)
+        : null,
       amount: coerceNumber(damageDefinition.amount, null),
-      type: pickFirstDefined(damageDefinition.type, "force")
+      type: simpleEffectType === "damage"
+        ? pickFirstDefined(damageDefinition.type, simpleEffectDamageType, "force")
+        : null
     },
     save: {
       enabled: coerceBoolean(
         pickFirstDefined(saveDefinition.enabled, false),
         false
-      ),
+      ) && simpleEffectType === "damage",
       ability: String(pickFirstDefined(saveDefinition.ability, saveDefinition.abilityId, "")).toLowerCase() || null,
       dcMode: saveDcMode,
       dcSource: saveDcMode === "auto"
@@ -2038,6 +2079,22 @@ function validateTriggerConfig(triggerName, triggerConfig, reasons, {
     return;
   }
 
+  const simpleEffectType = normalizeSimpleEffectType(
+    pickFirstDefined(triggerConfig?.simpleEffect?.type, "damage")
+  );
+  const simpleEffectFormula = pickFirstDefined(
+    triggerConfig?.simpleEffect?.formula,
+    triggerConfig?.damage?.formula,
+    null
+  );
+
+  if (simpleEffectType === "heal" || simpleEffectType === "tempHP") {
+    if (!simpleEffectFormula) {
+      reasons.push(`${triggerName} ${simpleEffectType === "heal" ? "healing" : "temporary HP"} requires a formula.`);
+    }
+    return;
+  }
+
   if (!triggerConfig.damage.enabled && !triggerConfig.save.enabled) {
     reasons.push(`${triggerName} requires damage or save to be enabled.`);
     return;
@@ -2072,6 +2129,19 @@ function normalizeTriggerEffectMode(value, fallback = "none") {
   return fallback;
 }
 
+function normalizeSimpleEffectType(value) {
+  const normalized = String(value ?? "damage").trim().toLowerCase();
+  if (normalized === "heal") {
+    return "heal";
+  }
+
+  if (normalized === "temphp") {
+    return "tempHP";
+  }
+
+  return "damage";
+}
+
 function inferTriggerEffectMode(definition, {
   damageDefinition = {},
   saveDefinition = {},
@@ -2085,11 +2155,22 @@ function inferTriggerEffectMode(definition, {
     damageDefinition.enabled === true ||
     coerceNumber(damageDefinition.amount, null) !== null ||
     Boolean(String(pickFirstDefined(damageDefinition.formula, damageDefinition.roll, "")).trim());
+  const hasSimpleEffectConfig =
+    Boolean(String(pickFirstDefined(
+      safeGet(definition, ["simpleEffect", "formula"]),
+      safeGet(definition, ["effect", "formula"]),
+      ""
+    )).trim()) ||
+    Boolean(String(pickFirstDefined(
+      safeGet(definition, ["simpleEffect", "type"]),
+      safeGet(definition, ["effect", "type"]),
+      ""
+    )).trim());
   const hasSaveConfig =
     saveDefinition.enabled === true ||
     Boolean(String(pickFirstDefined(saveDefinition.ability, saveDefinition.abilityId, "")).trim());
 
-  if (hasDamageConfig || hasSaveConfig || coerceBoolean(pickFirstDefined(definition.enabled, definition.active), false)) {
+  if (hasSimpleEffectConfig || hasDamageConfig || hasSaveConfig || coerceBoolean(pickFirstDefined(definition.enabled, definition.active), false)) {
     return "simple";
   }
 

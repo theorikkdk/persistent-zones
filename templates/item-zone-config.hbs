@@ -383,28 +383,44 @@
                 {{/if}}
 
                 {{#if triggerSection.showSimpleFields}}
+                  {{#if triggerSection.showSimpleEffectType}}
+                    <div class="form-group form-group--stacked">
+                      <label>{{localize "PERSISTENT_ZONES.UI.Fields.SimpleEffectType"}}</label>
+                      <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                        {{#each triggerSection.simpleEffectTypeOptions as |option|}}
+                          <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                            <input type="radio" name="{{triggerSection.simpleEffectTypeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                            <span>{{option.label}}</span>
+                          </label>
+                        {{/each}}
+                      </div>
+                    </div>
+                  {{/if}}
+
                   <div class="form-group">
-                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+                    <label>{{triggerSection.simpleEffectFormulaLabel}}</label>
                     <input type="text" name="{{triggerSection.damageFormulaFieldName}}" value="{{triggerSection.state.damageFormula}}" placeholder="2d6">
                   </div>
 
-                  <div class="form-group">
-                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
-                    <select name="{{triggerSection.damageTypeFieldName}}">
-                      {{#each triggerSection.damageTypeOptions as |option|}}
-                        <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-                      {{/each}}
-                    </select>
-                  </div>
+                  {{#if triggerSection.showDamageType}}
+                    <div class="form-group">
+                      <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+                      <select name="{{triggerSection.damageTypeFieldName}}">
+                        {{#each triggerSection.damageTypeOptions as |option|}}
+                          <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
 
-                  <div class="form-group">
-                    <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
-                    <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
-                      {{#each triggerSection.abilityOptions as |option|}}
-                        <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-                      {{/each}}
-                    </select>
-                  </div>
+                    <div class="form-group">
+                      <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+                      <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
+                        {{#each triggerSection.abilityOptions as |option|}}
+                          <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                  {{/if}}
 
                   {{#if triggerSection.showSaveDcMode}}
                     <div class="form-group form-group--stacked">
@@ -579,28 +595,44 @@
                     {{/if}}
 
                     {{#if triggerSection.showSimpleFields}}
+                      {{#if triggerSection.showSimpleEffectType}}
+                        <div class="form-group form-group--stacked">
+                          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SimpleEffectType"}}</label>
+                          <div class="persistent-zones-item-config__choice-group persistent-zones-item-config__choice-group--three">
+                            {{#each triggerSection.simpleEffectTypeOptions as |option|}}
+                              <label class="persistent-zones-item-config__choice {{#if option.selected}}is-selected{{/if}}">
+                                <input type="radio" name="{{triggerSection.simpleEffectTypeFieldName}}" value="{{option.value}}" data-rerender="true" {{#if option.selected}}checked{{/if}}>
+                                <span>{{option.label}}</span>
+                              </label>
+                            {{/each}}
+                          </div>
+                        </div>
+                      {{/if}}
+
                       <div class="form-group">
-                        <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+                        <label>{{triggerSection.simpleEffectFormulaLabel}}</label>
                         <input type="text" name="{{triggerSection.damageFormulaFieldName}}" value="{{triggerSection.state.damageFormula}}" placeholder="2d6">
                       </div>
 
-                      <div class="form-group">
-                        <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
-                        <select name="{{triggerSection.damageTypeFieldName}}">
-                          {{#each triggerSection.damageTypeOptions as |option|}}
-                            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-                          {{/each}}
-                        </select>
-                      </div>
+                      {{#if triggerSection.showDamageType}}
+                        <div class="form-group">
+                          <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+                          <select name="{{triggerSection.damageTypeFieldName}}">
+                            {{#each triggerSection.damageTypeOptions as |option|}}
+                              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                            {{/each}}
+                          </select>
+                        </div>
 
-                      <div class="form-group">
-                        <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
-                        <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
-                          {{#each triggerSection.abilityOptions as |option|}}
-                            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
-                          {{/each}}
-                        </select>
-                      </div>
+                        <div class="form-group">
+                          <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+                          <select name="{{triggerSection.saveAbilityFieldName}}" data-rerender="true">
+                            {{#each triggerSection.abilityOptions as |option|}}
+                              <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                            {{/each}}
+                          </select>
+                        </div>
+                      {{/if}}
 
                       {{#if triggerSection.showSaveDcMode}}
                         <div class="form-group form-group--stacked">

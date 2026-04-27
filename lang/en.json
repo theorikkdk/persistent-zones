@@ -59,6 +59,7 @@
         "Status": "Status",
         "TargetingMode": "Targeting Mode",
         "TriggerMode": "Mode",
+        "SimpleEffectType": "Simple Effect",
         "MovementMode": "Movement Type",
         "StepMode": "Step Mode",
         "CellStep": "Cells per Trigger",
@@ -66,6 +67,8 @@
         "OnEnterEnabled": "Enable onEnter",
         "OnEnterMode": "onEnter Mode",
         "DamageFormula": "Damage Formula",
+        "HealingFormula": "Healing Formula",
+        "TempHpFormula": "Temporary HP Formula",
         "DamageType": "Damage Type",
         "SaveAbility": "Save Ability",
         "SaveDcMode": "Save DC Source",
@@ -116,6 +119,11 @@
         "Any": "Any",
         "Voluntary": "Voluntary",
         "Forced": "Forced"
+      },
+      "SimpleEffectTypes": {
+        "Damage": "Damage",
+        "Heal": "Healing",
+        "TempHp": "Temporary HP"
       },
       "TargetFilters": {
         "All": "All",
