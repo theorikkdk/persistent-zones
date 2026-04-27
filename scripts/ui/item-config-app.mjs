@@ -50,6 +50,8 @@ import {
   ZONE_TRIGGER_SUPPORTED_ACTIVITY_TYPES
 } from "../runtime/activity-compatibility.mjs";
 
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
 const AUTHORING_APP_ID = `${MODULE_ID}-item-config`;
 const HEADER_BUTTON_CLASS = `${MODULE_ID}-item-config-button`;
 const DEFAULT_SAVE_DC = 13;
@@ -135,13 +137,20 @@ export async function openPersistentZonesItemConfig(itemOrUuid, options = {}) {
   }
 
   const app = new PersistentZonesItemConfig(item, options);
-  app.render(true);
+  app.render({ force: true });
   return app;
 }
 
-class PersistentZonesItemConfig extends FormApplication {
+const PersistentZonesItemConfigBase = HandlebarsApplicationMixin(ApplicationV2);
+
+class PersistentZonesItemConfig extends PersistentZonesItemConfigBase {
   constructor(item, options = {}) {
-    super(item, options);
+    const mergedOptions = foundry.utils.mergeObject({
+      window: {
+        title: `${localize("PERSISTENT_ZONES.UI.ConfigTitle", "Persistent Zones")} - ${item?.name ?? DEFAULT_ZONE_LABEL}`
+      }
+    }, options, { inplace: false });
+    super(mergedOptions);
     this.itemDocument = item;
     this._draftState = duplicateData(options.formState) ?? null;
     this._selectedProfileId = String(options.profileId ?? "").trim();
@@ -155,24 +164,35 @@ class PersistentZonesItemConfig extends FormApplication {
     this._profileUiReadyLogged = false;
   }
 
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: AUTHORING_APP_ID,
-      classes: [MODULE_ID, "persistent-zones-item-config-app"],
-      template: `modules/${MODULE_ID}/templates/item-zone-config.hbs`,
+  static DEFAULT_OPTIONS = {
+    id: AUTHORING_APP_ID,
+    classes: [MODULE_ID, "persistent-zones-item-config-app", "persistent-zones-item-config"],
+    tag: "form",
+    position: {
       width: 680,
-      height: 880,
-      resizable: true,
+      height: 880
+    },
+    window: {
+      resizable: true
+    },
+    form: {
+      handler: PersistentZonesItemConfig.#onSubmitForm,
       submitOnChange: false,
       closeOnSubmit: false
-    });
-  }
+    }
+  };
+
+  static PARTS = {
+    content: {
+      template: `modules/${MODULE_ID}/templates/item-zone-config.hbs`
+    }
+  };
 
   get title() {
     return `${localize("PERSISTENT_ZONES.UI.ConfigTitle", "Persistent Zones")} - ${this.itemDocument?.name ?? DEFAULT_ZONE_LABEL}`;
   }
 
-  getData() {
+  async _prepareContext(_options) {
     const rawDefinition = getZoneDefinitionFromItem(this.itemDocument);
     const rawFormState =
       duplicateData(this._draftState) ??
@@ -298,25 +318,61 @@ class PersistentZonesItemConfig extends FormApplication {
     };
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
+  _onRender(context, options) {
+    super._onRender(context, options);
 
-    html.find("[data-action='clear']").on("click", this.#onClear.bind(this));
-    html.find("[data-action='toggle-profile-section']").on("toggle", this.#onProfileSectionToggled.bind(this));
-    html.find("[data-action='toggle-section']").on("toggle", this.#onSectionToggled.bind(this));
-    html.find("[data-action='select-profile']").on("change", this.#onProfileSelectionChanged.bind(this, html));
-    html.find("[data-action='duplicate-profile']").on("click", this.#onDuplicateProfile.bind(this, html));
-    html.find("[data-action='apply-profile']").on("click", this.#onApplyProfile.bind(this, html));
-    html.find("[data-action='rename-profile']").on("click", this.#onRenameProfile.bind(this, html));
-    html.find("[data-action='save-profile']").on("click", this.#onSaveProfile.bind(this, html));
-    html.find("[data-action='delete-profile']").on("click", this.#onDeleteProfile.bind(this, html));
-    html.find("[data-action='export-profiles']").on("click", this.#onExportProfiles.bind(this));
-    html.find("[data-action='import-profiles']").on("click", this.#onImportProfiles.bind(this, html));
-    html.find("[data-action='import-profile-file']").on("change", this.#onImportProfileFileChanged.bind(this, html));
-    html.find("[data-rerender='true']").on("change", this.#onBaseTypeChanged.bind(this, html));
-    html.find("[name='profileFilter']").on("input", this.#onProfileFilterChanged.bind(this, html));
-    html.find("[name='profileName']").on("input", this.#onProfileNameChanged.bind(this));
-    html.find("input, select, textarea").on("input change", this.#onLiveConfigChanged.bind(this, html));
+    const form = resolvePersistentZonesFormElement(this.element);
+    if (!form) {
+      return;
+    }
+
+    for (const element of form.querySelectorAll("[data-action='clear']")) {
+      element.addEventListener("click", this.#onClear.bind(this));
+    }
+    for (const element of form.querySelectorAll("[data-action='toggle-profile-section']")) {
+      element.addEventListener("toggle", this.#onProfileSectionToggled.bind(this));
+    }
+    for (const element of form.querySelectorAll("[data-action='toggle-section']")) {
+      element.addEventListener("toggle", this.#onSectionToggled.bind(this));
+    }
+    for (const element of form.querySelectorAll("[data-action='select-profile']")) {
+      element.addEventListener("change", this.#onProfileSelectionChanged.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='duplicate-profile']")) {
+      element.addEventListener("click", this.#onDuplicateProfile.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='apply-profile']")) {
+      element.addEventListener("click", this.#onApplyProfile.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='rename-profile']")) {
+      element.addEventListener("click", this.#onRenameProfile.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='save-profile']")) {
+      element.addEventListener("click", this.#onSaveProfile.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='delete-profile']")) {
+      element.addEventListener("click", this.#onDeleteProfile.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='export-profiles']")) {
+      element.addEventListener("click", this.#onExportProfiles.bind(this));
+    }
+    for (const element of form.querySelectorAll("[data-action='import-profiles']")) {
+      element.addEventListener("click", this.#onImportProfiles.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-action='import-profile-file']")) {
+      element.addEventListener("change", this.#onImportProfileFileChanged.bind(this, form));
+    }
+    for (const element of form.querySelectorAll("[data-rerender='true']")) {
+      element.addEventListener("change", this.#onBaseTypeChanged.bind(this, form));
+    }
+    const profileFilterField = form.querySelector("[name='profileFilter']");
+    profileFilterField?.addEventListener("input", this.#onProfileFilterChanged.bind(this, form));
+    const profileNameField = form.querySelector("[name='profileName']");
+    profileNameField?.addEventListener("input", this.#onProfileNameChanged.bind(this));
+    for (const element of form.querySelectorAll("input, select, textarea")) {
+      element.addEventListener("input", this.#onLiveConfigChanged.bind(this, form));
+      element.addEventListener("change", this.#onLiveConfigChanged.bind(this, form));
+    }
 
     if (!this._profileUiReadyLogged) {
       const sortedProfiles = sortProfilesForUi(getPersistentZoneProfiles());
@@ -334,7 +390,7 @@ class PersistentZonesItemConfig extends FormApplication {
       this._pendingProfileFilterCursor = null;
 
       requestAnimationFrame(() => {
-        const filterInput = this.form?.querySelector?.("[name='profileFilter']");
+        const filterInput = resolvePersistentZonesFormElement(this.element)?.querySelector?.("[name='profileFilter']");
         if (!filterInput) {
           return;
         }
@@ -349,7 +405,7 @@ class PersistentZonesItemConfig extends FormApplication {
       this._pendingFocusRestore = null;
 
       requestAnimationFrame(() => {
-        const field = this.form?.querySelector?.(`[name="${focusState.name}"]`);
+        const field = resolvePersistentZonesFormElement(this.element)?.querySelector?.(`[name="${focusState.name}"]`);
         if (!(field instanceof HTMLElement)) {
           return;
         }
@@ -366,10 +422,14 @@ class PersistentZonesItemConfig extends FormApplication {
     }
   }
 
-  async _updateObject(_event, formData) {
+  static async #onSubmitForm(event, form, formData) {
+    return this._handleSubmitForm(event, form, formData);
+  }
+
+  async _handleSubmitForm(_event, form, _formData) {
     const previousDefinition = getZoneDefinitionFromItem(this.itemDocument);
     const rawFormState = readAuthoringFormState(
-      this.form,
+      form,
       this._draftState ?? deriveAuthoringStateFromDefinition(previousDefinition, this.itemDocument),
       this.itemDocument
     );
@@ -443,12 +503,17 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onBaseTypeChanged(html, event) {
+    const formElement = resolvePersistentZonesFormElement(html);
+    if (!formElement) {
+      return;
+    }
+
     const rawFormState = readAuthoringFormState(
-      html[0],
+      formElement,
       this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
       this.itemDocument
     );
@@ -479,13 +544,13 @@ class PersistentZonesItemConfig extends FormApplication {
       });
     }
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onProfileSelectionChanged(html, event) {
     this.#captureCurrentDraft(html);
     this._selectedProfileId = String(event?.currentTarget?.value ?? "").trim();
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onProfileFilterChanged(html, event) {
@@ -505,7 +570,7 @@ class PersistentZonesItemConfig extends FormApplication {
       hasMatches: profileListContext.hasMatches
     });
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   #onProfileSectionToggled(event) {
@@ -547,16 +612,17 @@ class PersistentZonesItemConfig extends FormApplication {
     this._liveRefreshHandle = setTimeout(async () => {
       this._liveRefreshHandle = null;
       this.#captureCurrentDraft(html);
-      await this.render(false);
+      await this.render({ force: true });
     }, 220);
   }
 
   async #onDuplicateProfile(html, event) {
     event.preventDefault();
     this.#captureCurrentDraft(html);
+    const formElement = resolvePersistentZonesFormElement(html);
 
     const selectedProfileId = String(
-      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      formElement?.querySelector?.("[name='selectedProfileId']")?.value ??
       this._selectedProfileId ??
       ""
     ).trim();
@@ -569,7 +635,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "The selected profile could not be found."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -582,7 +648,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "The selected profile could not be found."
           )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -598,14 +664,15 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onApplyProfile(html, event) {
     event.preventDefault();
+    const formElement = resolvePersistentZonesFormElement(html);
 
     const selectedProfileId = String(
-      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      formElement?.querySelector?.("[name='selectedProfileId']")?.value ??
       this._selectedProfileId ??
       ""
     ).trim();
@@ -644,7 +711,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "The selected profile could not be found."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -665,7 +732,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "This profile is incompatible with the current detected template."
           )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -693,14 +760,18 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onSaveProfile(html, event) {
     event.preventDefault();
+    const formElement = resolvePersistentZonesFormElement(html);
+    if (!formElement) {
+      return;
+    }
 
     const rawFormState = readAuthoringFormState(
-      html[0],
+      formElement,
       this._draftState ?? deriveAuthoringStateFromDefinition(getZoneDefinitionFromItem(this.itemDocument), this.itemDocument),
       this.itemDocument
     );
@@ -728,12 +799,12 @@ class PersistentZonesItemConfig extends FormApplication {
         )
       );
 
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
     const explicitProfileName = String(
-      html?.[0]?.querySelector?.("[name='profileName']")?.value ??
+      formElement?.querySelector?.("[name='profileName']")?.value ??
       this._profileNameDraft ??
       ""
     ).trim();
@@ -751,7 +822,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "Only a valid Persistent Zones definition can be saved as a profile."
           )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -776,15 +847,16 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onRenameProfile(html, event) {
     event.preventDefault();
     this.#captureCurrentDraft(html);
+    const formElement = resolvePersistentZonesFormElement(html);
 
     const selectedProfileId = String(
-      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      formElement?.querySelector?.("[name='selectedProfileId']")?.value ??
       this._selectedProfileId ??
       ""
     ).trim();
@@ -802,7 +874,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "The selected profile could not be found."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -821,7 +893,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "Built-in profiles cannot be renamed."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -839,7 +911,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "A profile name is required."
           )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -850,7 +922,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "The profile name is unchanged."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -863,15 +935,16 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onDeleteProfile(html, event) {
     event.preventDefault();
     this.#captureCurrentDraft(html);
+    const formElement = resolvePersistentZonesFormElement(html);
 
     const selectedProfileId = String(
-      html?.[0]?.querySelector?.("[name='selectedProfileId']")?.value ??
+      formElement?.querySelector?.("[name='selectedProfileId']")?.value ??
       this._selectedProfileId ??
       ""
     ).trim();
@@ -889,7 +962,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "The selected profile could not be found."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -907,7 +980,7 @@ class PersistentZonesItemConfig extends FormApplication {
           "Built-in profiles cannot be deleted."
         )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -935,7 +1008,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "The selected profile could not be found."
           )
       );
-      await this.render(false);
+      await this.render({ force: true });
       return;
     }
 
@@ -950,7 +1023,7 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   async #onExportProfiles(event) {
@@ -973,8 +1046,9 @@ class PersistentZonesItemConfig extends FormApplication {
 
   async #onImportProfiles(html, event) {
     event.preventDefault();
+    const formElement = resolvePersistentZonesFormElement(html);
 
-    const input = html?.[0]?.querySelector?.("[data-action='import-profile-file']");
+    const input = formElement?.querySelector?.("[data-action='import-profile-file']");
     if (!input) {
       return;
     }
@@ -1017,7 +1091,7 @@ class PersistentZonesItemConfig extends FormApplication {
               "The selected file does not contain a valid Persistent Zones profile export."
             )
         );
-        await this.render(false);
+        await this.render({ force: true });
         return;
       }
 
@@ -1028,7 +1102,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "The selected file contains no user profiles to import."
           )
         );
-        await this.render(false);
+        await this.render({ force: true });
         return;
       }
 
@@ -1039,7 +1113,7 @@ class PersistentZonesItemConfig extends FormApplication {
             "No valid user profiles could be imported from the selected file."
           )
         );
-        await this.render(false);
+        await this.render({ force: true });
         return;
       }
 
@@ -1054,7 +1128,7 @@ class PersistentZonesItemConfig extends FormApplication {
         )
       );
 
-      await this.render(false);
+      await this.render({ force: true });
     } finally {
       if (input) {
         input.value = "";
@@ -1093,11 +1167,11 @@ class PersistentZonesItemConfig extends FormApplication {
       )
     );
 
-    await this.render(false);
+    await this.render({ force: true });
   }
 
   #captureCurrentDraft(html) {
-    const formElement = html?.[0] ?? this.form;
+    const formElement = resolvePersistentZonesFormElement(html) ?? resolvePersistentZonesFormElement(this.element);
     if (!formElement) {
       return;
     }
@@ -1140,6 +1214,35 @@ class PersistentZonesItemConfig extends FormApplication {
           : null
     };
   }
+}
+
+function resolvePersistentZonesRootElement(source) {
+  if (source instanceof HTMLElement) {
+    return source;
+  }
+
+  if (source?.element instanceof HTMLElement) {
+    return source.element;
+  }
+
+  if (source?.[0] instanceof HTMLElement) {
+    return source[0];
+  }
+
+  return null;
+}
+
+function resolvePersistentZonesFormElement(source) {
+  const rootElement = resolvePersistentZonesRootElement(source);
+  if (!rootElement) {
+    return null;
+  }
+
+  if (rootElement instanceof HTMLFormElement) {
+    return rootElement;
+  }
+
+  return rootElement.querySelector("form");
 }
 
 async function onRenderItemSheet5e(app, html) {
