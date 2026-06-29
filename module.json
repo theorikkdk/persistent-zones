@@ -1,7 +1,7 @@
 {
   "id": "persistent-zones",
   "title": "Persistent Zones",
-  "description": "Runtime management for persistent zones in Foundry VTT.",
+  "description": "Create and manage persistent template-based zones for Foundry VTT, with automated triggers, linked documents, terrain, and movement interruption.",
   "version": "0.2.0",
   "authors": [
     {
@@ -44,10 +44,8 @@
   ],
   "packs": [],
   "socket": false,
-  "manifest": "",
-  "download": "",
-  "url": "",
   "license": "MIT",
   "readme": "README.md",
+  "changelog": "CHANGELOG.md",
   "media": []
 }

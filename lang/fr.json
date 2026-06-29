@@ -21,7 +21,7 @@
         "DerivedGeometry": "G\u00e9om\u00e9trie d\u00e9riv\u00e9e / Param\u00e8tres",
         "Behaviors": "Comportements des parts effectives",
         "LinksTerrain": "Liens & Terrain",
-        "Triggers": "Triggers",
+        "Triggers": "D\u00e9clencheurs",
         "ConfigurationState": "\u00c9tat de la configuration",
         "OnEnter": "\u00c0 l'entr\u00e9e",
         "OnExit": "\u00c0 la sortie",
@@ -288,7 +288,7 @@
         "Clear": "Supprimer"
       },
       "Help": {
-        "AuthoringSubset": "Cet \u00e9diteur MVP r\u00e9\u00e9crit la d\u00e9finition de l'objet dans le sous-ensemble d'authoring actuel : simple, anneau, ligne composite ou anneau composite.",
+        "AuthoringSubset": "Cet \u00e9diteur enregistre la d\u00e9finition de l'objet avec les types pris en charge : simple, anneau, ligne composite ou anneau composite.",
         "MovementStopGlobalEnabled": "L'interruption du mouvement est activ\u00e9e globalement pour {triggers}.",
         "MovementStopGlobalEnabledGeneric": "L'interruption du mouvement est activ\u00e9e globalement pour les d\u00e9clenchements de mouvement pris en charge.",
         "MovementStopGlobalDisabled": "L'interruption du mouvement est d\u00e9sactiv\u00e9e dans les r\u00e9glages du module.",

@@ -1759,11 +1759,11 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   if (!normalizedDefinition.template.type) {
     reasons.push("Template type could not be determined.");
   } else if (!SUPPORTED_TEMPLATE_TYPES.includes(normalizedDefinition.template.type)) {
-    reasons.push(`Template type "${normalizedDefinition.template.type}" is not supported by this MVP.`);
+    reasons.push(`Template type "${normalizedDefinition.template.type}" is not supported by this release.`);
   }
 
   if (normalizedDefinition.shapeMode !== "template") {
-    reasons.push(`shapeMode "${normalizedDefinition.shapeMode}" is not supported by this MVP.`);
+    reasons.push(`shapeMode "${normalizedDefinition.shapeMode}" is not supported by this release.`);
   }
 
   const variantResolution = isPlainObject(normalizedDefinition.variantResolution)
@@ -1833,7 +1833,7 @@ function collectCurrentLimits(definition) {
       definition.zones.some((part) => safeGet(part, ["geometry", "type"]) === "side-of-ring");
 
   if (safeGet(definition, ["movement"]) !== undefined) {
-    limits.push("Movement-through-zone logic is not executed in this MVP step.");
+    limits.push("Movement-through-zone logic is not executed in this release.");
   }
 
   if (Array.isArray(definition.parts) || Array.isArray(definition.zones)) {
@@ -1841,19 +1841,19 @@ function collectCurrentLimits(definition) {
   }
 
   if (hasRingGeometry) {
-    limits.push("Ring geometry is approximated with multiple polygon shapes inside one Region part in this MVP.");
+    limits.push("Ring geometry is approximated with multiple polygon shapes inside one Region part in this release.");
   }
 
   if (hasSideOfLineGeometry) {
-    limits.push("side-of-line currently derives its reference axis from the template direction and is primarily intended for ray-like templates in this MVP.");
+    limits.push("side-of-line currently derives its reference axis from the template direction and is primarily intended for ray-like templates in this release.");
   }
 
   if (hasSideOfRingGeometry) {
-    limits.push("side-of-ring currently derives its reference ring from a circle-based annulus definition and is primarily intended for ring body parts in this MVP.");
+    limits.push("side-of-ring currently derives its reference ring from a circle-based annulus definition and is primarily intended for ring body parts in this release.");
   }
 
   if (safeGet(definition, ["forcedMovement"]) !== undefined) {
-    limits.push("Forced movement is not executed in this MVP step.");
+    limits.push("Forced movement is not executed in this release.");
   }
 
   if (
@@ -1865,14 +1865,14 @@ function collectCurrentLimits(definition) {
   }
 
   if (safeGet(definition, ["linkedWalls"]) !== undefined) {
-    limits.push("Linked walls are limited to compatible circle, rectangle, and polygon region shapes in this MVP.");
+    limits.push("Linked walls are limited to compatible circle, rectangle, and polygon region shapes in this release.");
   }
 
   if (
     safeGet(definition, ["linkedLight"]) !== undefined ||
     safeGet(definition, ["linkedLights"]) !== undefined
   ) {
-    limits.push("Linked light uses a single native AmbientLight with simple position and bright/dim settings in this MVP.");
+    limits.push("Linked light uses a single native AmbientLight with simple position and bright/dim settings in this release.");
   }
 
   return limits;

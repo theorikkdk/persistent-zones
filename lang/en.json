@@ -288,7 +288,7 @@
         "Clear": "Clear"
       },
       "Help": {
-        "AuthoringSubset": "This MVP editor rewrites the Item definition into the current authoring subset: simple, ring, composite line, or composite ring.",
+        "AuthoringSubset": "This editor saves the Item definition using the supported authoring types: simple, ring, composite line, or composite ring.",
         "MovementStopGlobalEnabled": "Movement interruption is enabled globally for {triggers}.",
         "MovementStopGlobalEnabledGeneric": "Movement interruption is enabled globally for supported movement triggers.",
         "MovementStopGlobalDisabled": "Movement interruption is disabled in the module settings.",

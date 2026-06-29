@@ -1,251 +1,127 @@
-# persistent-zones
+# Persistent Zones
 
-`persistent-zones` is an autonomous Foundry VTT module for persistent template-driven zones.
+Persistent Zones is a Foundry VTT module for turning measured templates into managed, persistent zones.
 
-It owns its own data contract, runtime behaviors, and Item authoring UI. Other modules can integrate with it without knowing the internal runtime implementation details.
+It lets GMs attach zone definitions to Items, create scene Regions from templates, run entry and turn-based effects, manage linked walls or lights, and keep active Regions synchronized with their source Item.
 
-## Core Contract
+## Features
 
-- Source Item data lives on `flags["persistent-zones"].definition`.
-- Runtime Region metadata lives on `flags["persistent-zones"].runtime`.
-- The public API is exposed on `game.persistentZones`.
+- Item authoring UI for persistent zone definitions.
+- Built-in and user-saved profiles for common zone patterns.
+- Persistent scene Regions created from measured templates.
+- Automated trigger effects for damage, healing, temporary hit points, and compatible dnd5e activities.
+- Per-zone targeting rules for self, allies, enemies, or all tokens.
+- Optional difficult terrain using Foundry/dnd5e native movement-cost behavior.
+- Linked wall and AmbientLight document creation for supported zone shapes.
+- Global movement interruption setting for supported movement triggers.
+- Public API exposed as `game.persistentZones`.
+- English and French localization.
 
-## Module Settings
+## Supported Zone Types
 
-- `Movement interruption`
-  Controls movement interruption globally with three modes: `Off`, `On Enter only`, or `On Enter + On Move`.
+- Simple zone: uses the detected template shape directly.
+- Ring: creates an annular zone from a circle template.
+- Composite line: creates multi-part line zones, such as a wall body plus one heated side.
+- Composite ring: creates multi-part circular zones, such as a ring body plus an inner or outer heated side.
 
-- `Debug log verbosity`
-  Controls how much diagnostic output Persistent Zones writes to the browser console: `Minimal`, `Standard`, or `Verbose`.
+Supported template types are circle, cone, ray, and rectangle. Ring and composite ring zones require circle templates. Composite line zones require ray templates.
 
-## Supported Zone Shapes
+## Supported Triggers
 
-- `simple`
-  A single zone matching the detected Item template.
+Persistent Zones normalizes the following trigger timings:
 
-- `ring`
-  An annulus / wall-body zone built from a circle template.
+- `onEnter`
+- `onExit`
+- `onMove`
+- `onStartTurn`
+- `onEndTurn`
 
-- `composite line`
-  A multi-part line-based zone, typically a wall body plus one heated side.
+Triggers can use simple effects or compatible dnd5e activities. Simple effects support damage, healing, temporary hit points, saving throws, damage type, movement mode, and step-based `onMove` behavior.
 
-- `composite ring`
-  A multi-part ring-based zone, typically a wall body plus an inner or outer heated side.
+## Linked Documents
 
-## Parts And Variants
+Persistent Zones can create and maintain linked scene documents for active zones:
 
-- `parts`
-  A single logical definition can expand into multiple Region parts. Each part can carry its own triggers and behaviors.
+- Linked walls with solid, terrain, invisible, and ethereal presets.
+- Linked AmbientLight documents with glow, moonlight, fire, holy, and darkness presets.
+- Optional linked wall height when a compatible wall-height support module is active.
 
-- `variants`
-  A definition can expose multiple alternative layouts through `variants[]`, an explicit `selectedVariant`, and an optional `defaultVariant`.
+Linked walls are limited to compatible circle, rectangle, and polygon Region shapes. Linked lights use one native AmbientLight per managed zone.
 
-Typical examples:
+## Global Movement Interruption
 
-- `line-left` / `line-right`
-- `ring-inner` / `ring-outer`
+Movement interruption is controlled globally in module settings:
+
+- Off
+- On Enter only
+- On Enter + On Move
+
+The module preserves legacy local movement-stop flags for migration awareness, but the global setting controls runtime movement interruption.
+
+## Installation And Compatibility
+
+- Foundry VTT: minimum v13, verified v13.
+- System: dnd5e minimum v4, verified v4.
+- Languages: English and French.
+
+For local installation, place this module folder in your Foundry `Data/modules` directory and enable **Persistent Zones** from the Manage Modules screen.
+
+Publication manifest and download URLs should be added once the release artifact is hosted.
+
+## Quick Usage
+
+1. Enable the module in a dnd5e world.
+2. Open an Item that uses a measured template.
+3. Click the Persistent Zones header button.
+4. Choose a built-in profile or configure a zone type manually.
+5. Configure triggers, targeting, terrain, linked walls, or linked light as needed.
+6. Save the definition.
+7. Place the Item template in a scene to create managed persistent Regions.
+
+Use the module settings to choose whether supported zone triggers should interrupt token movement globally.
 
 ## Public API
 
-The public entry point is `game.persistentZones`.
-
-### Main Helpers
-
-- `await game.persistentZones.openItemConfig(itemOrUuid)`
-  Open the Item authoring popup.
-
-- `await game.persistentZones.getZoneDefinitionFromItem(itemOrUuid)`
-  Read the raw stored definition from the Item flag.
-
-- `await game.persistentZones.getNormalizedZoneDefinitionFromItem(itemOrUuid, options?)`
-  Read and normalize the effective definition for the Item.
-
-- `await game.persistentZones.setZoneDefinitionOnItem(itemOrUuid, definition)`
-  Replace the Item definition with a new one.
-
-- `await game.persistentZones.clearZoneDefinitionFromItem(itemOrUuid, options?)`
-  Remove the Item definition and cleanup active managed Regions for that Item.
-
-- `await game.persistentZones.validateDefinition(definition, context?)`
-  Normalize and validate an arbitrary definition object.
-
-- `await game.persistentZones.getCompatibleBaseTypes(itemOrUuid, options?)`
-  Return the base types compatible with the detected or effective template type.
-
-- `await game.persistentZones.getCompatibleVariants(itemOrUuid, options?)`
-  Return the variant choices compatible with the Item and its effective template type.
-
-- `await game.persistentZones.cleanupRegionsForItem(itemOrUuid, options?)`
-  Delete active managed Regions currently linked to the Item.
-
-- `await game.persistentZones.inspectSelectedVariant(itemOrUuid, options?)`
-  Inspect the selected variant, effective variant, and variant resolution metadata.
-
-### Existing Runtime Helpers Still Exposed
-
-- `game.persistentZones.normalizeZoneDefinition(rawDefinition, options?)`
-- `await game.persistentZones.createRegionFromTemplate(templateDocument, options?)`
-- `await game.persistentZones.cleanupSceneRegions(scene, options?)`
-- `await game.persistentZones.cleanupWorldRegions(options?)`
-- `game.persistentZones.getRegionRuntime(regionDocument)`
-- `game.persistentZones.debug`
-
-## Minimal Definition Example
+The public entry point is:
 
 ```js
-const definition = {
-  enabled: true,
-  label: "Moonbeam",
-  triggers: {
-    onEnter: {
-      mode: "simple",
-      damage: {
-        enabled: true,
-        formula: "2d10",
-        type: "radiant"
-      },
-      save: {
-        enabled: true,
-        ability: "con",
-        dcMode: "auto",
-        onSuccess: "half"
-      }
-    }
-  }
-};
-
-await game.persistentZones.setZoneDefinitionOnItem(item, definition);
+game.persistentZones
 ```
 
-## Variant Example
+Common helpers:
 
-```js
-const definition = {
-  enabled: true,
-  label: "Wall Of Fire Like",
-  selectedVariant: "line-left",
-  defaultVariant: "line-left",
-  variants: [
-    {
-      id: "line-left",
-      parts: [
-        { id: "wall-body" },
-        {
-          id: "heated-side-left",
-          geometry: {
-            type: "side-of-line",
-            side: "left",
-            offsetReference: "body-edge",
-            offsetStart: 0,
-            offsetEnd: 15
-          },
-          triggers: {
-            onEnter: {
-              mode: "simple",
-              movementMode: "any",
-              damage: { enabled: true, formula: "5d8", type: "fire" },
-              save: { enabled: true, ability: "dex", dcMode: "auto", onSuccess: "half" }
-            }
-          }
-        }
-      ]
-    },
-    {
-      id: "line-right",
-      parts: [
-        { id: "wall-body" },
-        {
-          id: "heated-side-right",
-          geometry: {
-            type: "side-of-line",
-            side: "right",
-            offsetReference: "body-edge",
-            offsetStart: 0,
-            offsetEnd: 15
-          }
-        }
-      ]
-    }
-  ]
-};
+- `openItemConfig(itemOrUuid)`
+- `getZoneDefinitionFromItem(itemOrUuid)`
+- `getNormalizedZoneDefinitionFromItem(itemOrUuid, options?)`
+- `setZoneDefinitionOnItem(itemOrUuid, definition)`
+- `clearZoneDefinitionFromItem(itemOrUuid, options?)`
+- `validateDefinition(definition, context?)`
+- `getCompatibleBaseTypes(itemOrUuid, options?)`
+- `getCompatibleVariants(itemOrUuid, options?)`
+- `cleanupRegionsForItem(itemOrUuid, options?)`
+- `inspectSelectedVariant(itemOrUuid, options?)`
+- `createRegionFromTemplate(templateDocument, options?)`
+- `cleanupSceneRegions(scene, options?)`
+- `cleanupWorldRegions(options?)`
+- `getRegionRuntime(regionDocument)`
 
-const result = await game.persistentZones.validateDefinition(definition, {
-  item,
-  templateType: "ray"
-});
+The recommended integration path is to use the public API instead of writing module flags directly.
 
-if (result.isValid) {
-  await game.persistentZones.setZoneDefinitionOnItem(item, definition);
-}
-```
+## Data Contract
 
-## Cleanup Example
+- Source Item definitions live on `flags["persistent-zones"].definition`.
+- Runtime Region metadata lives on `flags["persistent-zones"].runtime`.
+- User profiles are stored in a client-scoped module setting.
 
-```js
-await game.persistentZones.cleanupRegionsForItem(item);
-```
+## Known Limits And Notes
 
-Or remove the definition and cleanup in one step:
+- Custom movement-cost multipliers are not applied; enabled terrain uses standard difficult terrain.
+- Forced movement configuration is recognized as a limitation but is not executed.
+- Linked walls only support compatible circle, rectangle, and polygon Region shapes.
+- Linked lights use a single native AmbientLight with bright/dim settings.
+- `side-of-ring` is intended for circle-based ring body parts.
+- The Item editor saves definitions in the supported public authoring set: simple, ring, composite line, and composite ring.
 
-```js
-await game.persistentZones.clearZoneDefinitionFromItem(item);
-```
+## Release Notes
 
-## Compatibility Query Examples
-
-```js
-const baseTypes = await game.persistentZones.getCompatibleBaseTypes(item);
-console.log(baseTypes.compatibleBaseTypes);
-```
-
-```js
-const variants = await game.persistentZones.getCompatibleVariants(item);
-console.log(variants.compatibleVariants);
-```
-
-## Macro Snippet Example
-
-Open the authoring UI for the currently controlled Item:
-
-```js
-const item = actor?.items?.getName("Moonbeam");
-if (!item) return ui.notifications.warn("Item not found.");
-
-await game.persistentZones.openItemConfig(item);
-```
-
-Validate then store a small persistent-zone definition:
-
-```js
-const item = actor?.items?.getName("Moonbeam");
-if (!item) return ui.notifications.warn("Item not found.");
-
-const definition = {
-  enabled: true,
-  triggers: {
-    onEnter: {
-      mode: "simple",
-      damage: { enabled: true, formula: "2d10", type: "radiant" }
-    }
-  }
-};
-
-const validation = await game.persistentZones.validateDefinition(definition, {
-  item,
-  templateType: "circle"
-});
-
-if (!validation.isValid) {
-  return ui.notifications.error(validation.reasons.join(" | "));
-}
-
-await game.persistentZones.setZoneDefinitionOnItem(item, definition);
-ui.notifications.info("Persistent Zones definition saved.");
-```
-
-## Notes
-
-- The recommended integration path is to use the public API rather than writing flags manually.
-- The Item editor remains the easiest way to author compatible definitions by hand.
-- Movement interruption is now controlled globally in the module settings rather than per Item definition.
-- Saving an Item definition automatically rebuilds linked active Regions when it can do so safely.
+See [CHANGELOG.md](CHANGELOG.md).
