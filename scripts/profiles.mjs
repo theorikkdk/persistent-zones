@@ -63,6 +63,118 @@ const BUILTIN_PROFILE_FACTORIES = Object.freeze([
     templateType: "circle",
     selectedVariant: "ring-outer",
     buildDefinition: ({ id, label }) => buildWallHeatedRingProfileDefinition("outer", { id, label })
+  },
+  {
+    id: "simple-damage-circle",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugSimpleDamageCircle",
+    fallbackLabel: "Debug/Test Simple Damage Circle",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildSimpleDamageCircleTestProfileDefinition({ id, label })
+  },
+  {
+    id: "simple-heal-circle",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugSimpleHealCircle",
+    fallbackLabel: "Debug/Test Simple Heal Circle",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildSimpleHealCircleTestProfileDefinition({ id, label })
+  },
+  {
+    id: "ring-damage",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugRingDamage",
+    fallbackLabel: "Debug/Test Ring Damage",
+    scope: "debug",
+    baseType: "ring",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildRingDamageTestProfileDefinition({ id, label })
+  },
+  {
+    id: "debug-wall-heated-line-left",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugWallHeatedLineLeft",
+    fallbackLabel: "Debug/Test Wall Heated Line Left",
+    scope: "debug",
+    baseType: "composite-line",
+    templateType: "ray",
+    selectedVariant: "line-left",
+    buildDefinition: ({ id, label }) => buildWallHeatedLineProfileDefinition("left", { id, label })
+  },
+  {
+    id: "debug-wall-heated-line-right",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugWallHeatedLineRight",
+    fallbackLabel: "Debug/Test Wall Heated Line Right",
+    scope: "debug",
+    baseType: "composite-line",
+    templateType: "ray",
+    selectedVariant: "line-right",
+    buildDefinition: ({ id, label }) => buildWallHeatedLineProfileDefinition("right", { id, label })
+  },
+  {
+    id: "debug-wall-heated-ring-inner",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugWallHeatedRingInner",
+    fallbackLabel: "Debug/Test Wall Heated Ring Inner",
+    scope: "debug",
+    baseType: "composite-ring",
+    templateType: "circle",
+    selectedVariant: "ring-inner",
+    buildDefinition: ({ id, label }) => buildWallHeatedRingProfileDefinition("inner", { id, label })
+  },
+  {
+    id: "debug-wall-heated-ring-outer",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugWallHeatedRingOuter",
+    fallbackLabel: "Debug/Test Wall Heated Ring Outer",
+    scope: "debug",
+    baseType: "composite-ring",
+    templateType: "circle",
+    selectedVariant: "ring-outer",
+    buildDefinition: ({ id, label }) => buildWallHeatedRingProfileDefinition("outer", { id, label })
+  },
+  {
+    id: "stop-on-enter-test",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugStopOnEnterTest",
+    fallbackLabel: "Debug/Test Stop On Enter",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildStopOnEnterTestProfileDefinition({ id, label })
+  },
+  {
+    id: "stop-on-move-test",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugStopOnMoveTest",
+    fallbackLabel: "Debug/Test Stop On Move",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildStopOnMoveTestProfileDefinition({ id, label })
+  },
+  {
+    id: "linked-light-test",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugLinkedLightTest",
+    fallbackLabel: "Debug/Test Linked Light",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildLinkedLightTestProfileDefinition({ id, label })
+  },
+  {
+    id: "linked-walls-test",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugLinkedWallsTest",
+    fallbackLabel: "Debug/Test Linked Walls",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildLinkedWallsTestProfileDefinition({ id, label })
+  },
+  {
+    id: "difficult-terrain-test",
+    labelKey: "PERSISTENT_ZONES.UI.Profiles.DebugDifficultTerrainTest",
+    fallbackLabel: "Debug/Test Difficult Terrain",
+    scope: "debug",
+    baseType: "simple",
+    templateType: "circle",
+    buildDefinition: ({ id, label }) => buildDifficultTerrainTestProfileDefinition({ id, label })
   }
 ]);
 
@@ -703,7 +815,7 @@ function getBuiltinPersistentZoneProfiles() {
       {
         id: factory.id,
         label,
-        scope: "builtin",
+        scope: factory.scope ?? "builtin",
         baseType: factory.baseType,
         templateType: factory.templateType,
         selectedVariant: factory.selectedVariant ?? null,
@@ -713,7 +825,7 @@ function getBuiltinPersistentZoneProfiles() {
         })
       },
       {
-        fallbackScope: "builtin"
+        fallbackScope: factory.scope ?? "builtin"
       }
     );
   });
@@ -966,6 +1078,54 @@ function buildSimpleDamageProfileDefinition({
   };
 }
 
+function buildSimpleDamageCircleTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    triggers: {
+      ...buildDisabledTriggers(),
+      onEnter: buildSimpleTriggerDefinition({
+        formula: "2d6",
+        damageType: "fire",
+        saveAbility: "dex",
+        saveDc: 13
+      })
+    }
+  };
+}
+
+function buildSimpleHealCircleTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    triggers: {
+      ...buildDisabledTriggers(),
+      onEnter: buildSimpleEffectTriggerDefinition({
+        effectType: "heal",
+        formula: "2d6"
+      })
+    }
+  };
+}
+
 function buildRingBasicProfileDefinition({
   id,
   label
@@ -988,6 +1148,43 @@ function buildRingBasicProfileDefinition({
           referenceRadiusMode: "outer-edge",
           thickness: 5,
           segments: 24
+        }
+      }
+    ]
+  };
+}
+
+function buildRingDamageTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "ring",
+      template: {
+        type: "circle"
+      }
+    }),
+    parts: [
+      {
+        id: "ring-damage-band",
+        label: localize("PERSISTENT_ZONES.UI.Parts.WallBody", "Wall Body"),
+        geometry: {
+          type: "ring",
+          referenceRadiusMode: "outer-edge",
+          thickness: 5,
+          segments: 24
+        },
+        triggers: {
+          ...buildDisabledTriggers(),
+          onEnter: buildSimpleTriggerDefinition({
+            formula: "2d6",
+            damageType: "fire",
+            saveAbility: "dex",
+            saveDc: 13
+          })
         }
       }
     ]
@@ -1112,6 +1309,111 @@ function buildWallHeatedRingProfileDefinition(side = "inner", {
   };
 }
 
+function buildStopOnEnterTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildSimpleDamageCircleTestProfileDefinition({ id, label }),
+    source: {
+      type: "profile",
+      module: MODULE_ID,
+      profileId: id,
+      baseType: "simple",
+      testNote: "Enable the global movement stop setting and retest onEnter movement interruption."
+    }
+  };
+}
+
+function buildStopOnMoveTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    triggers: {
+      ...buildDisabledTriggers(),
+      onMove: {
+        ...buildSimpleTriggerDefinition({
+          formula: "1d4",
+          damageType: "acid",
+          saveAbility: null,
+          saveDc: 13
+        }),
+        distanceStep: 5
+      }
+    }
+  };
+}
+
+function buildLinkedLightTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    linkedLight: {
+      enabled: true,
+      preset: "glow"
+    }
+  };
+}
+
+function buildLinkedWallsTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    linkedWalls: {
+      enabled: true,
+      preset: "solid"
+    }
+  };
+}
+
+function buildDifficultTerrainTestProfileDefinition({
+  id,
+  label
+} = {}) {
+  return {
+    ...buildCommonProfileDefinition({
+      id,
+      label,
+      baseType: "simple",
+      template: {
+        type: "circle"
+      }
+    }),
+    terrain: {
+      difficult: true,
+      magical: false,
+      types: []
+    }
+  };
+}
+
 function buildDisabledTriggers() {
   return {
     onEnter: { enabled: false, mode: "none" },
@@ -1119,6 +1421,35 @@ function buildDisabledTriggers() {
     onMove: { enabled: false, mode: "none" },
     onStartTurn: { enabled: false, mode: "none" },
     onEndTurn: { enabled: false, mode: "none" }
+  };
+}
+
+function buildSimpleEffectTriggerDefinition({
+  effectType = "damage",
+  formula = "2d6",
+  damageType = "fire"
+} = {}) {
+  return {
+    enabled: true,
+    mode: "simple",
+    movementMode: "any",
+    simpleEffect: {
+      enabled: true,
+      type: effectType,
+      formula,
+      damageType: effectType === "damage" ? damageType : null
+    },
+    damage: {
+      enabled: effectType === "damage",
+      formula: effectType === "damage" ? formula : null,
+      type: effectType === "damage" ? damageType : null
+    },
+    save: {
+      enabled: false
+    },
+    activity: {
+      id: null
+    }
   };
 }
 
@@ -1232,7 +1563,14 @@ function normalizeRingSide(value) {
 }
 
 function normalizeProfileScope(value, fallbackValue = "builtin") {
-  return String(value ?? fallbackValue).trim().toLowerCase() === "user" ? "user" : "builtin";
+  const normalized = String(value ?? fallbackValue).trim().toLowerCase();
+  if (normalized === "user") {
+    return "user";
+  }
+  if (normalized === "debug" || normalized === "test" || normalized === "debug-test") {
+    return "debug";
+  }
+  return "builtin";
 }
 
 function normalizeProfileId(value) {

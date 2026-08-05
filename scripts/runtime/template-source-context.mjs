@@ -103,6 +103,8 @@ export async function resolveTemplateSourceContext(
     templateId: templateDocument?.id ?? null,
     templateUuid: templateDocument?.uuid ?? null,
     templateType: templateDocument?.t ?? null,
+    sourceDocumentType: templateDocument?.documentName ?? snapshot.documentName ?? null,
+    templateDetected: isMeasuredTemplateLike(templateDocument, snapshot),
     attempted: [],
     matched: [],
     notes: []
@@ -164,6 +166,7 @@ export function collectTemplateSourceDebugSnapshot(templateDocument) {
   return {
     id: templateDocument?.id ?? null,
     uuid: templateDocument?.uuid ?? null,
+    documentName: templateDocument?.documentName ?? objectData.documentName ?? null,
     type: templateDocument?.t ?? null,
     flags: duplicateData(objectData.flags ?? {}),
     system: duplicateData(objectData.system ?? {}),
@@ -407,6 +410,8 @@ function emitResolutionLog(status, report, snapshot, context, emitDebug) {
     templateId: report.templateId,
     templateUuid: report.templateUuid,
     templateType: report.templateType,
+    sourceDocumentType: report.sourceDocumentType,
+    templateDetected: report.templateDetected,
     found: {
       itemUuid: context.item?.uuid ?? null,
       actorUuid: context.actor?.uuid ?? null,
@@ -420,6 +425,15 @@ function emitResolutionLog(status, report, snapshot, context, emitDebug) {
       system: snapshot.system
     }
   });
+}
+
+function isMeasuredTemplateLike(templateDocument, snapshot = null) {
+  const documentName = templateDocument?.documentName ?? snapshot?.documentName ?? null;
+  if (documentName === "MeasuredTemplate") {
+    return true;
+  }
+
+  return Boolean(templateDocument?.t ?? snapshot?.type ?? null);
 }
 
 function shortenValue(value) {

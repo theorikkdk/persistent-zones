@@ -59,6 +59,14 @@ export async function syncLinkedDocumentsForRegion({
   const nextLinkedDocuments = { wallIds, lightIds };
   await updateRegionLinkedDocuments(regionDocument, nextLinkedDocuments);
 
+  debug("linkedDocsSync", {
+    templateId: templateDocument?.id ?? runtime.templateId ?? null,
+    regionId: regionDocument?.id ?? null,
+    wallIds,
+    lightIds,
+    syncApplied: true
+  });
+
   return {
     ...nextLinkedDocuments,
     syncApplied: true
@@ -523,6 +531,12 @@ function buildWallSegmentsFromShapes(shapes, {
       case "circle":
         segments.push(...buildCircleWallSegments(shape, circleSegments));
         break;
+      case "emanation":
+        segments.push(...buildEmanationWallSegments(shape, circleSegments));
+        break;
+      case "ellipse":
+        segments.push(...buildEllipseWallSegments(shape, circleSegments));
+        break;
       case "rectangle":
         segments.push(...buildRectangleWallSegments(shape));
         break;
@@ -559,6 +573,48 @@ function buildCircleWallSegments(shape, count) {
   }
 
   return segments;
+}
+
+function buildEmanationWallSegments(shape, count) {
+  const center = findEmanationCenter(shape);
+  const radius = coerceNumber(shape?.radius, 0);
+  if (!radius || radius <= 0) {
+    return [];
+  }
+
+  return buildCircleWallSegments({
+    type: "circle",
+    x: center.x,
+    y: center.y,
+    radius
+  }, count);
+}
+
+function buildEllipseWallSegments(shape, count) {
+  const width = coerceNumber(shape?.width, null);
+  const height = coerceNumber(shape?.height, null);
+  const radiusX = coerceNumber(shape?.radiusX, width !== null ? width / 2 : null);
+  const radiusY = coerceNumber(shape?.radiusY, height !== null ? height / 2 : null);
+  const centerX = coerceNumber(shape?.cx ?? shape?.x, 0);
+  const centerY = coerceNumber(shape?.cy ?? shape?.y, 0);
+  const rotation = (coerceNumber(shape?.rotation, 0) * Math.PI) / 180;
+
+  if (!radiusX || !radiusY) {
+    return [];
+  }
+
+  const safeCount = Math.max(8, count);
+  const points = [];
+  for (let index = 0; index < safeCount; index += 1) {
+    const angle = (index / safeCount) * Math.PI * 2;
+    const localPoint = {
+      x: centerX + Math.cos(angle) * radiusX,
+      y: centerY + Math.sin(angle) * radiusY
+    };
+    points.push(rotation ? rotatePoint(localPoint, { x: centerX, y: centerY }, rotation) : localPoint);
+  }
+
+  return buildSegmentsFromPoints(points, true);
 }
 
 function buildRectangleWallSegments(shape) {
@@ -646,6 +702,10 @@ function findShapeCenter(shape) {
         x: coerceNumber(shape.x, 0),
         y: coerceNumber(shape.y, 0)
       };
+    case "emanation":
+      return findEmanationCenter(shape);
+    case "ellipse":
+      return findEllipseCenter(shape);
     case "rectangle":
       return findRectangleCenter(shape);
     case "polygon":
@@ -653,6 +713,31 @@ function findShapeCenter(shape) {
     default:
       return null;
   }
+}
+
+function findEmanationCenter(shape) {
+  const base = shape?.base ?? {};
+  if (base.type === "token") {
+    const gridSize = coerceNumber(canvas?.grid?.size, 100) || 100;
+    const width = Math.max(coerceNumber(base.width, 1), 0.1) * gridSize;
+    const height = Math.max(coerceNumber(base.height, 1), 0.1) * gridSize;
+    return {
+      x: coerceNumber(base.x, 0) + (width / 2),
+      y: coerceNumber(base.y, 0) + (height / 2)
+    };
+  }
+
+  return {
+    x: coerceNumber(base.x ?? shape?.x, 0),
+    y: coerceNumber(base.y ?? shape?.y, 0)
+  };
+}
+
+function findEllipseCenter(shape) {
+  return {
+    x: coerceNumber(shape?.cx ?? shape?.x, 0),
+    y: coerceNumber(shape?.cy ?? shape?.y, 0)
+  };
 }
 
 function findRectangleCenter(shape) {

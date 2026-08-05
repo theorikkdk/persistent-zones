@@ -3458,8 +3458,8 @@ function sortProfilesForUi(profiles = []) {
   return Array.from(profiles ?? [])
     .filter(Boolean)
     .sort((leftProfile, rightProfile) => {
-      const leftScopeRank = leftProfile?.scope === "user" ? 1 : 0;
-      const rightScopeRank = rightProfile?.scope === "user" ? 1 : 0;
+      const leftScopeRank = getProfileScopeSortRank(leftProfile?.scope);
+      const rightScopeRank = getProfileScopeSortRank(rightProfile?.scope);
       if (leftScopeRank !== rightScopeRank) {
         return leftScopeRank - rightScopeRank;
       }
@@ -3468,6 +3468,17 @@ function sortProfilesForUi(profiles = []) {
         sensitivity: "base"
       });
     });
+}
+
+function getProfileScopeSortRank(scope) {
+  switch (String(scope ?? "").trim().toLowerCase()) {
+    case "debug":
+      return 1;
+    case "user":
+      return 2;
+    default:
+      return 0;
+  }
 }
 
 function profileMatchesFilter(profile, normalizedFilterNeedle = "") {
@@ -3592,9 +3603,14 @@ function suggestUserProfileName(formState, item = null) {
 }
 
 function getProfileScopeLabel(scope) {
-  return String(scope ?? "").trim().toLowerCase() === "user"
-    ? localize("PERSISTENT_ZONES.UI.ProfileScopes.User", "User")
-    : localize("PERSISTENT_ZONES.UI.ProfileScopes.Builtin", "Built-in");
+  switch (String(scope ?? "").trim().toLowerCase()) {
+    case "debug":
+      return localize("PERSISTENT_ZONES.UI.ProfileScopes.Debug", "Debug/Test");
+    case "user":
+      return localize("PERSISTENT_ZONES.UI.ProfileScopes.User", "User");
+    default:
+      return localize("PERSISTENT_ZONES.UI.ProfileScopes.Builtin", "Built-in");
+  }
 }
 
 function localizeProfileTemplateLabel(templateType) {

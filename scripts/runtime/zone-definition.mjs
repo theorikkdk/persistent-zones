@@ -1257,8 +1257,8 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
       geometryDefinition.thickness,
       geometryDefinition.wallThickness,
       geometryDefinition.bandThickness,
-      thicknessRatio !== null && templateDistance !== null
-        ? templateDistance * thicknessRatio
+      thicknessRatio !== null && templateRadius !== null
+        ? templateRadius * thicknessRatio
         : null
     ),
     null
@@ -1330,6 +1330,9 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
       computedOuterRadius = resolvedRadii.outerRadius;
       radiusResolutionMode = "legacy-reference-radius-mode";
     }
+  } else if (computedOuterRadius === null && computedInnerRadius !== null && templateRadius !== null) {
+    computedOuterRadius = templateRadius;
+    radiusResolutionMode = innerRadiusRatio !== null ? "inner-radius-ratio" : "template-outer-edge";
   }
 
   if (computedInnerRadius === null) {

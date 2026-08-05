@@ -14,13 +14,34 @@ import {
   resolveTemplateSourceContext
 } from "./template-source-context.mjs";
 import { inspectZoneTriggeredActivity } from "./activity-compatibility.mjs";
+import { inspectManagedRingRegions as inspectManagedRingRegionsRuntime } from "./region-factory.mjs";
 import {
   getZoneDefinitionFromItem,
   normalizeZoneDefinition
 } from "./zone-definition.mjs";
 
+const V14_DEBUG_TEST_PRESETS = Object.freeze([
+  "simple-damage-circle",
+  "simple-heal-circle",
+  "ring-damage",
+  "wall-heated-line-left",
+  "wall-heated-line-right",
+  "wall-heated-ring-inner",
+  "wall-heated-ring-outer",
+  "stop-on-enter-test",
+  "stop-on-move-test",
+  "linked-light-test",
+  "linked-walls-test",
+  "difficult-terrain-test"
+]);
+const BUILD_SIGNATURE = "v14-runtime-audit-2026-08-05-01";
+const BUILD_GIT_BRANCH = "codex-v14-first-phase-1";
+const BUILD_GIT_HASH = "91c51b3";
+
 export function createPersistentZonesDebugApi() {
   return Object.freeze({
+    buildInfo,
+    listTestPresets,
     buildTestDefinition,
     applyTestDefinitionToItem,
     clearTestDefinitionFromItem,
@@ -28,8 +49,124 @@ export function createPersistentZonesDebugApi() {
     inspectZoneTriggerActivities,
     inspectSelectedVariant,
     inspectTemplateSource,
+    inspectManagedRingRegions,
+    inspectSelectedRegion,
+    createNativeRingFromSelectedRegion,
     markNextMovement
   });
+}
+
+export function buildInfo() {
+  return {
+    moduleVersion: game.modules.get(MODULE_ID)?.version ?? null,
+    buildSignature: BUILD_SIGNATURE,
+    gitBranch: BUILD_GIT_BRANCH,
+    gitHash: BUILD_GIT_HASH,
+    foundryVersion: game.version ?? null,
+    systemVersion: game.system?.version ?? null,
+    loadedArchitecture: "v14-runtime-audit",
+    loadedFileMarkers: [
+      "scripts/module.mjs:BUILD SIGNATURE",
+      "scripts/runtime/region-factory.mjs:REGION FACTORY SIGNATURE",
+      "scripts/runtime/debug-tools.mjs:buildInfo",
+      "scripts/runtime/debug-tools.mjs:createNativeRingFromSelectedRegion"
+    ]
+  };
+}
+
+export function inspectSelectedRegion() {
+  if (!assertDebugGM("inspectSelectedRegion")) {
+    return null;
+  }
+
+  const regionDocument = getSelectedRegionDocument();
+  if (!regionDocument) {
+    return {
+      ok: false,
+      error: "No selected Region found."
+    };
+  }
+
+  const objectData = duplicateData(regionDocument.toObject?.() ?? {});
+  return {
+    ok: true,
+    id: regionDocument.id ?? null,
+    uuid: regionDocument.uuid ?? null,
+    name: regionDocument.name ?? null,
+    shapes: duplicateData(objectData.shapes ?? regionDocument.shapes ?? []),
+    flags: duplicateData(objectData.flags ?? regionDocument.flags ?? {}),
+    visibility: objectData.visibility ?? regionDocument.visibility ?? null,
+    highlightMode: objectData.highlightMode ?? regionDocument.highlightMode ?? null,
+    source: simplifyDocumentObject(objectData)
+  };
+}
+
+export async function createNativeRingFromSelectedRegion({
+  innerWidth = 80,
+  outerWidth = 80,
+  color = "#28cc74"
+} = {}) {
+  if (!assertDebugGM("createNativeRingFromSelectedRegion")) {
+    return null;
+  }
+
+  const sourceRegion = getSelectedRegionDocument();
+  const scene = sourceRegion?.parent ?? canvas?.scene ?? null;
+  if (!sourceRegion || !scene || typeof scene.createEmbeddedDocuments !== "function") {
+    return {
+      ok: false,
+      error: "No selected Region with a writable parent Scene found."
+    };
+  }
+
+  const shape = Array.from(sourceRegion.toObject?.()?.shapes ?? sourceRegion.shapes ?? [])[0] ?? {};
+  const center = resolveRegionShapeCenter(shape, sourceRegion);
+  const radius = resolveRegionShapeRadius(shape);
+  const payload = {
+    name: "PZ DEBUG NATIVE RING",
+    color,
+    visibility: 4,
+    highlightMode: "shapes",
+    shapes: [{
+      type: "ring",
+      x: center.x,
+      y: center.y,
+      radius,
+      innerWidth,
+      outerWidth,
+      hole: false,
+      gridBased: false
+    }]
+  };
+
+  console.info(`[${MODULE_ID}] DEBUG createNativeRingFromSelectedRegion payload`, payload);
+  const created = await scene.createEmbeddedDocuments("Region", [payload], {
+    persistentZonesDebugNativeRingFromSelectedRegion: true
+  });
+  const createdRegion = created?.[0] ?? null;
+  const createdObject = duplicateData(createdRegion?.toObject?.() ?? {});
+  return {
+    ok: Boolean(createdRegion),
+    sourceRegionId: sourceRegion.id ?? null,
+    createdRegionId: createdRegion?.id ?? null,
+    payload,
+    createdShape: duplicateData(Array.from(createdObject.shapes ?? [])[0] ?? null)
+  };
+}
+
+export function inspectManagedRingRegions(options = {}) {
+  if (!assertDebugGM("inspectManagedRingRegions")) {
+    return null;
+  }
+  return inspectManagedRingRegionsRuntime(options);
+}
+
+export function listTestPresets() {
+  if (!assertDebugGM("listTestPresets")) {
+    return [];
+  }
+
+  return Array.from(V14_DEBUG_TEST_PRESETS);
 }
 
 export function buildTestDefinition(preset = "basic") {
@@ -39,6 +176,83 @@ export function buildTestDefinition(preset = "basic") {
 
   const normalizedPreset = String(preset || "basic").toLowerCase();
   switch (normalizedPreset) {
+    case "simple-damage-circle":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createEntryDamageSaveTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Simple Damage Circle"
+      }));
+    case "simple-heal-circle":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createSimpleHealCircleTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Simple Heal Circle"
+      }));
+    case "ring-damage":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingDamageTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Ring Damage"
+      }));
+    case "wall-heated-line-left":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("left", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Wall Heated Line Left",
+        heatedPartId: "heated-side-left"
+      }));
+    case "wall-heated-line-right":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createWallHeatedTestDefinition("right", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Wall Heated Line Right",
+        heatedPartId: "heated-side-right"
+      }));
+    case "wall-heated-ring-inner":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("inner", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Wall Heated Ring Inner",
+        heatedPartId: "heated-side-inner"
+      }));
+    case "wall-heated-ring-outer":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createRingHeatedTestDefinition("outer", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Wall Heated Ring Outer",
+        heatedPartId: "heated-side-outer"
+      }));
+    case "stop-on-enter-test":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createEntryDamageSaveTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Stop On Enter"
+      }));
+    case "stop-on-move-test":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createMoveDamageTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Stop On Move",
+        movementMode: "any"
+      }));
+    case "linked-light-test":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedLightTestDefinition("glow", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Linked Light Test"
+      }));
+    case "linked-walls-test":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createLinkedWallsTestDefinition("solid", {
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Linked Walls Test"
+      }));
+    case "difficult-terrain-test":
+      debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
+      return duplicateData(createDifficultTerrainTestDefinition({
+        preset: normalizedPreset,
+        label: "Persistent Zone Debug Difficult Terrain Test"
+      }));
     case "fire-wall-line-left":
       debug("Built persistent-zones debug preset.", { preset: normalizedPreset });
       return duplicateData(createWallHeatedTestDefinition("left", {
@@ -515,6 +729,77 @@ function assertDebugGM(actionName) {
   return false;
 }
 
+function getSelectedRegionDocument() {
+  const controlled = Array.from(canvas?.regions?.controlled ?? []);
+  const placeableDocument = controlled[0]?.document ?? null;
+  if (placeableDocument?.documentName === "Region") {
+    return placeableDocument;
+  }
+
+  const controlledPlaceables = Array.from(canvas?.regions?.placeables ?? [])
+    .filter((placeable) => placeable?.controlled);
+  const selectedPlaceableDocument = controlledPlaceables[0]?.document ?? null;
+  if (selectedPlaceableDocument?.documentName === "Region") {
+    return selectedPlaceableDocument;
+  }
+
+  const selectedIds = Array.from(canvas?.regions?._controlled ?? []);
+  const selectedId = selectedIds[0]?.id ?? selectedIds[0] ?? null;
+  if (selectedId) {
+    return canvas?.scene?.regions?.get?.(selectedId) ?? null;
+  }
+
+  return null;
+}
+
+function resolveRegionShapeCenter(shape, regionDocument) {
+  if (Number.isFinite(Number(shape?.x)) && Number.isFinite(Number(shape?.y))) {
+    return {
+      x: Number(shape.x),
+      y: Number(shape.y)
+    };
+  }
+
+  const bounds = shape?.bounds ?? regionDocument?.object?.bounds ?? null;
+  if (bounds && Number.isFinite(Number(bounds.x)) && Number.isFinite(Number(bounds.y))) {
+    return {
+      x: Number(bounds.x) + Number(bounds.width ?? 0) / 2,
+      y: Number(bounds.y) + Number(bounds.height ?? 0) / 2
+    };
+  }
+
+  return {
+    x: Number(regionDocument?.x ?? 0),
+    y: Number(regionDocument?.y ?? 0)
+  };
+}
+
+function resolveRegionShapeRadius(shape) {
+  if (Number.isFinite(Number(shape?.radius)) && Number(shape.radius) > 0) {
+    return Number(shape.radius);
+  }
+  if (Number.isFinite(Number(shape?.radiusX)) && Number(shape.radiusX) > 0) {
+    return Number(shape.radiusX);
+  }
+  if (Number.isFinite(Number(shape?.width)) && Number(shape.width) > 0) {
+    return Number(shape.width) / 2;
+  }
+  return 300;
+}
+
+function simplifyDocumentObject(objectData) {
+  return {
+    id: objectData?._id ?? objectData?.id ?? null,
+    name: objectData?.name ?? null,
+    type: objectData?.type ?? null,
+    hidden: objectData?.hidden ?? null,
+    visibility: objectData?.visibility ?? null,
+    highlightMode: objectData?.highlightMode ?? null,
+    shapes: duplicateData(objectData?.shapes ?? []),
+    flags: duplicateData(objectData?.flags ?? {})
+  };
+}
+
 async function resolveItemDocument(itemOrUuid) {
   if (!itemOrUuid) {
     return null;
@@ -727,6 +1012,49 @@ function createEntryDamageSaveTestDefinition({
   };
 }
 
+function createSimpleHealCircleTestDefinition({
+  preset = "simple-heal-circle",
+  label = "Persistent Zone Debug Simple Heal Circle"
+} = {}) {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset
+    },
+    enabled: true,
+    label,
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: true,
+        simpleEffect: {
+          enabled: true,
+          type: "heal",
+          formula: "2d6"
+        },
+        damage: {
+          enabled: false
+        },
+        save: {
+          enabled: false
+        }
+      }
+    }
+  };
+}
+
 function createTurnDamageSaveTestDefinition() {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
@@ -929,16 +1257,19 @@ function createMoveDamageTestDefinition({
   };
 }
 
-function createDifficultTerrainTestDefinition() {
+function createDifficultTerrainTestDefinition({
+  preset = "difficult-terrain",
+  label = "Persistent Zone Debug Difficult Terrain"
+} = {}) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: "difficult-terrain"
+      preset
     },
     enabled: true,
-    label: "Persistent Zone Debug Difficult Terrain",
+    label,
     shapeMode: "template",
     template: {
       type: "circle"
@@ -972,6 +1303,73 @@ function createDifficultTerrainTestDefinition() {
         enabled: false
       }
     }
+  };
+}
+
+function createRingDamageTestDefinition({
+  preset = "ring-damage",
+  label = "Persistent Zone Debug Ring Damage"
+} = {}) {
+  return {
+    schemaVersion: NORMALIZED_DEFINITION_VERSION,
+    source: {
+      type: "debug-preset",
+      module: MODULE_ID,
+      preset
+    },
+    enabled: true,
+    label,
+    shapeMode: "template",
+    template: {
+      type: "circle"
+    },
+    targeting: {
+      mode: "all",
+      includeSelf: true
+    },
+    concentration: {
+      required: false
+    },
+    triggers: {
+      onEnter: {
+        enabled: false
+      },
+      onExit: {
+        enabled: false
+      },
+      onMove: {
+        enabled: false
+      },
+      onStartTurn: {
+        enabled: false
+      },
+      onEndTurn: {
+        enabled: false
+      }
+    },
+    parts: [
+      {
+        id: "ring-damage-band",
+        label: "Persistent Zone Debug Ring Damage Band",
+        geometry: buildCanonicalRingWallBodyGeometry(),
+        triggers: {
+          onEnter: {
+            enabled: true,
+            damage: {
+              enabled: true,
+              formula: "2d6",
+              type: "fire"
+            },
+            save: {
+              enabled: true,
+              ability: "dex",
+              dc: 13,
+              onSuccess: "half"
+            }
+          }
+        }
+      }
+    ]
   };
 }
 
@@ -1342,16 +1740,19 @@ function normalizeVariantSelectionId(value) {
     : "line-left";
 }
 
-function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
+function createLinkedLightTestDefinition(linkedLightPreset = "glow", {
+  preset = null,
+  label = null
+} = {}) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: `linked-light-${String(linkedLightPreset || "glow").toLowerCase()}`
+      preset: preset ?? `linked-light-${String(linkedLightPreset || "glow").toLowerCase()}`
     },
     enabled: true,
-    label: `Persistent Zone Debug Linked Light ${toTitleCase(linkedLightPreset)}`,
+    label: label ?? `Persistent Zone Debug Linked Light ${toTitleCase(linkedLightPreset)}`,
     shapeMode: "template",
     template: {
       type: "circle"
@@ -1387,16 +1788,19 @@ function createLinkedLightTestDefinition(linkedLightPreset = "glow") {
   };
 }
 
-function createLinkedWallsTestDefinition(linkedWallPreset = "solid") {
+function createLinkedWallsTestDefinition(linkedWallPreset = "solid", {
+  preset = null,
+  label = null
+} = {}) {
   return {
     schemaVersion: NORMALIZED_DEFINITION_VERSION,
     source: {
       type: "debug-preset",
       module: MODULE_ID,
-      preset: `linked-walls-${String(linkedWallPreset || "solid").toLowerCase()}`
+      preset: preset ?? `linked-walls-${String(linkedWallPreset || "solid").toLowerCase()}`
     },
     enabled: true,
-    label: `Persistent Zone Debug Linked Walls ${toTitleCase(linkedWallPreset)}`,
+    label: label ?? `Persistent Zone Debug Linked Walls ${toTitleCase(linkedWallPreset)}`,
     shapeMode: "template",
     template: {
       type: "circle"

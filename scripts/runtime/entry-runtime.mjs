@@ -1,4 +1,4 @@
-import { ENTRY_DEDUP_TTL_MS, MODULE_ID } from "../constants.mjs";
+import { ENTRY_DEDUP_TTL_MS, MODULE_ID, RUNTIME_FLAG_KEY } from "../constants.mjs";
 import { resolveMovementStopGlobalState } from "../settings.mjs";
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import {
@@ -12,6 +12,7 @@ import {
   getTokenCenter,
   isPrimaryGM,
   pixelsToDistance,
+  resolveNativeRingGeometryFromRegion,
   testTokenInsideManagedRegion,
   wait
 } from "./utils.mjs";
@@ -38,8 +39,117 @@ const MOVEMENT_STOP_SETTLE_TIMEOUT_MS = 100;
 const CONTROLLED_STOP_ANIMATION_SETTLE_TIMEOUT_MS = 1000;
 const PENDING_PREUPDATE_GRID_STOP_TTL_MS = 3000;
 
+function logV14RuntimeDiagnostic(message, data = {}) {
+  if (!isFoundryV14OrNewer()) {
+    return;
+  }
+
+  console.warn(`[${MODULE_ID}][v14-runtime] ${message}`, data);
+}
+
+function logV14EntryDiagnostic(message, data = {}) {
+  console.warn(`[${MODULE_ID}][v14-entry] ${message}`, buildV14RuntimePayload(data));
+}
+
+function logV14BranchDiagnostic(message, data = {}) {
+  const payload = buildV14RuntimePayload(data);
+  const skippedReason = payload.skippedReason ?? payload.skippedV14PathBecause ?? payload.reason ?? "unspecified";
+  const entryPoint = payload.entryPoint ?? payload.hook ?? "unknown-entry";
+  const selectedCompatibilityPath = payload.selectedCompatibilityPath ?? payload.fallbackPathSelected ?? "unknown-path";
+  console.warn(
+    `[${MODULE_ID}][v14-branch] ${message}: ${skippedReason} | entryPoint=${entryPoint} | selectedCompatibilityPath=${selectedCompatibilityPath}`,
+    payload
+  );
+}
+
+function logTriggerSuppressedReason(reason, data = {}) {
+  logV14RuntimeDiagnostic("triggerSuppressedReason", {
+    reason,
+    ...data
+  });
+}
+
+function logPzEffectDiagnostic(message, data = {}) {
+  logV14RuntimeDiagnostic(message, data);
+}
+
+function buildV14RuntimePayload(data = {}) {
+  const skippedReason = data.skippedReason ?? data.skippedV14PathBecause ?? data.reason ?? null;
+  return {
+    foundryCoreVersion: globalThis.game?.version ?? null,
+    foundryVersion: globalThis.game?.version ?? null,
+    isV14: isFoundryV14OrNewer(),
+    isFoundryV14OrNewer: isFoundryV14OrNewer(),
+    skippedV14PathBecause: skippedReason,
+    skippedReason,
+    ...data
+  };
+}
+
+function findRuntimeManagedRegions(scene) {
+  const primaryRegions = findManagedRegions(scene);
+  if (primaryRegions.length || !canvas?.scene || canvas.scene === scene) {
+    return {
+      regions: primaryRegions,
+      source: "token-parent-scene",
+      primarySummary: summarizeRuntimeSceneRegions(scene),
+      fallbackSummary: null
+    };
+  }
+
+  const fallbackRegions = findManagedRegions(canvas.scene);
+  return {
+    regions: fallbackRegions,
+    source: fallbackRegions.length ? "canvas-scene-fallback" : "token-parent-scene",
+    primarySummary: summarizeRuntimeSceneRegions(scene),
+    fallbackSummary: summarizeRuntimeSceneRegions(canvas.scene)
+  };
+}
+
+function summarizeRuntimeSceneRegions(scene) {
+  const regionDocuments =
+    scene?.regions?.contents ??
+    Array.from(scene?.regions?.values?.() ?? []);
+
+  return {
+    sceneId: scene?.id ?? null,
+    sceneRegionCount: regionDocuments.length,
+    totalRegionCount: regionDocuments.length,
+    managedRegionCount: regionDocuments.filter((region) => Boolean(getRegionRuntimeFlags(region))).length,
+    regionSummaries: regionDocuments.slice(0, 8).map((region) => {
+      const runtime = getRegionRuntimeFlags(region);
+      const objectData = region?.toObject?.() ?? {};
+      const flags = objectData.flags ?? region?.flags ?? {};
+      return {
+        id: region?.id ?? objectData._id ?? null,
+        name: region?.name ?? objectData.name ?? null,
+        hasPersistentZonesRuntime: Boolean(runtime),
+        flagNamespaces: Object.keys(flags ?? {}),
+        persistentZonesFlagKeys: Object.keys(flags?.[MODULE_ID] ?? {}),
+        hasNestedRuntimeFlag: Boolean(flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]),
+        hasFlatRuntimeFlag: Boolean(flags?.[`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]),
+        sourceFlagNamespaces: Object.keys(region?._source?.flags ?? {}),
+        sourcePersistentZonesFlagKeys: Object.keys(region?._source?.flags?.[MODULE_ID] ?? {}),
+        templateId: runtime?.templateId ?? null,
+        templateUuid: runtime?.templateUuid ?? null,
+        itemUuid: runtime?.itemUuid ?? null,
+        partId: runtime?.partId ?? null
+      };
+    })
+  };
+}
+
+function isFoundryV14OrNewer() {
+  const version = String(globalThis.game?.version ?? globalThis.game?.data?.version ?? "");
+  const major = Number.parseInt(version.split(".")[0], 10);
+  return Number.isFinite(major) && major >= 14;
+}
+
 export function registerEntryRuntimeHooks() {
   if (hooksRegistered) {
+    logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+      selectedCompatibilityPath: "runtime-hooks-already-registered"
+    });
     return;
   }
 
@@ -55,6 +165,10 @@ export function registerEntryRuntimeHooks() {
   }
 
   hooksRegistered = true;
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    selectedCompatibilityPath: "runtime-hooks-registered",
+    registeredHooks: ["canvasReady", "preUpdateToken", "moveToken", "updateToken", "createToken", "deleteToken"]
+  });
 }
 
 export function markNextMovementMode(tokenDocument, movementMode = "forced") {
@@ -85,7 +199,19 @@ export function markNextMovementMode(tokenDocument, movementMode = "forced") {
 }
 
 function onCanvasReady() {
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    hook: "canvasReady",
+    isPrimaryGM: isPrimaryGM(),
+    sceneId: canvas?.scene?.id ?? null,
+    selectedCompatibilityPath: "runtime-canvas-ready"
+  });
+
   if (!isPrimaryGM()) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "canvasReady",
+      reason: "not-primary-gm",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
@@ -93,16 +219,45 @@ function onCanvasReady() {
 }
 
 function onPreUpdateToken(tokenDocument, changed, options = {}) {
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    hook: "preUpdateToken",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: tokenDocument?.parent?.id ?? null,
+    changedKeys: Object.keys(changed ?? {}),
+    optionsKeys: Object.keys(options ?? {}),
+    isPrimaryGM: isPrimaryGM(),
+    selectedCompatibilityPath: "runtime-preupdate-diagnostic"
+  });
+
   if (!isPrimaryGM()) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "preUpdateToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "not-primary-gm",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
   if (!hasTranslationChange(changed)) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "preUpdateToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "no-translation-change",
+      changedKeys: Object.keys(changed ?? {}),
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
   const scene = tokenDocument?.parent ?? null;
   if (!scene) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "preUpdateToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "missing-parent-scene",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
@@ -127,10 +282,32 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
     return;
   }
 
-  const managedRegions = findManagedRegions(scene);
+  const managedRegionLookup = findRuntimeManagedRegions(scene);
+  const managedRegions = managedRegionLookup.regions;
   if (!managedRegions.length) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "preUpdateToken",
+      tokenId: tokenDocument?.id ?? null,
+      sceneId: scene.id,
+      reason: "no-managed-regions",
+      skippedV14PathBecause: "no-managed-regions",
+      hasManagedRegions: false,
+      regionLookupSource: managedRegionLookup.source,
+      primarySceneRegions: managedRegionLookup.primarySummary,
+      fallbackSceneRegions: managedRegionLookup.fallbackSummary,
+      fallbackPathSelected: "none"
+    });
     return;
   }
+  logV14BranchDiagnostic("selectedCompatibilityPath", {
+    hook: "preUpdateToken",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: scene.id,
+    hasManagedRegions: true,
+    managedRegionCount: managedRegions.length,
+    regionLookupSource: managedRegionLookup.source,
+    selectedCompatibilityPath: "v14-preupdate-managed-region-diagnostic"
+  });
 
   const movementSequenceId = buildMovementSequenceIdFromStates(tokenDocument, [fromState, originalToState]);
   const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
@@ -144,7 +321,8 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
     fromState,
     toState: originalToState,
     pathStates: compactStatePath([fromState, originalToState]),
-    movementMode: movementResolution.resolvedMovementMode
+    movementMode: movementResolution.resolvedMovementMode,
+    movementSequenceId
   });
   const eligibleStopEvaluation = evaluations.find((evaluation) => {
     return Boolean(
@@ -201,16 +379,44 @@ function onPreUpdateToken(tokenDocument, changed, options = {}) {
 }
 
 async function onMoveToken(tokenDocument, movement) {
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    hook: "moveToken",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: tokenDocument?.parent?.id ?? null,
+    isPrimaryGM: isPrimaryGM(),
+    selectedCompatibilityPath: "runtime-move-token"
+  });
+
   if (!isPrimaryGM()) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "moveToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "not-primary-gm",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
   if (!tokenDocument?.parent || tokenDocument.parent !== canvas?.scene) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "moveToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "token-not-on-active-scene",
+      tokenSceneId: tokenDocument?.parent?.id ?? null,
+      canvasSceneId: canvas?.scene?.id ?? null,
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
   const movementPath = buildMovementPathFromFoundryMovement(tokenDocument, movement);
   if (!movementPath) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "moveToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "movement-path-not-resolved",
+      fallbackPathSelected: "updateToken-fallback-if-fired"
+    });
     return;
   }
   const movementSequenceId = buildMovementSequenceId(tokenDocument, movement, movementPath);
@@ -338,11 +544,34 @@ async function onMoveToken(tokenDocument, movement) {
 }
 
 async function onUpdateToken(tokenDocument, changed, options = {}) {
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    hook: "updateToken",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: tokenDocument?.parent?.id ?? null,
+    changedKeys: Object.keys(changed ?? {}),
+    optionsKeys: Object.keys(options ?? {}),
+    isPrimaryGM: isPrimaryGM(),
+    selectedCompatibilityPath: "runtime-update-token-fallback"
+  });
+
   if (!isPrimaryGM()) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "updateToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "not-primary-gm",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
   if (!hasPositionChange(changed)) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "updateToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "no-position-change",
+      changedKeys: Object.keys(changed ?? {}),
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
@@ -377,7 +606,21 @@ async function onUpdateToken(tokenDocument, changed, options = {}) {
 }
 
 async function onCreateToken(tokenDocument) {
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    hook: "createToken",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: tokenDocument?.parent?.id ?? null,
+    isPrimaryGM: isPrimaryGM(),
+    selectedCompatibilityPath: "runtime-create-token"
+  });
+
   if (!isPrimaryGM()) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      hook: "createToken",
+      tokenId: tokenDocument?.id ?? null,
+      reason: "not-primary-gm",
+      fallbackPathSelected: "none"
+    });
     return;
   }
 
@@ -409,6 +652,113 @@ function onDeleteToken(tokenDocument) {
   clearInsideStateCacheForToken(tokenDocument);
 }
 
+function buildRegionNativeSegmentTriggerKey(evaluation) {
+  const runtime = evaluation?.runtime ?? {};
+  if (runtime.regionSourceStrategy !== "v14-region-native-segment-group" && !runtime.regionSegmentCount) {
+    return null;
+  }
+  const partId =
+    runtime?.partId ??
+    runtime?.part?.id ??
+    runtime?.normalizedDefinition?.part?.id ??
+    null;
+  return [
+    runtime.groupId ?? evaluation?.regionDocument?.id ?? "no-group",
+    partId ?? "no-part"
+  ].join(":");
+}
+
+function evaluationHasMovementTrigger(evaluation) {
+  return Boolean(
+    evaluation?.enterDetected ||
+    evaluation?.exitDetected ||
+    evaluation?.moveTriggerCount > 0
+  );
+}
+
+function resolveEvaluationTriggerType(evaluation) {
+  const firstTransition = Array.from(evaluation?.movementAnalysis?.transitions ?? [])[0] ?? null;
+  if (firstTransition?.type === "onEnter") {
+    return "onEnter";
+  }
+  if (firstTransition?.type === "onExit") {
+    return "onExit";
+  }
+  if (evaluation?.enterDetected) {
+    return "onEnter";
+  }
+  if (evaluation?.exitDetected) {
+    return "onExit";
+  }
+  if (evaluation?.moveTriggerCount > 0) {
+    return "onMove";
+  }
+  return "none";
+}
+
+function resolveFirstCandidateTrigger(evaluation) {
+  switch (resolveEvaluationTriggerType(evaluation)) {
+    case "onEnter":
+      return evaluation?.onEnter ?? {};
+    case "onMove":
+      return evaluation?.onMove ?? {};
+    case "onExit":
+      return evaluation?.onExit ?? {};
+    default:
+      return null;
+  }
+}
+
+function resolveSkippedEffectReason(evaluation, {
+  filterResult = null,
+  onEnterTriggered = false,
+  onMoveTriggered = false,
+  triggerSuppressedBecauseMovementAlreadyStopped = false
+} = {}) {
+  const triggerType = resolveEvaluationTriggerType(evaluation);
+  const trigger = resolveFirstCandidateTrigger(evaluation);
+  if (triggerType === "none") {
+    return "movement-trigger-not-matched";
+  }
+  if (!evaluation?.normalizedDefinition?.enabled) {
+    return "definition-disabled";
+  }
+  if (!filterResult?.allowed) {
+    return "target-filtered";
+  }
+  if (!trigger?.enabled) {
+    return `${triggerType}-disabled`;
+  }
+  if (triggerSuppressedBecauseMovementAlreadyStopped) {
+    return "movement-already-stopped";
+  }
+  if (onEnterTriggered || onMoveTriggered) {
+    return "executor-returned-no-application";
+  }
+  const mode = String(trigger?.mode ?? "none").toLowerCase();
+  if (mode === "none") {
+    return "no-effect-configured";
+  }
+  if (mode === "activity" && !trigger?.activity?.id && !trigger?.activity?.uuid) {
+    return "no-activity-reference";
+  }
+  if (mode !== "activity" && !trigger?.damage?.formula && !trigger?.simpleEffect?.formula) {
+    return "no-damage-formula";
+  }
+  return "executor-not-found";
+}
+
+function markRegionInsideStateFromEvaluation(evaluation) {
+  if (!evaluation?.insideStateKey) {
+    return;
+  }
+  if (evaluation.toInside) {
+    regionInsideStates.set(evaluation.insideStateKey, true);
+  } else {
+    regionInsideStates.delete(evaluation.insideStateKey);
+  }
+}
+
 async function evaluateTokenEntry(tokenDocument, {
   moveSource,
   movementSequenceId = null,
@@ -424,8 +774,26 @@ async function evaluateTokenEntry(tokenDocument, {
   const scene = tokenDocument?.parent ?? null;
   const actor = tokenDocument?.actor ?? null;
   const fallbackFinalState = toState ?? compactStatePath(pathStates).at(-1) ?? null;
+  logV14EntryDiagnostic("enteredManagedRegionRuntime", {
+    entryPoint: "evaluateTokenEntry",
+    tokenId: tokenDocument?.id ?? null,
+    sceneId: scene?.id ?? null,
+    actorUuid: actor?.uuid ?? null,
+    moveSource,
+    movementMode,
+    movementModeRaw,
+    pathStateCount: Array.from(pathStates ?? []).length,
+    selectedCompatibilityPath: "runtime-region-membership-evaluation"
+  });
 
   if (!scene) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      entryPoint: "evaluateTokenEntry",
+      tokenId: tokenDocument?.id ?? null,
+      moveSource,
+      reason: "missing-parent-scene",
+      fallbackPathSelected: "none"
+    });
     return { finalState: fallbackFinalState, movementInterrupted: false };
   }
 
@@ -433,6 +801,13 @@ async function evaluateTokenEntry(tokenDocument, {
     debug("Skipped token entry check because the token is invalid.", {
       tokenId: tokenDocument?.id ?? null,
       moveSource
+    });
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      entryPoint: "evaluateTokenEntry",
+      tokenId: tokenDocument?.id ?? null,
+      moveSource,
+      reason: "invalid-token-document",
+      fallbackPathSelected: "none"
     });
     return { finalState: fallbackFinalState, movementInterrupted: false };
   }
@@ -443,13 +818,46 @@ async function evaluateTokenEntry(tokenDocument, {
       tokenName: tokenDocument.name,
       moveSource
     });
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      entryPoint: "evaluateTokenEntry",
+      tokenId: tokenDocument.id,
+      tokenName: tokenDocument.name,
+      moveSource,
+      reason: "token-has-no-actor",
+      fallbackPathSelected: "none"
+    });
     return { finalState: fallbackFinalState, movementInterrupted: false };
   }
 
-  const managedRegions = findManagedRegions(scene);
+  const managedRegionLookup = findRuntimeManagedRegions(scene);
+  const managedRegions = managedRegionLookup.regions;
   if (!managedRegions.length) {
+    logV14BranchDiagnostic("skippedV14PathBecause", {
+      entryPoint: "evaluateTokenEntry",
+      tokenId: tokenDocument.id,
+      sceneId: scene.id,
+      moveSource,
+      reason: "no-managed-regions",
+      skippedV14PathBecause: "no-managed-regions",
+      hasManagedRegions: false,
+      regionLookupSource: managedRegionLookup.source,
+      primarySceneRegions: managedRegionLookup.primarySummary,
+      fallbackSceneRegions: managedRegionLookup.fallbackSummary,
+      fallbackPathSelected: "none"
+    });
     return { finalState: fallbackFinalState, movementInterrupted: false };
   }
+  logV14BranchDiagnostic("selectedCompatibilityPath", {
+    entryPoint: "evaluateTokenEntry",
+    tokenId: tokenDocument.id,
+    sceneId: scene.id,
+    moveSource,
+    movementMode,
+    hasManagedRegions: true,
+    managedRegionCount: managedRegions.length,
+    regionLookupSource: managedRegionLookup.source,
+    selectedCompatibilityPath: "v14-runtime-managed-region-evaluation"
+  });
 
   const basePathStates = compactStatePath(pathStates);
   const initialEvaluations = collectRegionEvaluations(tokenDocument, managedRegions, {
@@ -458,7 +866,8 @@ async function evaluateTokenEntry(tokenDocument, {
     fromState,
     toState,
     pathStates: basePathStates,
-    movementMode
+    movementMode,
+    movementSequenceId
   });
   let plannedStopAvailable = false;
   let truncatedDestinationApplied = false;
@@ -579,11 +988,55 @@ async function evaluateTokenEntry(tokenDocument, {
       fromState,
       toState: effectiveToState,
       pathStates: effectivePathStates,
-      movementMode
+      movementMode,
+      movementSequenceId
     })
     : initialEvaluations;
 
+  const appliedRegionNativeSegmentGroups = new Set();
   for (const evaluation of evaluations) {
+    const segmentGroupKey = buildRegionNativeSegmentTriggerKey(evaluation);
+    if (
+      segmentGroupKey &&
+      evaluationHasMovementTrigger(evaluation) &&
+      appliedRegionNativeSegmentGroups.has(segmentGroupKey)
+    ) {
+      markRegionInsideStateFromEvaluation(evaluation);
+      logPzEffectDiagnostic("PZ EFFECT EXECUTION SKIPPED", {
+        tokenId: tokenDocument?.id ?? null,
+        regionId: evaluation?.regionDocument?.id ?? null,
+        partId: evaluation?.runtime?.partId ?? null,
+        movementSequenceId,
+        triggerType: resolveEvaluationTriggerType(evaluation),
+        previousInside: evaluation?.fromInside ?? null,
+        currentInside: evaluation?.toInside ?? null,
+        onEnterEnabled: Boolean(evaluation?.onEnter?.enabled),
+        onMoveEnabled: Boolean(evaluation?.onMove?.enabled),
+        effectMode: resolveFirstCandidateTrigger(evaluation)?.mode ?? null,
+        simpleEffect: resolveFirstCandidateTrigger(evaluation)?.simpleEffect ?? null,
+        damageFormula: resolveFirstCandidateTrigger(evaluation)?.damage?.formula ?? null,
+        damageType: resolveFirstCandidateTrigger(evaluation)?.damage?.type ?? null,
+        activityUuid: resolveFirstCandidateTrigger(evaluation)?.activity?.uuid ?? null,
+        regionSourceStrategy: evaluation?.runtime?.regionSourceStrategy ?? null,
+        regionSegmentIndex: evaluation?.runtime?.regionSegmentIndex ?? null,
+        regionSegmentCount: evaluation?.runtime?.regionSegmentCount ?? null,
+        skipped: true,
+        skippedReason: "duplicate-movement-sequence",
+        triggerSuppressedReason: "region-native-segment-group-already-applied"
+      });
+      logV14RuntimeDiagnostic("v14RingDedupApplied", {
+        tokenId: tokenDocument?.id ?? null,
+        regionId: evaluation?.regionDocument?.id ?? null,
+        groupId: evaluation?.runtime?.groupId ?? null,
+        partId: evaluation?.runtime?.partId ?? null,
+        regionSourceStrategy: evaluation?.runtime?.regionSourceStrategy ?? null,
+        regionSegmentIndex: evaluation?.runtime?.regionSegmentIndex ?? null,
+        regionSegmentCount: evaluation?.runtime?.regionSegmentCount ?? null,
+        skipped: true,
+        triggerSuppressedReason: "region-native-segment-group-already-applied"
+      });
+      continue;
+    }
     const evaluationResult = await applyRegionEvaluation(tokenDocument, evaluation, {
       moveSource,
       movementSequenceId,
@@ -595,6 +1048,9 @@ async function evaluateTokenEntry(tokenDocument, {
       stopDecision,
       movementInterrupted
     });
+    if (segmentGroupKey && evaluationHasMovementTrigger(evaluation) && evaluationResult?.effectApplied) {
+      appliedRegionNativeSegmentGroups.add(segmentGroupKey);
+    }
     if (evaluation?.regionDocument?.id === stopDecision?.regionId) {
       onMoveSuppressed = Boolean(evaluationResult?.onMoveSuppressed);
       effectiveTriggerCount = evaluationResult?.effectiveTriggerCount ?? effectiveTriggerCount;
@@ -633,7 +1089,8 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
   fromState,
   toState,
   pathStates,
-  movementMode
+  movementMode,
+  movementSequenceId = null
 }) {
   const states = compactStatePath(pathStates);
   const firstPathState = states[0] ?? fromState ?? null;
@@ -656,12 +1113,20 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     const stepDistancePixels = stepDistance === null ? null : distanceToPixels(stepDistance, scene);
     const insideStateKey = buildInsideStateKey(tokenDocument, regionDocument);
     const cachedFromInside = regionInsideStates.get(insideStateKey) ?? null;
-    const fromInside = firstPathState
+    const rawFromInside = firstPathState
       ? testTokenInsideManagedRegion(tokenDocument, regionDocument, firstPathState)
       : Boolean(cachedFromInside);
-    const toInside = lastPathState
+    const rawToInside = lastPathState
       ? testTokenInsideManagedRegion(tokenDocument, regionDocument, lastPathState)
       : false;
+    const inferV14InitialEntry =
+      isFoundryV14OrNewer() &&
+      cachedFromInside === null &&
+      rawFromInside &&
+      rawToInside &&
+      moveSource !== "preUpdateToken-diagnostic";
+    const fromInside = inferV14InitialEntry ? false : rawFromInside;
+    const toInside = rawToInside;
     const movementAnalysis = moveSource === "createToken"
       ? {
         crossedBoundary: toInside,
@@ -702,10 +1167,10 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
       );
     const enterDetected = moveSource === "createToken"
       ? toInside
-      : !fromInside && movementAnalysis.sawEntry;
+      : movementAnalysis.sawEntry;
     const exitDetected = moveSource === "createToken"
       ? false
-      : fromInside && !toInside && movementAnalysis.sawExit;
+      : movementAnalysis.sawExit;
     const pathLength = pixelsToDistance(movementAnalysis.pathLengthPixels, scene);
     const movementStartedInside = Boolean(movementAnalysis.movementStartedInside ?? fromInside);
     const entryConsumedFirstMoveStep = Boolean(movementAnalysis.entryConsumedFirstMoveStep);
@@ -716,12 +1181,52 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     );
     const insideCellCount = movementAnalysis.insideCellCount ?? 0;
     const remainingInsideCellCount = movementAnalysis.remainingInsideCellCount ?? insideCellCount;
-    const moveTriggerCount = calculateMoveTriggerCount({
+    const rawMoveTriggerCount = calculateMoveTriggerCount({
       stepMode,
       insideDistance: remainingInsideDistance,
       stepDistance,
       insideCellCount: remainingInsideCellCount,
       cellStep
+    });
+    const moveTriggerCount = movementAnalysis.crossedBoundary ? 0 : rawMoveTriggerCount;
+    const onMoveEligible = Boolean(fromInside && toInside && !movementAnalysis.crossedBoundary);
+    const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime);
+    if (nativeRingGeometry) {
+      logPzEffectDiagnostic("PZ RING TRANSITION CHECK", {
+        tokenId: tokenDocument?.id ?? null,
+        regionId: regionDocument?.id ?? null,
+        movementSequenceId,
+        origin: buildSimplePositionPayload(firstPathState),
+        destination: buildSimplePositionPayload(lastPathState),
+        shapeRadius: nativeRingGeometry.radiusPixels,
+        shapeInnerWidth: nativeRingGeometry.innerWidthPixels,
+        shapeOuterWidth: nativeRingGeometry.outerWidthPixels,
+        resolvedInnerRadiusPixels: nativeRingGeometry.innerRadiusPixels,
+        resolvedOuterRadiusPixels: nativeRingGeometry.outerRadiusPixels,
+        previousInside: fromInside,
+        currentInside: toInside,
+        entered: enterDetected,
+        exited: exitDetected,
+        triggerType: resolveEvaluationTriggerType({
+          enterDetected,
+          exitDetected,
+          moveTriggerCount,
+          movementAnalysis
+        }),
+        geometrySource: nativeRingGeometry.geometrySource
+      });
+    }
+    logPzEffectDiagnostic("PZ MOVEMENT TRANSITIONS RESOLVED", {
+      tokenId: tokenDocument?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      movementSequenceId,
+      originInside: fromInside,
+      destinationInside: toInside,
+      transitions: summarizeMovementTransitions(movementAnalysis.transitions, movementAnalysis.pathLengthPixels),
+      onMoveEligible,
+      rawMoveTriggerCount,
+      moveTriggerCount,
+      stopTransitionIndex: movementAnalysis.firstEntryTransitionIndex ?? null
     });
     const onMoveEligibleAfterEntry = moveTriggerCount > 0;
     const enterMovementModeMatched = movementModeMatches(movementMode, onEnter.movementMode);
@@ -731,6 +1236,64 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     const exitMovementStopResolution = resolveMovementStopGlobalState(onExit, "onExit");
     const moveMovementStopResolution = resolveMovementStopGlobalState(onMove, "onMove");
     const filterResult = shouldAffectToken(tokenDocument, regionDocument, normalizedDefinition);
+    const partId =
+      runtime?.partId ??
+      runtime?.part?.id ??
+      runtime?.normalizedDefinition?.part?.id ??
+      null;
+    const geometryType = runtime?.normalizedDefinition?.geometry?.type ?? null;
+    const runtimeDiagnostic = {
+      tokenId: tokenDocument?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      partId,
+      geometryType,
+      regionSourceStrategy: runtime?.regionSourceStrategy ?? null,
+      regionSegmentIndex: runtime?.regionSegmentIndex ?? null,
+      regionSegmentCount: runtime?.regionSegmentCount ?? null,
+      moveSource,
+      movementMode,
+      fromInside,
+      toInside,
+      enterDetected,
+      exitDetected,
+      moveTriggerCount,
+      rawFromInside,
+      rawToInside,
+      cachedFromInside,
+      inferV14InitialEntry,
+      tokenInsideRegion: toInside,
+      targetAllowed: filterResult.allowed,
+      triggerTiming: {
+        onEnter: enterDetected,
+        onMove: moveTriggerCount > 0,
+        onExit: exitDetected
+      },
+      v14RuntimePath: "managed-region-runtime-evaluation"
+    };
+    logV14RuntimeDiagnostic("runtimeRegionCheck", runtimeDiagnostic);
+    logV14RuntimeDiagnostic("regionRuntimeCheck", runtimeDiagnostic);
+    logV14RuntimeDiagnostic("tokenInsideRegion", runtimeDiagnostic);
+    if (partId) {
+      logV14RuntimeDiagnostic("partRuntimeCheck", runtimeDiagnostic);
+    }
+    if (String(geometryType ?? "").toLowerCase().includes("ring")) {
+      logV14RuntimeDiagnostic("ringRuntimeCheck", runtimeDiagnostic);
+    }
+    logV14RuntimeDiagnostic("triggerCandidateFound", {
+      ...runtimeDiagnostic,
+      triggerCandidateFound: Boolean(enterDetected || exitDetected || moveTriggerCount > 0),
+      triggerTimingResolved: resolveEvaluationTriggerType({
+        enterDetected,
+        exitDetected,
+        moveTriggerCount,
+        movementAnalysis
+      }),
+      simpleEffectAllowed: Boolean(
+        (enterDetected && onEnter?.enabled) ||
+        (moveTriggerCount > 0 && onMove?.enabled) ||
+        (exitDetected && onExit?.enabled)
+      )
+    });
 
     return {
       regionDocument,
@@ -858,6 +1421,11 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id
     });
+    logTriggerSuppressedReason("definition-disabled", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult?.partId ?? null
+    });
     return {
       onMoveSuppressed,
       effectiveTriggerCount
@@ -878,9 +1446,58 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
       stepDistance: roundDistanceValue(stepDistance),
       triggerCount: moveTriggerCount
     });
+    logTriggerSuppressedReason("no-movement-trigger-detected", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult?.partId ?? null,
+      moveSource,
+      fromInside,
+      toInside,
+      enterDetected,
+      exitDetected,
+      moveTriggerCount,
+      stepMode,
+      insideDistance: roundDistanceValue(insideDistance),
+      insideCellCount
+    });
+    logPzEffectDiagnostic("PZ EFFECT EXECUTION SKIPPED", {
+      movementSequenceId,
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult?.partId ?? null,
+      triggerType: "none",
+      previousInside: fromInside,
+      currentInside: toInside,
+      onEnterEnabled: Boolean(onEnter?.enabled),
+      onMoveEnabled: Boolean(onMove?.enabled),
+      effectMode: null,
+      simpleEffect: null,
+      damageFormula: null,
+      damageType: null,
+      activityUuid: null,
+      skippedReason: "movement-trigger-not-matched"
+    });
   }
 
   if (enterDetected || exitDetected || moveTriggerCount > 0) {
+    const candidateTrigger = resolveFirstCandidateTrigger(evaluation);
+    logPzEffectDiagnostic("PZ TRIGGER CONFIG RESOLVED", {
+      movementSequenceId,
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult?.partId ?? null,
+      triggerType: resolveEvaluationTriggerType(evaluation),
+      previousInside: fromInside,
+      currentInside: toInside,
+      onEnterEnabled: Boolean(onEnter?.enabled),
+      onMoveEnabled: Boolean(onMove?.enabled),
+      effectMode: candidateTrigger?.mode ?? null,
+      simpleEffect: candidateTrigger?.simpleEffect ?? null,
+      damageFormula: candidateTrigger?.damage?.formula ?? null,
+      damageType: candidateTrigger?.damage?.type ?? null,
+      activityUuid: candidateTrigger?.activity?.uuid ?? null,
+      skippedReason: null
+    });
     if (!filterResult.allowed) {
       debug("Skipped managed Region effect because target filter rejected the token.", {
         tokenId: tokenDocument.id,
@@ -898,6 +1515,14 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         targetDisposition: filterResult.targetDisposition ?? null,
         reason: filterResult.reason
       });
+      logTriggerSuppressedReason("target-filter-rejected", {
+        tokenId: tokenDocument.id,
+        regionId: regionDocument.id,
+        partId: filterResult.partId ?? null,
+        targetFilter: filterResult.targetFilter,
+        targetMatched: filterResult.targetMatched,
+        reason: filterResult.reason
+      });
     } else {
       if (stopApplied && !stopHandledByRegion) {
         onEnterSuppressed = Boolean(enterDetected);
@@ -907,24 +1532,54 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         triggerSuppressedBecauseMovementAlreadyStopped =
           onEnterSuppressed || onMoveSuppressed || onExitSuppressed;
       } else {
-        effectApplied = await applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
-          moveSource,
-          movementMode,
-          enterDetected,
-          enterMovementModeMatched,
-          entryCenter: movementAnalysis.firstEntryState?.center ?? toState?.center,
-          movementStopResolution: enterMovementStopResolution,
-          stopPoint,
-          stopHandledByRegion,
-          stopDecision
-        });
-        onEnterTriggered = effectApplied;
+        const boundaryTransitions = Array.from(movementAnalysis.transitions ?? []);
+        if (boundaryTransitions.length) {
+          for (const [transitionIndex, transition] of boundaryTransitions.entries()) {
+            if (transition.type === "onExit") {
+              const exitApplied = await applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
+                moveSource,
+                movementSequenceId,
+                fromInside,
+                toInside,
+                movementMode,
+                exitDetected: true,
+                exitMovementModeMatched,
+                exitCenter: transition.state?.center ?? transition.center ?? toState?.center,
+                stopPoint,
+                stopHandledByRegion,
+                stopDecision
+              });
+              effectApplied = effectApplied || exitApplied;
+              continue;
+            }
 
-        if (stopApplied && stopDecision?.trigger === "onEnter") {
-          onMoveSuppressed = moveTriggerCount > 0;
-          onExitSuppressed = Boolean(exitDetected);
-          effectiveTriggerCount = 0;
-          triggerSuppressedBecauseMovementAlreadyStopped = onMoveSuppressed || onExitSuppressed;
+            if (transition.type === "onEnter") {
+              const enterApplied = await applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
+                moveSource,
+                movementSequenceId,
+                fromInside,
+                toInside,
+                movementMode,
+                enterDetected: true,
+                enterMovementModeMatched,
+                entryCenter: transition.state?.center ?? transition.center ?? toState?.center,
+                movementStopResolution: enterMovementStopResolution,
+                stopPoint,
+                stopHandledByRegion,
+                stopDecision
+              });
+              effectApplied = effectApplied || enterApplied;
+              onEnterTriggered = onEnterTriggered || enterApplied;
+
+              if (stopApplied && stopDecision?.trigger === "onEnter") {
+                onMoveSuppressed = moveTriggerCount > 0;
+                onExitSuppressed = boundaryTransitions.slice(transitionIndex + 1).some((candidate) => candidate.type === "onExit");
+                effectiveTriggerCount = 0;
+                triggerSuppressedBecauseMovementAlreadyStopped = onMoveSuppressed || onExitSuppressed;
+                break;
+              }
+            }
+          }
         } else {
           if (stopApplied && stopDecision?.trigger === "onMove") {
             onMoveSuppressed = moveTriggerCount > 1;
@@ -935,6 +1590,9 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
 
           const moveApplied = await applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
             moveSource,
+            movementSequenceId,
+            fromInside,
+            toInside,
             movementMode,
             moveTriggerCount: effectiveTriggerCount,
             stepMode,
@@ -959,20 +1617,6 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
           });
           effectApplied = effectApplied || moveApplied;
           onMoveTriggered = moveApplied;
-
-          if (!(stopApplied && stopDecision?.trigger === "onMove")) {
-            const exitApplied = await applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
-              moveSource,
-              movementMode,
-              exitDetected,
-              exitMovementModeMatched,
-              exitCenter: toState?.center,
-              stopPoint,
-              stopHandledByRegion,
-              stopDecision
-            });
-            effectApplied = effectApplied || exitApplied;
-          }
         }
       }
 
@@ -1001,6 +1645,17 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
           selectedStopPoint: stopDecision?.selectedStopPoint ?? stopPoint,
           appliedStopPoint: stopPoint,
           finalTokenPosition: buildSimplePositionPayload(toState)
+        });
+        logTriggerSuppressedReason("movement-already-stopped", {
+          movementSequenceId,
+          tokenId: tokenDocument.id,
+          regionId: regionDocument.id,
+          partId: filterResult.partId ?? null,
+          onMoveSuppressed,
+          onEnterSuppressed,
+          onExitSuppressed,
+          stopReason: stopDecision?.stopReason ?? "entry",
+          stopMode: stopDecision?.stopMode ?? "sampled-fallback"
         });
       }
     }
@@ -1098,15 +1753,60 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     effectApplied,
     skipped: !effectApplied && (enterDetected || exitDetected || moveTriggerCount > 0)
   });
+  if (effectApplied) {
+    logV14RuntimeDiagnostic("partTriggerApplied", {
+      movementSequenceId,
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult.partId ?? null,
+      triggerTiming: {
+        onEnter: enterDetected,
+        onMove: moveTriggerCount > 0,
+        onExit: exitDetected
+      },
+      effectApplied,
+      onEnterTriggered,
+      onMoveTriggered,
+      effectiveTriggerCount,
+      skipped: false
+    });
+  } else if (enterDetected || exitDetected || moveTriggerCount > 0) {
+    logPzEffectDiagnostic("PZ EFFECT EXECUTION SKIPPED", {
+      movementSequenceId,
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      partId: filterResult.partId ?? null,
+      triggerType: resolveEvaluationTriggerType(evaluation),
+      previousInside: fromInside,
+      currentInside: toInside,
+      onEnterEnabled: Boolean(onEnter?.enabled),
+      onMoveEnabled: Boolean(onMove?.enabled),
+      effectMode: resolveFirstCandidateTrigger(evaluation)?.mode ?? null,
+      simpleEffect: resolveFirstCandidateTrigger(evaluation)?.simpleEffect ?? null,
+      damageFormula: resolveFirstCandidateTrigger(evaluation)?.damage?.formula ?? null,
+      damageType: resolveFirstCandidateTrigger(evaluation)?.damage?.type ?? null,
+      activityUuid: resolveFirstCandidateTrigger(evaluation)?.activity?.uuid ?? null,
+      skippedReason: resolveSkippedEffectReason(evaluation, {
+        filterResult,
+        onEnterTriggered,
+        onMoveTriggered,
+        triggerSuppressedBecauseMovementAlreadyStopped
+      })
+    });
+  }
 
   return {
     onMoveSuppressed,
-    effectiveTriggerCount
+    effectiveTriggerCount,
+    effectApplied
   };
 }
 
 async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter, {
   moveSource,
+  movementSequenceId = null,
+  fromInside = null,
+  toInside = null,
   movementMode,
   enterDetected,
   enterMovementModeMatched,
@@ -1116,7 +1816,22 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
   stopHandledByRegion,
   stopDecision
 }) {
+  logV14RuntimeDiagnostic("triggerTimingResolved", {
+    tokenId: tokenDocument?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    triggerTiming: "onEnter",
+    triggerCandidateFound: Boolean(enterDetected),
+    triggerEnabled: Boolean(onEnter?.enabled),
+    movementMode,
+    movementModeMatched: enterMovementModeMatched
+  });
+
   if (!enterDetected) {
+    logTriggerSuppressedReason("onEnter-not-detected", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      triggerTiming: "onEnter"
+    });
     return false;
   }
 
@@ -1124,6 +1839,11 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
     debug("Skipped managed Region effect because onEnter is disabled.", {
       tokenId: tokenDocument.id,
       regionId: regionDocument.id
+    });
+    logTriggerSuppressedReason("onEnter-disabled", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      triggerTiming: "onEnter"
     });
     return false;
   }
@@ -1138,6 +1858,13 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
       requiredMovementMode: onEnter.movementMode ?? "any",
       movementModeMatched: false
     });
+    logTriggerSuppressedReason("onEnter-movement-mode-mismatch", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      triggerTiming: "onEnter",
+      movementMode,
+      requiredMovementMode: onEnter.movementMode ?? "any"
+    });
     return false;
   }
 
@@ -1146,6 +1873,12 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
       tokenId: tokenDocument.id,
       regionId: regionDocument.id
     });
+    logTriggerSuppressedReason("onEnter-deduplicated", {
+      tokenId: tokenDocument.id,
+      regionId: regionDocument.id,
+      triggerTiming: "onEnter",
+      moveSource
+    });
     return false;
   }
 
@@ -1153,7 +1886,14 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
     regionDocument,
     tokenDocument,
     triggerConfig: onEnter,
-    timing: "onEnter"
+    timing: "onEnter",
+    context: {
+      movementSequenceId,
+      previousInside: fromInside,
+      currentInside: toInside,
+      triggerType: "onEnter",
+      moveSource
+    }
   });
 
   debug("Managed Region onEnter effect completed.", {
@@ -1181,6 +1921,9 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
 
 async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   moveSource,
+  movementSequenceId = null,
+  fromInside = null,
+  toInside = null,
   movementMode,
   moveTriggerCount,
   stepMode,
@@ -1352,7 +2095,14 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
       regionDocument,
       tokenDocument,
       triggerConfig: onMove,
-      timing: "onMove"
+      timing: "onMove",
+      context: {
+        movementSequenceId,
+        previousInside: fromInside,
+        currentInside: toInside,
+        triggerType: "onMove",
+        moveSource
+      }
     });
 
     if (application.applied && !application.skipped) {
@@ -1417,6 +2167,9 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
 
 async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
   moveSource,
+  movementSequenceId = null,
+  fromInside = null,
+  toInside = null,
   movementMode,
   exitDetected,
   exitMovementModeMatched,
@@ -1495,7 +2248,14 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
     regionDocument,
     tokenDocument,
     triggerConfig: onExit,
-    timing: "onExit"
+    timing: "onExit",
+    context: {
+      movementSequenceId,
+      previousInside: fromInside,
+      currentInside: toInside,
+      triggerType: "onExit",
+      moveSource
+    }
   });
 
   debug("Managed Region onExit effect completed.", {
@@ -1769,7 +2529,7 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
   }
 
   const entryPointState = movementAnalysis.firstEntryState ?? movementAnalysis.firstInsideCellState ?? null;
-  const selectedStopState = movementAnalysis.firstInsideCellState ?? movementAnalysis.firstEntryState ?? null;
+  const selectedStopState = movementAnalysis.firstEntryState ?? movementAnalysis.firstInsideCellState ?? null;
   if (!entryPointState || !selectedStopState) {
     return null;
   }
@@ -1807,19 +2567,15 @@ function planManagedRegionOnEnterStop(tokenDocument, evaluation, {
     fromState: duplicateStopState(fromState ?? selectedStopState),
     toState: duplicateStopState(toState ?? selectedStopState),
     entryPoint: buildSimplePositionPayload(entryPointState),
-    entryCell: buildGridCellPayload(movementAnalysis.firstInsideCellState),
-    firstInsideCellState: movementAnalysis.firstInsideCellState
-      ? duplicateStopState(movementAnalysis.firstInsideCellState)
+    entryCell: buildGridCellPayload(selectedStopState),
+    firstInsideCellState: selectedStopState
+      ? duplicateStopState(selectedStopState)
       : null,
     selectedStopPoint: buildStopPointPayload(selectedStopState),
     selectedStopState: duplicateStopState(selectedStopState),
-    stopMode: movementAnalysis.firstInsideCellState ? "grid-cell" : "sampled-fallback",
-    selectedPathDistancePixels: movementAnalysis.firstInsideCellState
-      ? (movementAnalysis.firstInsideCellPathDistancePixels ?? 0)
-      : (movementAnalysis.firstEntryPathDistancePixels ?? 0),
-    segmentIndex: movementAnalysis.firstInsideCellState
-      ? (movementAnalysis.firstInsideCellSegmentIndex ?? 1)
-      : (movementAnalysis.firstEntrySegmentIndex ?? 1),
+    stopMode: "sampled-fallback",
+    selectedPathDistancePixels: movementAnalysis.firstEntryPathDistancePixels ?? movementAnalysis.firstInsideCellPathDistancePixels ?? 0,
+    segmentIndex: movementAnalysis.firstEntrySegmentIndex ?? movementAnalysis.firstInsideCellSegmentIndex ?? 1,
     plannedAt: Date.now(),
     expiresAt: Date.now() + MANAGED_REGION_ENTER_STOP_TTL_MS
   };
@@ -2131,13 +2887,13 @@ function chooseGridCellStopDecision(evaluations, {
       onEnter.enabled &&
       enterMovementStopResolution?.enabled &&
       enterMovementModeMatched &&
-      movementAnalysis.firstInsideCellState &&
+      movementAnalysis.firstEntryState &&
       !checkMovementTriggerDedup(
         "enter",
         regionDocument,
         tokenDocument,
         moveSource,
-        movementAnalysis.firstInsideCellState.center,
+        movementAnalysis.firstEntryState.center,
         { record: false }
       )
     ) {
@@ -2146,16 +2902,17 @@ function chooseGridCellStopDecision(evaluations, {
         regionId: regionDocument.id,
         trigger: "onEnter",
         stopReason: "entry",
-        stopMode: "grid-cell",
-        firstInsideCellState: movementAnalysis.firstInsideCellState,
-        pathDistancePixels: movementAnalysis.firstInsideCellPathDistancePixels ?? 0,
-        stopState: movementAnalysis.firstInsideCellState,
-        segmentIndex: movementAnalysis.firstInsideCellSegmentIndex ?? 1,
+        stopMode: "sampled-fallback",
+        firstInsideCellState: movementAnalysis.firstEntryState,
+        pathDistancePixels: movementAnalysis.firstEntryPathDistancePixels ?? 0,
+        stopState: movementAnalysis.firstEntryState,
+        segmentIndex: movementAnalysis.firstEntrySegmentIndex ?? 1,
         onMoveThresholdState: null
       });
     }
 
     if (
+      !movementAnalysis.crossedBoundary &&
       onMove.enabled &&
       moveMovementStopResolution?.enabled &&
       moveMovementModeMatched &&
@@ -3403,6 +4160,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       firstEntryState: null,
       firstEntryPathDistancePixels: null,
       firstEntrySegmentIndex: null,
+      firstEntryTransitionIndex: null,
       firstInsideCellState: null,
       firstInsideCellPathDistancePixels: null,
       firstInsideCellSegmentIndex: null,
@@ -3414,7 +4172,8 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       firstMoveTriggerSegmentIndex: null,
       firstGridMoveTriggerState: null,
       firstGridMoveTriggerPathDistancePixels: null,
-      firstGridMoveTriggerSegmentIndex: null
+      firstGridMoveTriggerSegmentIndex: null,
+      transitions: []
     };
   }
 
@@ -3432,6 +4191,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let firstEntryState = null;
   let firstEntryPathDistancePixels = null;
   let firstEntrySegmentIndex = null;
+  let firstEntryTransitionIndex = null;
   let firstInsideCellState = null;
   let firstInsideCellPathDistancePixels = null;
   let firstInsideCellSegmentIndex = null;
@@ -3447,6 +4207,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
   let gridPathDistancePixels = 0;
   let entryGridCellConsumed = Boolean(fromInside);
   let entryDistanceConsumed = Boolean(fromInside);
+  const transitions = [];
 
   for (let index = 1; index < states.length; index += 1) {
     const gridTraversalStates = buildGridCellTraversalStates(states[index - 1], states[index]);
@@ -3521,14 +4282,27 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
         crossedBoundary = true;
         if (!previousInside && sampleInside) {
           sawEntry = true;
+          transitions.push(buildMovementTransition("onEnter", sampleState, {
+            pathDistancePixels: pathLengthPixels,
+            segmentIndex: index,
+            fromInside: previousInside,
+            toInside: sampleInside
+          }));
           if (!firstEntryState) {
             firstEntryState = sampleState;
             firstEntryPathDistancePixels = pathLengthPixels;
             firstEntrySegmentIndex = index;
+            firstEntryTransitionIndex = transitions.length - 1;
           }
         }
         if (previousInside && !sampleInside) {
           sawExit = true;
+          transitions.push(buildMovementTransition("onExit", sampleState, {
+            pathDistancePixels: pathLengthPixels,
+            segmentIndex: index,
+            fromInside: previousInside,
+            toInside: sampleInside
+          }));
         }
       }
 
@@ -3553,6 +4327,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     crossedBoundary,
     sawEntry,
     sawExit,
+    transitions,
     movementStartedInside,
     entryConsumedFirstMoveStep,
     pathLengthPixels,
@@ -3563,6 +4338,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     firstEntryState,
     firstEntryPathDistancePixels,
     firstEntrySegmentIndex,
+    firstEntryTransitionIndex,
     firstInsideCellState,
     firstInsideCellPathDistancePixels,
     firstInsideCellSegmentIndex,
@@ -3576,6 +4352,41 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
     firstGridMoveTriggerPathDistancePixels,
     firstGridMoveTriggerSegmentIndex
   };
+}
+
+function buildMovementTransition(type, state, {
+  pathDistancePixels = 0,
+  segmentIndex = null,
+  fromInside = null,
+  toInside = null
+} = {}) {
+  return {
+    type,
+    state,
+    position: buildSimplePositionPayload(state),
+    center: state?.center ? { x: state.center.x, y: state.center.y } : null,
+    pathDistancePixels,
+    segmentIndex,
+    fromInside,
+    toInside
+  };
+}
+
+function summarizeMovementTransitions(transitions = [], totalPathDistancePixels = 0) {
+  const total = Math.max(coerceNumber(totalPathDistancePixels, 0), 0);
+  return Array.from(transitions ?? []).map((transition, index) => {
+    const pathDistancePixels = coerceNumber(transition?.pathDistancePixels, 0);
+    return {
+      index,
+      type: transition?.type ?? null,
+      position: transition?.position ?? buildSimplePositionPayload(transition?.state),
+      progress: total > 0 ? pathDistancePixels / total : null,
+      pathDistancePixels,
+      segmentIndex: transition?.segmentIndex ?? null,
+      fromInside: transition?.fromInside ?? null,
+      toInside: transition?.toInside ?? null
+    };
+  });
 }
 
 function sampleSegmentStates(fromState, toState) {

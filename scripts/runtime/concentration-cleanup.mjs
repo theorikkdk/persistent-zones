@@ -1,4 +1,8 @@
 import {
+  MODULE_ID,
+  RUNTIME_FLAG_KEY
+} from "../constants.mjs";
+import {
   debug,
   error,
   findManagedRegions,
@@ -9,10 +13,14 @@ import {
 } from "./utils.mjs";
 import { cleanupLinkedDocumentsForRegion } from "./linked-documents.mjs";
 import { createRegionFromTemplate } from "./region-factory.mjs";
+import { findManagedRegionContractsByItem } from "./v14-region-contract.mjs";
 import { getZoneDefinitionFromItem } from "./zone-definition.mjs";
 
 let hooksRegistered = false;
 const pendingRegionCleanup = new Set();
+const pendingStartupReconciliations = new Set();
+const STARTUP_CLEANUP_REASONS = new Set(["ready", "canvas-ready"]);
+const STARTUP_RECONCILIATION_DELAY_MS = 2000;
 
 export function registerConcentrationCleanupHooks() {
   if (hooksRegistered) {
@@ -22,8 +30,8 @@ export function registerConcentrationCleanupHooks() {
   Hooks.on("canvasReady", onCanvasReady);
   Hooks.on("deleteMeasuredTemplate", onDeleteMeasuredTemplate);
   Hooks.on("deleteItem", onDeleteItem);
-  Hooks.on("deleteActiveEffect", onActiveEffectLifecycleChange);
-  Hooks.on("updateActiveEffect", onActiveEffectLifecycleChange);
+  Hooks.on("deleteActiveEffect", onDeleteActiveEffect);
+  Hooks.on("updateActiveEffect", onUpdateActiveEffect);
 
   hooksRegistered = true;
 }
@@ -38,7 +46,12 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
   const groupedRegions = groupManagedRegionsByCleanupKey(managedRegions);
 
   for (const region of managedRegions) {
-    const validation = await validateManagedRegion(region);
+    logCleanupCandidateRegion(region, { scene, reason });
+    const validation = await validateManagedRegion(region, { scene, reason });
+    if (validation.deferStartupReconciliation) {
+      scheduleStartupRegionReconciliation(scene, reason);
+      continue;
+    }
     if (!validation.isValid) {
       const groupKey = buildManagedRegionCleanupKey(region);
       const groupRegions = groupedRegions.get(groupKey) ?? [region];
@@ -66,6 +79,14 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
         reason,
         detail: validation.reason
       });
+      for (const groupRegion of groupRegions) {
+        await logStartupRegionReconciliation(groupRegion, {
+          scene,
+          reason,
+          cleanupFunction: "cleanupSceneRegions",
+          deletionReason: validation.reason
+        });
+      }
 
       for (const regionId of groupRegionIds) {
         if (pendingRegionCleanup.has(regionId)) {
@@ -205,10 +226,8 @@ export async function cleanupRegionsForItem(itemOrUuid, { reason = "manual" } = 
   const deleted = [];
 
   for (const scene of game.scenes.contents) {
-    const matchingRegions = findManagedRegions(scene, (regionDocument) => {
-      const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
-      return runtime.itemUuid === itemUuid;
-    });
+    const matchingRegions = findManagedRegionContractsByItem(scene, itemUuid)
+      .map(({ regionDocument }) => regionDocument);
 
     if (!matchingRegions.length) {
       continue;
@@ -298,10 +317,18 @@ export async function cleanupRegionsForItem(itemOrUuid, { reason = "manual" } = 
 
 export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual" } = {}) {
   const itemUuid = await resolveManagedItemUuid(itemOrUuid);
+  debug("regionRebuildAttempt", {
+    itemUuid,
+    reason,
+    scope: "item-save"
+  });
+
   if (!itemUuid) {
-    debug("Skipped active managed Region rebuild because no Item could be resolved.", {
+    debug("regionRebuildSkipped", {
       itemOrUuid,
       reason,
+      scope: "item-save",
+      skippedReason: "missing-item",
       activeRegionsRebuildSkipped: true
     });
     return {
@@ -321,10 +348,8 @@ export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual
   let activeRegionCount = 0;
 
   for (const scene of game.scenes.contents) {
-    const matchingRegions = findManagedRegions(scene, (regionDocument) => {
-      const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
-      return runtime.itemUuid === itemUuid;
-    });
+    const matchingRegions = findManagedRegionContractsByItem(scene, itemUuid)
+      .map(({ regionDocument }) => regionDocument);
 
     if (!matchingRegions.length) {
       continue;
@@ -349,10 +374,27 @@ export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual
   }
 
   if (!activeRegionCount) {
-    debug("Skipped active managed Region rebuild because no active Regions were found for the Item.", {
+    const zoneDefinition = getZoneDefinitionFromItem(itemDocument);
+    const ringSummary = summarizeRingDefinitionForRebuild(zoneDefinition);
+    if (ringSummary.hasRingDefinition) {
+      console.warn("[persistent-zones][v14-branch] ringCreationSkipped: no-active-regions | entryPoint=rebuildRegionsForItem | selectedCompatibilityPath=item-save-rebuild", {
+        itemUuid,
+        itemName: itemDocument?.name ?? null,
+        reason,
+        scope: "item-save",
+        ringCreationSkipped: true,
+        ringCreationSkipReason: "no-active-regions",
+        regionPlanSkipped: true,
+        regionPlanSkipReason: "rebuild-only-path-has-no-existing-managed-regions",
+        ...ringSummary
+      });
+    }
+    debug("regionRebuildSkipped", {
       itemUuid,
       itemName: itemDocument?.name ?? null,
       reason,
+      scope: "item-save",
+      skippedReason: "no-active-regions",
       activeRegionsRebuildSkipped: true
     });
     return {
@@ -379,10 +421,12 @@ export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual
 
   const zoneDefinition = getZoneDefinitionFromItem(itemDocument);
   if (!itemDocument || !zoneDefinition) {
-    debug("Skipped active managed Region rebuild because no active definition could be resolved after cleanup.", {
+    debug("regionRebuildSkipped", {
       itemUuid,
       itemName: itemDocument?.name ?? null,
       reason,
+      scope: "item-save",
+      skippedReason: "missing-definition-after-cleanup",
       activeRegionsRebuildSkipped: true,
       cleanedCount: cleaned.length,
       templateCount: templateEntries.size
@@ -427,20 +471,23 @@ export async function rebuildActiveRegionsForItem(itemOrUuid, { reason = "manual
   }
 
   if (!rebuiltRegions.length) {
-    debug("Skipped active managed Region rebuild because no linked templates could be recreated.", {
+    debug("regionRebuildSkipped", {
       itemUuid,
       itemName: itemDocument?.name ?? null,
       reason,
+      scope: "item-save",
+      skippedReason: "no-linked-templates-recreated",
       activeRegionsRebuildSkipped: true,
       cleanedCount: cleaned.length,
       templateCount: templateEntries.size,
       skippedTemplates
     });
   } else {
-    debug("Rebuilt active managed Regions for Item.", {
+    debug("regionRebuildSuccess", {
       itemUuid,
       itemName: itemDocument?.name ?? null,
       reason,
+      scope: "item-save",
       activeRegionsRebuilt: true,
       cleanedCount: cleaned.length,
       rebuiltCount: rebuiltRegions.length,
@@ -524,24 +571,153 @@ async function onDeleteItem(item) {
   }
 }
 
-async function onActiveEffectLifecycleChange(activeEffect) {
+async function onDeleteActiveEffect(activeEffect, options = {}) {
   if (!isPrimaryGM()) {
+    return;
+  }
+  if (options?.persistentZonesRegionLifecycleCleanup) {
     return;
   }
 
   try {
-    await cleanupWorldRegions({ reason: `active-effect-${activeEffect?.id ?? "unknown"}` });
+    const ownerEffectUuid = activeEffect?.uuid ?? null;
+    const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
+    console.info("[persistent-zones][lifecycle] OWNER EFFECT DELETED", {
+      ownerEffectUuid,
+      effectId: activeEffect?.id ?? null,
+      regionCount: matchingRegions.length
+    });
+
+    for (const { scene, regions } of groupRegionsByScene(matchingRegions)) {
+      const regionIds = regions.map((region) => region?.id ?? null).filter(Boolean);
+      for (const region of regions) {
+        await cleanupLinkedDocumentsForRegion(region, {
+          reason: "owner-effect-deleted",
+          skipRuntimeUpdate: true
+        });
+      }
+      if (regionIds.length) {
+        await scene.deleteEmbeddedDocuments("Region", regionIds, {
+          persistentZonesEffectLifecycleCleanup: true
+        });
+        console.info("[persistent-zones][lifecycle] REGION REMOVED FROM EFFECT", {
+          ownerEffectUuid,
+          sceneId: scene?.id ?? null,
+          regionIds
+        });
+      }
+    }
   } catch (caughtError) {
-    error("Failed to cleanup Regions after ActiveEffect change.", caughtError, {
+    error("Failed to cleanup Regions after ActiveEffect deletion.", caughtError, {
       effectId: activeEffect?.id ?? null
     });
   }
 }
 
-async function validateManagedRegion(regionDocument) {
+async function onUpdateActiveEffect(activeEffect, changed = {}, options = {}) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+  if (options?.persistentZonesRegionLifecycleCleanup) {
+    return;
+  }
+
+  try {
+    const changedKeys = Object.keys(changed ?? {});
+    const disabledChanged = changedKeys.includes("disabled") || changedKeys.some((key) => key.endsWith(".disabled"));
+    if (!disabledChanged) {
+      await cleanupWorldRegions({ reason: `active-effect-${activeEffect?.id ?? "unknown"}` });
+      return;
+    }
+
+    const ownerEffectUuid = activeEffect?.uuid ?? null;
+    const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
+    const disabled = Boolean(activeEffect?.disabled);
+    for (const { scene, regions } of groupRegionsByScene(matchingRegions)) {
+      for (const region of regions) {
+        await region.update({
+          hidden: disabled,
+          [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.runtimeDisabled`]: disabled,
+          [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.disabledByEffect`]: disabled ? ownerEffectUuid : null,
+          [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.normalizedDefinition.enabled`]: !disabled
+        }, {
+          persistentZonesEffectLifecycleUpdate: true
+        });
+      }
+      console.info(`[persistent-zones][lifecycle] ${disabled ? "REGION DISABLED FROM EFFECT" : "REGION REENABLED FROM EFFECT"}`, {
+        ownerEffectUuid,
+        sceneId: scene?.id ?? null,
+        regionIds: regions.map((region) => region?.id ?? null).filter(Boolean)
+      });
+    }
+  } catch (caughtError) {
+    error("Failed to update Regions after ActiveEffect update.", caughtError, {
+      effectId: activeEffect?.id ?? null
+    });
+  }
+}
+
+function findManagedRegionsByOwnerEffect(ownerEffectUuid) {
+  if (!ownerEffectUuid) {
+    return [];
+  }
+
+  const matches = [];
+  for (const scene of game?.scenes?.contents ?? []) {
+    for (const region of findManagedRegions(scene)) {
+      const runtime = getRegionRuntimeFlags(region) ?? {};
+      if (getOwnerEffectUuidFromRuntime(runtime) === ownerEffectUuid) {
+        matches.push(region);
+      }
+    }
+  }
+  return matches;
+}
+
+function groupRegionsByScene(regions = []) {
+  const groups = new Map();
+  for (const region of regions) {
+    const scene = region?.parent ?? null;
+    if (!scene) {
+      continue;
+    }
+    const group = groups.get(scene.id) ?? { scene, regions: [] };
+    group.regions.push(region);
+    groups.set(scene.id, group);
+  }
+  return Array.from(groups.values());
+}
+
+function getOwnerEffectUuidFromRuntime(runtime = {}) {
+  return (
+    runtime.activeEffectUuid ??
+    runtime.concentrationEffectUuid ??
+    runtime.normalizedDefinition?.concentration?.effectUuid ??
+    null
+  );
+}
+
+async function validateManagedRegion(regionDocument, { scene = null, reason = "manual" } = {}) {
   const runtime = getRegionRuntimeFlags(regionDocument);
   if (!runtime) {
     return { isValid: true };
+  }
+
+  const v14LifecycleValidation = await validateV14NativeManagedRegionLifecycle(regionDocument, {
+    scene,
+    reason,
+    cleanupFunction: "cleanupSceneRegions"
+  });
+  if (v14LifecycleValidation) {
+    return v14LifecycleValidation;
+  }
+
+  const ringProtection = getV14NativeCleanupProtection(regionDocument);
+  if (ringProtection.protected) {
+    return {
+      isValid: true,
+      reason: ringProtection.reason
+    };
   }
 
   const linkedTemplate = await fromUuidSafe(runtime.templateUuid);
@@ -560,6 +736,293 @@ async function validateManagedRegion(regionDocument) {
   }
 
   return validateConcentrationState({ linkedItem, normalizedDefinition, runtime });
+}
+
+async function validateV14NativeManagedRegionLifecycle(regionDocument, {
+  scene = null,
+  reason = "manual",
+  cleanupFunction = "cleanupSceneRegions"
+} = {}) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  if (String(runtime.architecturePath ?? "").toLowerCase() !== "v14-region-native") {
+    return null;
+  }
+
+  const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtime);
+  const itemUuid = runtime.itemUuid ?? null;
+  const actorUuid =
+    runtime.actorUuid ??
+    runtime.casterUuid ??
+    runtime.normalizedDefinition?.concentration?.actorUuid ??
+    null;
+  const item = itemUuid ? await fromUuidSafe(itemUuid) : null;
+  const actor = actorUuid ? await fromUuidSafe(actorUuid) : null;
+  const ownerEffect = await resolveOwnerEffectForRuntime(runtime, { actor });
+  const state = {
+    scene,
+    regionDocument,
+    runtime,
+    cleanupFunction,
+    deletionReason: null,
+    ownerEffect,
+    item,
+    actor
+  };
+
+  if (ownerEffectUuid && ownerEffect) {
+    await logStartupRegionReconciliation(regionDocument, {
+      ...state,
+      reason,
+      deletionReason: ownerEffect.disabled ? "owner-effect-disabled-region-retained" : "owner-effect-resolved-region-retained"
+    });
+    return { isValid: true, reason: "v14-owner-effect-resolved" };
+  }
+
+  if (isStartupCleanupReason(reason) && ownerEffectUuid && !ownerEffect) {
+    await logStartupRegionReconciliation(regionDocument, {
+      ...state,
+      reason,
+      deletionReason: "startup-owner-effect-unresolved-deferred"
+    });
+    return {
+      isValid: true,
+      reason: "startup-owner-effect-unresolved-deferred",
+      deferStartupReconciliation: true
+    };
+  }
+
+  if (ownerEffectUuid && !ownerEffect) {
+    await logStartupRegionReconciliation(regionDocument, {
+      ...state,
+      reason,
+      deletionReason: "owner-effect-missing-confirmed"
+    });
+    return { isValid: false, reason: "The linked owner ActiveEffect no longer exists." };
+  }
+
+  if (itemUuid && item) {
+    return { isValid: true, reason: "v14-item-resolved-without-owner-effect" };
+  }
+
+  if (isStartupCleanupReason(reason) && itemUuid && !item) {
+    await logStartupRegionReconciliation(regionDocument, {
+      ...state,
+      reason,
+      deletionReason: "startup-item-unresolved-deferred"
+    });
+    return {
+      isValid: true,
+      reason: "startup-item-unresolved-deferred",
+      deferStartupReconciliation: true
+    };
+  }
+
+  if (itemUuid && !item) {
+    await logStartupRegionReconciliation(regionDocument, {
+      ...state,
+      reason,
+      deletionReason: "item-missing-confirmed"
+    });
+    return { isValid: false, reason: "The linked Item no longer exists." };
+  }
+
+  return { isValid: true, reason: "v14-native-region-no-owner-link" };
+}
+
+async function resolveOwnerEffectForRuntime(runtime = {}, { actor = null } = {}) {
+  const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtime);
+  if (ownerEffectUuid) {
+    const resolved = await fromUuidSafe(ownerEffectUuid);
+    if (resolved?.documentName === "ActiveEffect") {
+      return resolved;
+    }
+  }
+
+  const effectId =
+    runtime.activeEffectId ??
+    runtime.concentrationEffectId ??
+    runtime.normalizedDefinition?.concentration?.effectId ??
+    extractActiveEffectIdFromUuid(ownerEffectUuid);
+  if (!effectId) {
+    return null;
+  }
+
+  const resolvedActor = actor ?? await resolveConcentrationActor({
+    concentration: runtime.normalizedDefinition?.concentration ?? {},
+    runtime,
+    linkedItem: null
+  });
+  return Array.from(resolvedActor?.effects ?? []).find((effect) => effect?.id === effectId) ?? null;
+}
+
+function extractActiveEffectIdFromUuid(uuid) {
+  const parts = String(uuid ?? "").split(".");
+  const effectIndex = parts.findIndex((part) => part === "ActiveEffect");
+  return effectIndex >= 0 ? parts[effectIndex + 1] ?? null : null;
+}
+
+function logCleanupCandidateRegion(regionDocument, { scene = null, reason = "manual" } = {}) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  console.warn(`[persistent-zones][cleanup] cleanupCandidateRegion: id=${regionDocument?.id ?? null} reason=${reason} architecturePath=${runtime.architecturePath ?? "null"} geometryType=${runtime.geometryType ?? "null"} groupId=${runtime.groupId ?? "null"} partId=${runtime.partId ?? "null"} ringOperationId=${runtime.ringOperationId ?? "null"}`);
+  debug("cleanupCandidateRegion", {
+    sceneId: scene?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    reason,
+    architecturePath: runtime.architecturePath ?? null,
+    geometryType: runtime.geometryType ?? null,
+    regionSourceStrategy: runtime.regionSourceStrategy ?? null,
+    groupId: runtime.groupId ?? null,
+    partId: runtime.partId ?? null,
+    ringOperationId: runtime.ringOperationId ?? null,
+    cleanupPolicy: runtime.cleanupPolicy ?? null,
+    skipConcentrationCleanup: runtime.skipConcentrationCleanup ?? null,
+    lifecycle: runtime.lifecycle ?? null
+  });
+}
+
+function isStartupCleanupReason(reason) {
+  return STARTUP_CLEANUP_REASONS.has(String(reason ?? ""));
+}
+
+function scheduleStartupRegionReconciliation(scene, reason = "startup") {
+  if (!scene?.id) {
+    return;
+  }
+
+  const key = `${scene.id}:${reason}`;
+  if (pendingStartupReconciliations.has(key)) {
+    return;
+  }
+
+  pendingStartupReconciliations.add(key);
+  setTimeout(async () => {
+    try {
+      await cleanupSceneRegions(scene, { reason: `${reason}-deferred` });
+    } catch (caughtError) {
+      error("Failed deferred startup Region reconciliation.", caughtError, {
+        sceneId: scene?.id ?? null,
+        reason
+      });
+    } finally {
+      pendingStartupReconciliations.delete(key);
+    }
+  }, STARTUP_RECONCILIATION_DELAY_MS);
+}
+
+async function logStartupRegionReconciliation(regionDocument, {
+  scene = null,
+  reason = "manual",
+  runtime = null,
+  cleanupFunction = "cleanupSceneRegions",
+  deletionReason = null,
+  ownerEffect = undefined,
+  item = undefined,
+  actor = undefined
+} = {}) {
+  if (!isStartupCleanupReason(reason) && !String(reason ?? "").includes("deferred")) {
+    return;
+  }
+
+  const runtimeFlags = runtime ?? getRegionRuntimeFlags(regionDocument) ?? {};
+  const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtimeFlags);
+  const itemUuid = runtimeFlags.itemUuid ?? null;
+  const actorUuid =
+    runtimeFlags.actorUuid ??
+    runtimeFlags.casterUuid ??
+    runtimeFlags.normalizedDefinition?.concentration?.actorUuid ??
+    null;
+  const resolvedItem = item === undefined && itemUuid
+    ? await fromUuidSafe(itemUuid)
+    : item;
+  const resolvedActor = actor === undefined && actorUuid
+    ? await fromUuidSafe(actorUuid)
+    : actor;
+  const resolvedOwnerEffect = ownerEffect === undefined
+    ? await resolveOwnerEffectForRuntime(runtimeFlags, { actor: resolvedActor })
+    : ownerEffect;
+
+  console.warn("[persistent-zones][startup] PZ STARTUP REGION RECONCILIATION", {
+    sceneId: scene?.id ?? regionDocument?.parent?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    groupId: runtimeFlags.groupId ?? null,
+    partId: runtimeFlags.partId ?? null,
+    ownerEffectUuid,
+    itemUuid,
+    actorUuid,
+    ownerEffectResolved: Boolean(resolvedOwnerEffect),
+    ownerEffectDisabled: Boolean(resolvedOwnerEffect?.disabled),
+    itemResolved: Boolean(resolvedItem),
+    actorResolved: Boolean(resolvedActor),
+    cleanupFunction,
+    deletionReason,
+    foundryReady: Boolean(game?.ready),
+    canvasReady: Boolean(canvas?.ready)
+  });
+}
+
+function getV14NativeCleanupProtection(regionDocument) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? null;
+  if (!runtime) {
+    return { protected: false, reason: "missing-runtime" };
+  }
+
+  const architecturePath = String(runtime.architecturePath ?? "").toLowerCase();
+  const geometryType = String(runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? "").toLowerCase();
+  const strategy = String(runtime.regionSourceStrategy ?? "").toLowerCase();
+  const isV14Native = architecturePath === "v14-region-native";
+  const isNativeRegion =
+    strategy === "v14-native-region-shapes" ||
+    runtime.creationSource === "persistent-zones-v14-native-region";
+  const isRingSegment =
+    geometryType === "ring" ||
+    strategy === "v14-region-native-segment-group" ||
+    runtime.creationSource === "persistent-zones-internal-ring-segment" ||
+    Boolean(runtime.ringOperationId);
+  const hasContract =
+    Boolean(runtime.itemUuid) &&
+    Boolean(runtime.groupId) &&
+    Boolean(runtime.partId) &&
+    (isNativeRegion || Boolean(runtime.ringOperationId));
+  const hasPersistentPolicy =
+    runtime.cleanupPolicy === "persistent-zone" ||
+    runtime.skipConcentrationCleanup === true ||
+    runtime.lifecycle === "manual";
+
+  if (isV14Native && (isNativeRegion || isRingSegment) && hasContract && hasPersistentPolicy) {
+    return {
+      protected: true,
+      reason: isNativeRegion ? "valid-v14-native-persistent-zone" : "valid-v14-ring-persistent-zone",
+      architecturePath: runtime.architecturePath ?? null,
+      geometryType: runtime.geometryType ?? null,
+      regionSourceStrategy: runtime.regionSourceStrategy ?? null,
+      groupId: runtime.groupId ?? null,
+      partId: runtime.partId ?? null,
+      itemUuid: runtime.itemUuid ?? null,
+      ringOperationId: runtime.ringOperationId ?? null,
+      cleanupPolicy: runtime.cleanupPolicy ?? null,
+      skipConcentrationCleanup: runtime.skipConcentrationCleanup ?? null,
+      lifecycle: runtime.lifecycle ?? null
+    };
+  }
+
+  if (isV14Native && (isNativeRegion || isRingSegment)) {
+    return {
+      protected: false,
+      reason: isNativeRegion ? "v14-native-region-incomplete-contract" : "v14-ring-segment-incomplete-contract",
+      architecturePath: runtime.architecturePath ?? null,
+      geometryType: runtime.geometryType ?? null,
+      regionSourceStrategy: runtime.regionSourceStrategy ?? null,
+      groupId: runtime.groupId ?? null,
+      partId: runtime.partId ?? null,
+      itemUuid: runtime.itemUuid ?? null,
+      ringOperationId: runtime.ringOperationId ?? null,
+      cleanupPolicy: runtime.cleanupPolicy ?? null,
+      skipConcentrationCleanup: runtime.skipConcentrationCleanup ?? null,
+      lifecycle: runtime.lifecycle ?? null
+    };
+  }
+
+  return { protected: false, reason: "not-v14-native-region" };
 }
 
 function requiresConcentrationValidation(normalizedDefinition) {
@@ -624,7 +1087,7 @@ async function resolveConcentrationActor({ concentration, runtime, linkedItem })
     }
   }
 
-  return linkedItem.actor ?? null;
+  return linkedItem?.actor ?? null;
 }
 
 function isUsableConcentrationEffect(activeEffect, concentration, linkedItem) {
@@ -666,4 +1129,20 @@ function isUsableConcentrationEffect(activeEffect, concentration, linkedItem) {
   }
 
   return origin === expectedOrigin || origin.startsWith(expectedOrigin);
+}
+
+function summarizeRingDefinitionForRebuild(zoneDefinition) {
+  const parts = Array.isArray(zoneDefinition?.parts) ? zoneDefinition.parts : [];
+  const partGeometryTypes = parts.map((part) => String(part?.geometry?.type ?? "template").toLowerCase());
+  const normalizedGeometryType = String(zoneDefinition?.geometry?.type ?? "").toLowerCase() || null;
+  const selectedGeometryType = partGeometryTypes.find((geometryType) => geometryType.includes("ring"))
+    ?? (normalizedGeometryType?.includes("ring") ? normalizedGeometryType : null);
+
+  return {
+    hasRingDefinition: Boolean(selectedGeometryType),
+    selectedGeometryType,
+    normalizedGeometryType,
+    partGeometryTypes,
+    partCountExpected: partGeometryTypes.length || (normalizedGeometryType ? 1 : 0)
+  };
 }

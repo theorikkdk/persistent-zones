@@ -3,7 +3,9 @@ import {
   MODULE_ID,
   MOVEMENT_STOP_GLOBAL_MODE_MIGRATED_SETTING_KEY,
   MOVEMENT_STOP_GLOBAL_MODE_SETTING_KEY,
-  MOVEMENT_STOP_GLOBAL_SETTING_KEY
+  MOVEMENT_STOP_GLOBAL_SETTING_KEY,
+  REGION_HIGHLIGHT_MODE_SETTING_KEY,
+  REGION_VISIBILITY_SETTING_KEY
 } from "./constants.mjs";
 
 export const MOVEMENT_STOP_GLOBAL_MODES = Object.freeze({
@@ -16,6 +18,17 @@ export const PERSISTENT_ZONES_LOG_LEVELS = Object.freeze({
   minimal: "minimal",
   standard: "standard",
   verbose: "verbose"
+});
+
+export const REGION_HIGHLIGHT_MODE_SETTINGS = Object.freeze({
+  authentic: "authentic",
+  grid: "grid"
+});
+
+export const REGION_VISIBILITY_SETTINGS = Object.freeze({
+  layer: "layer",
+  gamemaster: "gamemaster",
+  always: "always"
 });
 
 export function registerPersistentZoneModuleSettings() {
@@ -63,6 +76,33 @@ export function registerPersistentZoneModuleSettings() {
       [PERSISTENT_ZONES_LOG_LEVELS.verbose]: "PERSISTENT_ZONES.Settings.DebugLogLevel.Choices.Verbose"
     }),
     default: PERSISTENT_ZONES_LOG_LEVELS.standard
+  });
+
+  game.settings.register(MODULE_ID, REGION_HIGHLIGHT_MODE_SETTING_KEY, {
+    name: "PERSISTENT_ZONES.Settings.RegionHighlightMode.Name",
+    hint: "PERSISTENT_ZONES.Settings.RegionHighlightMode.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: buildLocalizedChoices({
+      [REGION_HIGHLIGHT_MODE_SETTINGS.authentic]: "PERSISTENT_ZONES.Settings.RegionHighlightMode.Choices.Authentic",
+      [REGION_HIGHLIGHT_MODE_SETTINGS.grid]: "PERSISTENT_ZONES.Settings.RegionHighlightMode.Choices.Grid"
+    }),
+    default: REGION_HIGHLIGHT_MODE_SETTINGS.authentic
+  });
+
+  game.settings.register(MODULE_ID, REGION_VISIBILITY_SETTING_KEY, {
+    name: "PERSISTENT_ZONES.Settings.RegionVisibility.Name",
+    hint: "PERSISTENT_ZONES.Settings.RegionVisibility.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: buildLocalizedChoices({
+      [REGION_VISIBILITY_SETTINGS.layer]: "PERSISTENT_ZONES.Settings.RegionVisibility.Choices.Layer",
+      [REGION_VISIBILITY_SETTINGS.gamemaster]: "PERSISTENT_ZONES.Settings.RegionVisibility.Choices.Gamemaster",
+      [REGION_VISIBILITY_SETTINGS.always]: "PERSISTENT_ZONES.Settings.RegionVisibility.Choices.Always"
+    }),
+    default: REGION_VISIBILITY_SETTINGS.gamemaster
   });
 }
 

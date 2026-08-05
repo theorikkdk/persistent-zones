@@ -120,12 +120,10 @@ export function getTemplateType(templateDocument) {
 }
 
 export function getRegionRuntime(regionDocument) {
-  return (
-    duplicateData(
-      regionDocument?.getFlag?.(MODULE_ID, RUNTIME_FLAG_KEY) ??
-        regionDocument?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]
-    ) ?? null
-  );
+  const objectData = regionDocument?.toObject?.() ?? null;
+  const result = resolveRegionRuntimeCandidate(regionDocument, objectData);
+  logRegionManagedFlagsRead(regionDocument, result, objectData);
+  return duplicateData(result.runtime) ?? null;
 }
 
 export const getRegionRuntimeFlags = getRegionRuntime;
@@ -140,7 +138,99 @@ export function buildManagedRegionFlags(runtimeFlags) {
 
 export function isManagedRegion(regionDocument) {
   const runtime = getRegionRuntime(regionDocument);
-  return Boolean(runtime?.templateId || runtime?.templateUuid);
+  return isPersistentZonesManagedRuntime(runtime);
+}
+
+function resolveRegionRuntimeCandidate(regionDocument, objectData = null) {
+  const candidates = [
+    {
+      source: "getFlag",
+      value: regionDocument?.getFlag?.(MODULE_ID, RUNTIME_FLAG_KEY)
+    },
+    {
+      source: "document.flags",
+      value: regionDocument?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]
+    },
+    {
+      source: "document._source.flags",
+      value: regionDocument?._source?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]
+    },
+    {
+      source: "toObject.flags",
+      value: objectData?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]
+    },
+    {
+      source: "toObject.flags-flat",
+      value: objectData?.[`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]
+    },
+    {
+      source: "document._source.flags-flat",
+      value: regionDocument?._source?.[`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]
+    }
+  ];
+
+  const match = candidates.find((candidate) => candidate.value && typeof candidate.value === "object");
+  return {
+    runtime: match?.value ?? null,
+    source: match?.source ?? "none",
+    objectData
+  };
+}
+
+function logRegionManagedFlagsRead(regionDocument, result, objectData = null) {
+  if (!isFoundryV14OrNewer()) {
+    return;
+  }
+
+  const runtime = result?.runtime ?? null;
+  console.warn(
+    `[${MODULE_ID}][v14-branch] regionManagedFlagsRead: ${runtime ? "found" : "missing"} | regionDocumentId=${regionDocument?.id ?? null} | regionManagedFlagsSource=${result?.source ?? "none"}`,
+    {
+      regionDocumentId: regionDocument?.id ?? null,
+      regionManagedFlagsRead: Boolean(runtime),
+      regionManagedFlagsSource: result?.source ?? "none",
+      managedRegionDetected: isPersistentZonesManagedRuntime(runtime),
+      templateId: runtime?.templateId ?? null,
+      templateUuid: runtime?.templateUuid ?? null,
+      itemUuid: runtime?.itemUuid ?? null,
+      partId: runtime?.partId ?? null,
+      regionDocumentFlags: summarizeRegionFlagObject(regionDocument?.flags),
+      regionDocumentSourceFlags: summarizeRegionFlagObject(regionDocument?._source?.flags),
+      regionDocumentObjectFlags: summarizeRegionFlagObject(objectData?.flags)
+    }
+  );
+}
+
+function logRegionManagedDetection(message, data = {}) {
+  if (!isFoundryV14OrNewer()) {
+    return;
+  }
+
+  const reason =
+    data.managedRegionRejectReason ??
+    (message === "managedRegionDetected" ? "managed-region-detected" : "unspecified");
+  console.warn(
+    `[${MODULE_ID}][v14-branch] ${message}: ${reason} | regionDocumentId=${data.regionDocumentId ?? null}`,
+    data
+  );
+}
+
+function summarizeRegionFlagObject(flags) {
+  if (!flags || typeof flags !== "object") {
+    return {
+      present: false,
+      namespaces: [],
+      persistentZonesKeys: []
+    };
+  }
+
+  return {
+    present: true,
+    namespaces: Object.keys(flags),
+    persistentZonesKeys: Object.keys(flags?.[MODULE_ID] ?? {}),
+    hasNestedRuntime: Boolean(flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY]),
+    hasFlatRuntime: Boolean(flags?.[`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`])
+  };
 }
 
 export function isWallHeightSupported() {
@@ -287,8 +377,54 @@ export function findManagedRegions(scene, predicate = null) {
   const regionDocuments =
     scene?.regions?.contents ??
     Array.from(scene?.regions?.values?.() ?? []);
-  const regions = regionDocuments.filter(isManagedRegion);
+  const regions = [];
+
+  for (const regionDocument of regionDocuments) {
+    const result = resolveRegionRuntimeCandidate(regionDocument, regionDocument?.toObject?.() ?? null);
+    const managedRegionDetected = isPersistentZonesManagedRuntime(result.runtime);
+    if (managedRegionDetected) {
+      logRegionManagedDetection("managedRegionDetected", {
+        sceneId: scene?.id ?? null,
+        regionDocumentId: regionDocument?.id ?? null,
+        regionManagedFlagsSource: result.source,
+        itemUuid: result.runtime?.itemUuid ?? null,
+        templateId: result.runtime?.templateId ?? null,
+        partId: result.runtime?.partId ?? null
+      });
+      regions.push(regionDocument);
+      continue;
+    }
+
+    logRegionManagedDetection("managedRegionRejected", {
+      sceneId: scene?.id ?? null,
+      regionDocumentId: regionDocument?.id ?? null,
+      managedRegionRejectReason: result.runtime
+        ? "runtime-flags-missing-managed-contract"
+        : "runtime-flags-not-found",
+      regionManagedFlagsSource: result.source,
+      regionDocumentFlags: summarizeRegionFlagObject(regionDocument?.flags),
+      regionDocumentSourceFlags: summarizeRegionFlagObject(regionDocument?._source?.flags),
+      regionDocumentObjectFlags: summarizeRegionFlagObject(result.objectData?.flags)
+    });
+  }
+
+  logRegionManagedDetection("managedRegionCount", {
+    sceneId: scene?.id ?? null,
+    sceneRegionCount: regionDocuments.length,
+    managedRegionCount: regions.length
+  });
+
   return predicate ? regions.filter(predicate) : regions;
+}
+
+function isPersistentZonesManagedRuntime(runtime) {
+  return Boolean(
+    runtime?.templateId ||
+    runtime?.templateUuid ||
+    runtime?.itemUuid ||
+    runtime?.contractVersion ||
+    runtime?.architecturePath === "v14-region-native"
+  );
 }
 
 export function distanceToPixels(distance, scene = null) {
@@ -456,20 +592,87 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   }
 
   const membership = buildTokenRegionMembershipState(tokenDocument, state);
+  const runtime = getRegionRuntimeFlags(regionDocument);
+  const shapes = getRegionShapeData(regionDocument);
+  const isManagedV14Region = Boolean(runtime) && isFoundryV14OrNewer() && shapes.length > 0;
+  const isRegionNativeRingSegment = runtime?.regionSourceStrategy === "v14-region-native-segment-group";
+  const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime, shapes);
+  const fallbackInside = sampleTokenRegionPoints(membership)
+    .some((point) => pointInManagedRegion(regionDocument, point));
+  const ringRuntimeResult = isRegionNativeRingSegment
+    ? null
+    : testTokenInsideRuntimeRing(membership, runtime, nativeRingGeometry);
+  let nativeInside = null;
+  let nativeError = null;
 
   if (typeof tokenDocument.testInsideRegion === "function") {
     try {
-      return !!tokenDocument.testInsideRegion(regionDocument, membership);
+      nativeInside = !!tokenDocument.testInsideRegion(regionDocument, membership);
     } catch (caughtError) {
+      nativeError = caughtError?.message ?? "unknown";
       debug("Native token Region inside test failed, using sampled fallback.", {
         tokenId: tokenDocument?.id ?? null,
         regionId: regionDocument?.id ?? null,
-        error: caughtError?.message ?? "unknown"
+        error: nativeError
       });
     }
   }
 
-  return sampleTokenRegionPoints(membership).some((point) => pointInManagedRegion(regionDocument, point));
+  const result = isManagedV14Region
+    ? (isRegionNativeRingSegment ? fallbackInside : (ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside))
+    : (nativeInside ?? fallbackInside);
+  const diagnostic = {
+    tokenId: tokenDocument?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    partId: runtime?.partId ?? runtime?.part?.id ?? runtime?.normalizedDefinition?.part?.id ?? null,
+    geometryType: runtime?.normalizedDefinition?.geometry?.type ?? null,
+    regionSourceStrategy: runtime?.regionSourceStrategy ?? null,
+    regionSegmentIndex: runtime?.regionSegmentIndex ?? null,
+    regionSegmentCount: runtime?.regionSegmentCount ?? null,
+    shapeCount: shapes.length,
+    nativeInside,
+    fallbackInside,
+    ringRuntimeInside: ringRuntimeResult?.tokenInsideRingBand ?? null,
+    tokenInsideRegion: result,
+    nativeError,
+    v14RuntimePath: isManagedV14Region && isRegionNativeRingSegment
+      ? "managed-region-native-ring-segment"
+      : isManagedV14Region && ringRuntimeResult
+      ? "managed-ring-runtime-geometry"
+      : isManagedV14Region
+        ? "managed-shape-sampled-fallback"
+        : "native-or-fallback"
+  };
+
+  logV14RuntimeDiagnostic("regionRuntimeCheck", diagnostic);
+  logV14RuntimeDiagnostic("tokenInsideRegion", diagnostic);
+  if (isManagedV14Region && result) {
+    logV14RuntimeDiagnostic("v14NativeRuntimeTriggered", {
+      ...diagnostic,
+      v14NativeRuntimeTriggered: true
+    });
+  }
+
+  if (isRingLikeRuntime(runtime, shapes)) {
+    const tokenInsideRingHole = ringRuntimeResult?.tokenInsideRingHole
+      ?? (!fallbackInside && pointInsideRingOuterEnvelope(shapes, membership));
+    logV14RuntimeDiagnostic("ringRuntimeCheck", {
+      ...diagnostic,
+      tokenInsideRingBand: ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside,
+      tokenInsideRingHole,
+      ringRejectReason: ringRuntimeResult?.ringRejectReason ?? null,
+      ringGeometry: duplicateData(nativeRingGeometry ?? runtime?.ringGeometry ?? null)
+    });
+    logV14RuntimeDiagnostic("v14RingRuntimeCheck", {
+      ...diagnostic,
+      tokenInsideRingBand: ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside,
+      tokenInsideRingHole,
+      ringRejectReason: ringRuntimeResult?.ringRejectReason ?? null,
+      ringGeometry: duplicateData(nativeRingGeometry ?? runtime?.ringGeometry ?? null)
+    });
+  }
+
+  return result;
 }
 
 export function pointInManagedRegion(regionDocument, point) {
@@ -478,7 +681,21 @@ export function pointInManagedRegion(regionDocument, point) {
     return false;
   }
 
-  return shapes.some((shape) => pointInShape(shape, point));
+  let insideSolidShape = false;
+  for (const shape of shapes) {
+    const insideShape = pointInShape(shape, point);
+    if (!insideShape) {
+      continue;
+    }
+
+    if (shape?.hole) {
+      return false;
+    }
+
+    insideSolidShape = true;
+  }
+
+  return insideSolidShape;
 }
 
 export function getRegionShapeData(regionDocument) {
@@ -491,12 +708,65 @@ export function getRegionShapeData(regionDocument) {
   return Array.isArray(raw) ? raw : [];
 }
 
+export function resolveNativeRingGeometryFromRegion(regionDocument, runtime = null, shapes = null) {
+  const runtimeFlags = runtime ?? getRegionRuntimeFlags(regionDocument);
+  const regionShapes = Array.isArray(shapes) ? shapes : getRegionShapeData(regionDocument);
+  const isV14NativeRing =
+    isFoundryV14OrNewer() &&
+    (
+      runtimeFlags?.architecturePath === "v14-region-native" ||
+      runtimeFlags?.regionSourceStrategy === "v14-native-region-shapes" ||
+      runtimeFlags?.creationSource === "persistent-zones-v14-native-region"
+    );
+  if (!isV14NativeRing) {
+    return null;
+  }
+
+  const shape = regionShapes.find((candidate) => String(candidate?.type ?? "").toLowerCase() === "ring") ?? null;
+  if (!shape) {
+    return null;
+  }
+
+  const radiusPixels = coerceNumber(shape.radius, null);
+  if (radiusPixels === null || radiusPixels <= 0) {
+    return null;
+  }
+
+  const innerWidthPixels = Math.max(0, coerceNumber(shape.innerWidth, 0));
+  const outerWidthPixels = Math.max(0, coerceNumber(shape.outerWidth, 0));
+  return {
+    type: "ring",
+    centerX: coerceNumber(shape.x, 0),
+    centerY: coerceNumber(shape.y, 0),
+    radiusPixels,
+    innerWidthPixels,
+    outerWidthPixels,
+    innerRadiusPixels: Math.max(0, radiusPixels - innerWidthPixels),
+    outerRadiusPixels: radiusPixels + outerWidthPixels,
+    geometrySource: "final-native-region-shape"
+  };
+}
+
 function pointInShape(shape, point) {
+  if (shape?.polygonMode === "annulus") {
+    return pointInAnnulusPolygon(shape, point);
+  }
+
   switch (shape?.type) {
     case "circle":
       return pointInCircle(shape, point);
+    case "cone":
+      return pointInCone(shape, point);
+    case "emanation":
+      return pointInEmanation(shape, point);
+    case "ellipse":
+      return pointInEllipse(shape, point);
+    case "line":
+      return pointInLine(shape, point);
     case "rectangle":
       return pointInRectangle(shape, point);
+    case "ring":
+      return pointInRing(shape, point);
     case "polygon":
       return pointInPolygon(shape.points, point);
     default:
@@ -504,11 +774,144 @@ function pointInShape(shape, point) {
   }
 }
 
+function pointInAnnulusPolygon(shape, point) {
+  const points = normalizePolygonPoints(shape.points);
+  if (points.length < 6) {
+    return false;
+  }
+
+  const bounds = calculatePointBounds(points);
+  const center = {
+    x: bounds.minX + ((bounds.maxX - bounds.minX) / 2),
+    y: bounds.minY + ((bounds.maxY - bounds.minY) / 2)
+  };
+  const radii = points
+    .map((candidate) => Math.hypot(candidate.x - center.x, candidate.y - center.y))
+    .filter((radius) => Number.isFinite(radius) && radius > 0);
+  const outerRadius = Math.max(...radii);
+  const innerRadius = Math.min(...radii);
+  const pointRadius = Math.hypot(point.x - center.x, point.y - center.y);
+
+  return pointRadius <= outerRadius && pointRadius >= innerRadius;
+}
+
+function calculatePointBounds(points) {
+  return {
+    minX: Math.min(...points.map((point) => point.x)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    minY: Math.min(...points.map((point) => point.y)),
+    maxY: Math.max(...points.map((point) => point.y))
+  };
+}
+
+function pointInEmanation(shape, point) {
+  const center = findEmanationCenter(shape);
+  const radius = coerceNumber(shape?.radius, 0);
+  return Math.hypot(point.x - center.x, point.y - center.y) <= radius;
+}
+
+function findEmanationCenter(shape) {
+  const base = shape?.base ?? {};
+  if (base.type === "token") {
+    const gridSize = coerceNumber(canvas?.grid?.size, 100) || 100;
+    const width = Math.max(coerceNumber(base.width, 1), 0.1) * gridSize;
+    const height = Math.max(coerceNumber(base.height, 1), 0.1) * gridSize;
+    return {
+      x: coerceNumber(base.x, 0) + (width / 2),
+      y: coerceNumber(base.y, 0) + (height / 2)
+    };
+  }
+
+  return {
+    x: coerceNumber(base.x ?? shape?.x, 0),
+    y: coerceNumber(base.y ?? shape?.y, 0)
+  };
+}
+
 function pointInCircle(shape, point) {
   const radius = coerceNumber(shape.radius, 0);
   const dx = point.x - coerceNumber(shape.x, 0);
   const dy = point.y - coerceNumber(shape.y, 0);
   return (dx * dx) + (dy * dy) <= radius * radius;
+}
+
+function pointInRing(shape, point) {
+  const radius = coerceNumber(shape.radius, 0);
+  const innerWidth = Math.max(0, coerceNumber(shape.innerWidth, 0));
+  const outerWidth = Math.max(0, coerceNumber(shape.outerWidth, 0));
+  const innerRadius = Math.max(0, radius - innerWidth);
+  const outerRadius = Math.max(radius, radius + outerWidth);
+  const distance = Math.hypot(point.x - coerceNumber(shape.x, 0), point.y - coerceNumber(shape.y, 0));
+  return distance >= innerRadius && distance <= outerRadius;
+}
+
+function pointInCone(shape, point) {
+  const radius = coerceNumber(shape.radius, 0);
+  const angle = Math.max(0, Math.min(360, coerceNumber(shape.angle, 0)));
+  if (!radius || !angle) {
+    return false;
+  }
+
+  const origin = { x: coerceNumber(shape.x, 0), y: coerceNumber(shape.y, 0) };
+  const distance = Math.hypot(point.x - origin.x, point.y - origin.y);
+  if (distance > radius) {
+    return false;
+  }
+  if (angle >= 360) {
+    return true;
+  }
+
+  const rotation = (coerceNumber(shape.rotation, 0) * Math.PI) / 180;
+  const localPoint = rotation ? rotatePoint(point, origin, -rotation) : point;
+  const theta = Math.atan2(localPoint.y - origin.y, localPoint.x - origin.x);
+  const halfAngle = (angle * Math.PI) / 360;
+  const normalized = Math.atan2(Math.sin(theta), Math.cos(theta));
+  return Math.abs(normalized) <= halfAngle;
+}
+
+function pointInLine(shape, point) {
+  const origin = { x: coerceNumber(shape.x, 0), y: coerceNumber(shape.y, 0) };
+  const length = coerceNumber(shape.length, 0);
+  const halfWidth = coerceNumber(shape.width, 0) / 2;
+  if (!length || !halfWidth) {
+    return false;
+  }
+
+  const rotation = (coerceNumber(shape.rotation, 0) * Math.PI) / 180;
+  const localPoint = rotation ? rotatePoint(point, origin, -rotation) : point;
+  const localX = localPoint.x - origin.x;
+  const localY = localPoint.y - origin.y;
+  return localX >= 0 && localX <= length && Math.abs(localY) <= halfWidth;
+}
+
+function pointInEllipse(shape, point) {
+  const width = coerceNumber(shape.width, null);
+  const height = coerceNumber(shape.height, null);
+  const radiusX = coerceNumber(shape.radiusX, width !== null ? width / 2 : null);
+  const radiusY = coerceNumber(shape.radiusY, height !== null ? height / 2 : null);
+  const centerX = shape.cx !== undefined
+    ? coerceNumber(shape.cx, 0)
+    : width !== null && shape.radiusX === undefined
+      ? coerceNumber(shape.x, 0) + radiusX
+      : coerceNumber(shape.x, 0);
+  const centerY = shape.cy !== undefined
+    ? coerceNumber(shape.cy, 0)
+    : height !== null && shape.radiusY === undefined
+      ? coerceNumber(shape.y, 0) + radiusY
+      : coerceNumber(shape.y, 0);
+
+  if (!radiusX || !radiusY) {
+    return false;
+  }
+
+  const rotation = (coerceNumber(shape.rotation, 0) * Math.PI) / 180;
+  const localPoint = rotation
+    ? rotatePoint(point, { x: centerX, y: centerY }, -rotation)
+    : point;
+  const dx = localPoint.x - centerX;
+  const dy = localPoint.y - centerY;
+
+  return ((dx * dx) / (radiusX * radiusX)) + ((dy * dy) / (radiusY * radiusY)) <= 1;
 }
 
 function pointInRectangle(shape, point) {
@@ -542,17 +945,16 @@ function rotatePoint(point, origin, radians) {
 }
 
 function pointInPolygon(points, point) {
-  if (!Array.isArray(points) || points.length < 6) {
+  const normalizedPoints = normalizePolygonPoints(points);
+  if (normalizedPoints.length < 3) {
     return false;
   }
 
   let inside = false;
 
-  for (let i = 0, j = points.length - 2; i < points.length; i += 2) {
-    const xi = points[i];
-    const yi = points[i + 1];
-    const xj = points[j];
-    const yj = points[j + 1];
+  for (let i = 0, j = normalizedPoints.length - 1; i < normalizedPoints.length; j = i, i += 1) {
+    const { x: xi, y: yi } = normalizedPoints[i];
+    const { x: xj, y: yj } = normalizedPoints[j];
 
     const intersects =
       yi > point.y !== yj > point.y &&
@@ -562,10 +964,125 @@ function pointInPolygon(points, point) {
       inside = !inside;
     }
 
-    j = i;
   }
 
   return inside;
+}
+
+function normalizePolygonPoints(points) {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+
+  if (points.every((point) => typeof point === "number")) {
+    const normalized = [];
+    for (let index = 0; index < points.length - 1; index += 2) {
+      normalized.push({
+        x: coerceNumber(points[index], 0),
+        y: coerceNumber(points[index + 1], 0)
+      });
+    }
+    return normalized;
+  }
+
+  return points
+    .map((point) => {
+      if (Array.isArray(point)) {
+        return {
+          x: coerceNumber(point[0], null),
+          y: coerceNumber(point[1], null)
+        };
+      }
+      return {
+        x: coerceNumber(point?.x, null),
+        y: coerceNumber(point?.y, null)
+      };
+    })
+    .filter((point) => point.x !== null && point.y !== null);
+}
+
+function isRingLikeRuntime(runtime, shapes) {
+  if (runtime?.ringGeometry) {
+    return true;
+  }
+
+  const geometryType = String(runtime?.normalizedDefinition?.geometry?.type ?? "").toLowerCase();
+  if (geometryType.includes("ring")) {
+    return true;
+  }
+
+  return shapes.length > 1 && shapes.every((shape) => shape?.type === "polygon");
+}
+
+function testTokenInsideRuntimeRing(membership, runtime, nativeRingGeometry = null) {
+  const ringGeometry = nativeRingGeometry ?? runtime?.ringGeometry ?? null;
+  if (!ringGeometry) {
+    return null;
+  }
+
+  const centerX = coerceNumber(ringGeometry.centerX, null);
+  const centerY = coerceNumber(ringGeometry.centerY, null);
+  const innerRadius = coerceNumber(ringGeometry.innerRadiusPixels, null);
+  const outerRadius = coerceNumber(ringGeometry.outerRadiusPixels, null);
+  if (centerX === null || centerY === null || innerRadius === null || outerRadius === null || outerRadius <= 0 || innerRadius < 0 || innerRadius >= outerRadius) {
+    return {
+      tokenInsideRingBand: false,
+      tokenInsideRingHole: false,
+      ringRejectReason: "invalid-ring-runtime-geometry"
+    };
+  }
+
+  const tokenCenter = getTokenCenter({ ...membership, object: null });
+  const distance = Math.hypot(tokenCenter.x - centerX, tokenCenter.y - centerY);
+  const tokenInsideRingHole = distance < innerRadius;
+  const tokenInsideRingBand = distance >= innerRadius && distance <= outerRadius;
+
+  return {
+    tokenInsideRingBand,
+    tokenInsideRingHole,
+    ringRejectReason: tokenInsideRingBand
+      ? null
+      : tokenInsideRingHole
+        ? "token-center-inside-ring-hole"
+        : "token-center-outside-ring"
+  };
+}
+
+function pointInsideRingOuterEnvelope(shapes, membership) {
+  const center = getTokenCenter({ ...membership, object: null });
+  const points = shapes
+    .filter((shape) => shape?.type === "polygon")
+    .flatMap((shape) => normalizePolygonPoints(shape.points));
+
+  if (!points.length) {
+    return false;
+  }
+
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const envelopeCenter = {
+    x: minX + ((maxX - minX) / 2),
+    y: minY + ((maxY - minY) / 2)
+  };
+  const outerRadius = Math.max(...points.map((point) => Math.hypot(point.x - envelopeCenter.x, point.y - envelopeCenter.y)));
+
+  return Math.hypot(center.x - envelopeCenter.x, center.y - envelopeCenter.y) <= outerRadius;
+}
+
+function isFoundryV14OrNewer() {
+  const version = String(globalThis.game?.version ?? globalThis.game?.data?.version ?? "");
+  const major = Number.parseInt(version.split(".")[0], 10);
+  return Number.isFinite(major) && major >= 14;
+}
+
+function logV14RuntimeDiagnostic(message, data = {}) {
+  if (!isFoundryV14OrNewer()) {
+    return;
+  }
+
+  console.debug(`[${MODULE_ID}][v14-runtime] ${message}`, data);
 }
 
 function buildTokenRegionMembershipState(tokenDocument, state = null) {

@@ -4,6 +4,8 @@ export const MOVEMENT_STOP_GLOBAL_SETTING_KEY = "movementStopGlobalEnabled";
 export const MOVEMENT_STOP_GLOBAL_MODE_SETTING_KEY = "movementStopGlobalMode";
 export const MOVEMENT_STOP_GLOBAL_MODE_MIGRATED_SETTING_KEY = "movementStopGlobalModeMigrated";
 export const DEBUG_LOG_LEVEL_SETTING_KEY = "debugLogLevel";
+export const REGION_HIGHLIGHT_MODE_SETTING_KEY = "regionHighlightMode";
+export const REGION_VISIBILITY_SETTING_KEY = "regionVisibility";
 
 export const DEFINITION_FLAG_KEY = "definition";
 export const RUNTIME_FLAG_KEY = "runtime";

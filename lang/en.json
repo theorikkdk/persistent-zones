@@ -228,6 +228,7 @@
       },
       "ProfileScopes": {
         "Builtin": "Built-in",
+        "Debug": "Debug/Test",
         "User": "User"
       },
       "ProfileCompatibility": {
@@ -359,6 +360,23 @@
           "Minimal": "Minimal",
           "Standard": "Standard",
           "Verbose": "Verbose"
+        }
+      },
+      "RegionHighlightMode": {
+        "Name": "Zone Highlight Mode",
+        "Hint": "Choose how managed Regions are highlighted on the canvas when Foundry exposes a compatible Region highlight mode.",
+        "Choices": {
+          "Authentic": "Authentic shape",
+          "Grid": "Covered grid cells"
+        }
+      },
+      "RegionVisibility": {
+        "Name": "Zone Visibility",
+        "Hint": "Choose when managed Regions are visible on the canvas.",
+        "Choices": {
+          "Layer": "Only on Regions Layer",
+          "Gamemaster": "Always for Gamemaster",
+          "Always": "Always for Everyone"
         }
       }
     }

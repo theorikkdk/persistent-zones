@@ -6,6 +6,7 @@ import {
   getRegionRuntimeFlags,
   pickFirstDefined
 } from "./utils.mjs";
+import { MODULE_ID } from "../constants.mjs";
 import {
   normalizeZoneTriggerActivityType,
   resolveZoneTriggeredActivityCompatibility
@@ -28,7 +29,8 @@ export async function applyConfiguredTriggerEffect({
   regionDocument,
   tokenDocument,
   triggerConfig,
-  timing = "custom"
+  timing = "custom",
+  context = {}
 }) {
   const actor = tokenDocument?.actor ?? null;
   const normalizedTiming = String(timing || "custom");
@@ -36,9 +38,50 @@ export async function applyConfiguredTriggerEffect({
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const partId = runtime.partId ?? runtime.part?.id ?? runtime.normalizedDefinition?.part?.id ?? null;
   const triggerMode = resolveTriggerEffectMode(configuredTrigger);
+  const isV14RingRuntime = runtime.regionSourceStrategy === "v14-region-native-segment-group" ||
+    String(runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? "").toLowerCase() === "ring";
+  const baseDiagnostic = {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    actorUuid: actor?.uuid ?? null,
+    partId,
+    groupId: runtime.groupId ?? null,
+    architecturePath: runtime.architecturePath ?? null,
+    geometryType: runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? null,
+    regionSourceStrategy: runtime.regionSourceStrategy ?? null,
+    regionSegmentIndex: runtime.regionSegmentIndex ?? null,
+    regionSegmentCount: runtime.regionSegmentCount ?? null,
+    triggerTiming: normalizedTiming,
+    triggerMode,
+    movementSequenceId: context.movementSequenceId ?? null,
+    triggerType: context.triggerType ?? normalizedTiming,
+    previousInside: context.previousInside ?? null,
+    currentInside: context.currentInside ?? null
+  };
+
+  logV14RuntimeDiagnostic("triggerTiming", baseDiagnostic);
+  logV14RuntimeDiagnostic("PZ EFFECT CONFIG RESOLVED", {
+    ...baseDiagnostic,
+    onEnterEnabled: normalizedTiming === "onEnter" ? Boolean(configuredTrigger?.enabled) : null,
+    onMoveEnabled: normalizedTiming === "onMove" ? Boolean(configuredTrigger?.enabled) : null,
+    effectMode: triggerMode,
+    simpleEffect: configuredTrigger?.simpleEffect ?? null,
+    damageFormula: configuredTrigger?.damage?.formula ?? configuredTrigger?.simpleEffect?.formula ?? null,
+    damageType: configuredTrigger?.damage?.type ?? configuredTrigger?.simpleEffect?.damageType ?? null,
+    activityUuid: configuredTrigger?.activity?.uuid ?? null,
+    skippedReason: null
+  });
 
   if (!actor) {
+    logPzEffectSkipped("token-has-no-actor", baseDiagnostic, configuredTrigger);
+    logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+      ...baseDiagnostic,
+      simpleEffectAllowed: false,
+      simpleEffectSuppressed: true,
+      simpleEffectSuppressedReason: "token-has-no-actor"
+    });
     return buildSkippedResult("Token has no Actor.", {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode
@@ -46,7 +89,15 @@ export async function applyConfiguredTriggerEffect({
   }
 
   if (!configuredTrigger.enabled) {
+    logPzEffectSkipped("trigger-disabled", baseDiagnostic, configuredTrigger);
+    logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+      ...baseDiagnostic,
+      simpleEffectAllowed: false,
+      simpleEffectSuppressed: true,
+      simpleEffectSuppressedReason: "trigger-disabled"
+    });
     return buildSkippedResult(`${normalizedTiming} is not enabled.`, {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode
@@ -62,7 +113,15 @@ export async function applyConfiguredTriggerEffect({
       triggerMode
     });
 
+    logPzEffectSkipped("no-effect-configured", baseDiagnostic, configuredTrigger);
+    logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+      ...baseDiagnostic,
+      simpleEffectAllowed: false,
+      simpleEffectSuppressed: true,
+      simpleEffectSuppressedReason: "trigger-mode-none"
+    });
     return buildSkippedResult(`${normalizedTiming} mode is none.`, {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode
@@ -70,19 +129,53 @@ export async function applyConfiguredTriggerEffect({
   }
 
   if (triggerMode === "activity") {
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTOR SELECTED", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      executor: "activity",
+      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      damageFormula: null,
+      damageType: null
+    });
     return applyActivityTriggerEffect({
       regionDocument,
       tokenDocument,
       triggerConfig: configuredTrigger,
       timing: normalizedTiming,
-      partId
+      partId,
+      context
     });
   }
 
   const simpleEffect = resolveSimpleEffectConfig(configuredTrigger);
+  logV14RuntimeDiagnostic("PZ EFFECT EXECUTOR SELECTED", {
+    ...baseDiagnostic,
+    effectMode: triggerMode,
+    executor: "simple",
+    simpleEffect,
+    damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
+    damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
+    activityUuid: configuredTrigger?.activity?.uuid ?? null
+  });
+  logV14RuntimeDiagnostic("simpleEffectType", {
+    ...baseDiagnostic,
+    simpleEffectType: simpleEffect.type,
+    simpleEffectFormula: simpleEffect.formula ?? null,
+    simpleEffectAllowed: true
+  });
 
   if (simpleEffect.type !== "damage" && !simpleEffect.formula) {
+    logPzEffectSkipped("no-damage-formula", baseDiagnostic, configuredTrigger, simpleEffect);
+    logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+      ...baseDiagnostic,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null,
+      simpleEffectAllowed: false,
+      simpleEffectSuppressed: true,
+      simpleEffectSuppressedReason: "missing-simple-effect-formula"
+    });
     return buildSkippedResult(`${normalizedTiming} has no enabled simple effect formula.`, {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode,
@@ -92,7 +185,17 @@ export async function applyConfiguredTriggerEffect({
   }
 
   if (simpleEffect.type === "damage" && !configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
+    logPzEffectSkipped("no-effect-configured", baseDiagnostic, configuredTrigger, simpleEffect);
+    logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+      ...baseDiagnostic,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null,
+      simpleEffectAllowed: false,
+      simpleEffectSuppressed: true,
+      simpleEffectSuppressedReason: "damage-and-save-disabled"
+    });
     return buildSkippedResult(`${normalizedTiming} has no enabled save or damage.`, {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode,
@@ -102,6 +205,15 @@ export async function applyConfiguredTriggerEffect({
   }
 
   try {
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTION START", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      simpleEffect,
+      damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
+      damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
+      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      skippedReason: null
+    });
     if (simpleEffect.type === "heal" || simpleEffect.type === "tempHP") {
       const simpleRecoveryResult = await resolveSimpleRecoveryResult(
         simpleEffect,
@@ -132,7 +244,38 @@ export async function applyConfiguredTriggerEffect({
         healApplied: effectSummary.healingTotal,
         tempHpApplied: effectSummary.tempHpTotal
       });
-
+      logV14RuntimeDiagnostic("simpleEffectApplied", {
+        ...baseDiagnostic,
+        simpleEffectType: simpleEffect.type,
+        simpleEffectFormula: simpleEffect.formula ?? null,
+        simpleEffectApplied: effectEntries.length > 0,
+        healApplied: effectSummary.healingTotal,
+        tempHpApplied: effectSummary.tempHpTotal
+      });
+      logV14RuntimeDiagnostic("PZ EFFECT EXECUTION SUCCESS", {
+        ...baseDiagnostic,
+        effectMode: triggerMode,
+        simpleEffect,
+        damageFormula: simpleEffect.formula ?? null,
+        damageType: simpleEffect.damageType ?? null,
+        activityUuid: configuredTrigger?.activity?.uuid ?? null,
+        applied: effectEntries.length > 0,
+        skippedReason: effectEntries.length > 0 ? null : "no-effect-configured"
+      });
+      logV14RuntimeDiagnostic("partTriggerApplied", {
+        ...baseDiagnostic,
+        applied: effectEntries.length > 0,
+        skipped: effectEntries.length === 0
+      });
+      if (isV14RingRuntime) {
+        logV14RuntimeDiagnostic("v14RingEffectApplied", {
+          ...baseDiagnostic,
+          v14RingEffectApplied: effectEntries.length > 0,
+          skipped: effectEntries.length === 0,
+          healApplied: effectSummary.healingTotal,
+          tempHpApplied: effectSummary.tempHpTotal
+        });
+      }
       return {
         applied: effectEntries.length > 0,
         skipped: effectEntries.length === 0,
@@ -159,7 +302,17 @@ export async function applyConfiguredTriggerEffect({
       : null;
 
     if (saveResult?.unresolved) {
+      logPzEffectSkipped("save-dc-unresolved", baseDiagnostic, configuredTrigger, simpleEffect);
+      logV14RuntimeDiagnostic("simpleEffectSuppressed", {
+        ...baseDiagnostic,
+        simpleEffectType: simpleEffect.type,
+        simpleEffectFormula: simpleEffect.formula ?? null,
+        simpleEffectAllowed: false,
+        simpleEffectSuppressed: true,
+        simpleEffectSuppressedReason: "save-dc-unresolved"
+      });
       return buildSkippedResult("Save DC could not be resolved.", {
+        ...baseDiagnostic,
         timing: normalizedTiming,
         partId,
         triggerMode,
@@ -181,6 +334,18 @@ export async function applyConfiguredTriggerEffect({
     if (appliedDamage > 0) {
       await applyDamageToActor(actor, appliedDamage);
     }
+    logV14RuntimeDiagnostic("damageRoll", {
+      ...baseDiagnostic,
+      damageFormula: damageResult?.formula ?? configuredTrigger?.damage?.formula ?? null,
+      damageType: damageResult?.type ?? configuredTrigger?.damage?.type ?? null,
+      rolledDamage: damageResult?.rolledDamage ?? null,
+      appliedDamage
+    });
+    logV14RuntimeDiagnostic("damageApplied", {
+      ...baseDiagnostic,
+      appliedDamage,
+      damageType: damageResult?.type ?? configuredTrigger?.damage?.type ?? null
+    });
 
     debug(`Applied ${normalizedTiming} simple effect.`, {
       regionId: regionDocument?.id ?? null,
@@ -198,7 +363,42 @@ export async function applyConfiguredTriggerEffect({
       healApplied: 0,
       tempHpApplied: 0
     });
-
+    logV14RuntimeDiagnostic("simpleEffectApplied", {
+      ...baseDiagnostic,
+      simpleEffectType: simpleEffect.type,
+      simpleEffectFormula: simpleEffect.formula ?? null,
+      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      save: saveResult,
+      damage: damageResult,
+      appliedDamage,
+      healApplied: 0,
+      tempHpApplied: 0
+    });
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTION SUCCESS", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      simpleEffect,
+      damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
+      damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
+      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      appliedDamage,
+      skippedReason: null
+    });
+    logV14RuntimeDiagnostic("partTriggerApplied", {
+      ...baseDiagnostic,
+      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      skipped: false,
+      appliedDamage
+    });
+    if (isV14RingRuntime) {
+      logV14RuntimeDiagnostic("v14RingEffectApplied", {
+        ...baseDiagnostic,
+        v14RingEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+        skipped: false,
+        appliedDamage
+      });
+    }
     return {
       applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
       skipped: false,
@@ -215,6 +415,16 @@ export async function applyConfiguredTriggerEffect({
       tempHpApplied: 0
     };
   } catch (caughtError) {
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTION FAILED", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      simpleEffect: typeof simpleEffect !== "undefined" ? simpleEffect : null,
+      damageFormula: typeof simpleEffect !== "undefined" ? simpleEffect?.formula ?? null : null,
+      damageType: typeof simpleEffect !== "undefined" ? simpleEffect?.damageType ?? null : null,
+      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      skippedReason: "effect-execution-error",
+      error: caughtError?.message ?? "unknown"
+    });
     error("Failed to apply configured trigger effect.", caughtError, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
@@ -223,6 +433,7 @@ export async function applyConfiguredTriggerEffect({
     });
 
     return buildSkippedResult("Effect application failed.", {
+      ...baseDiagnostic,
       timing: normalizedTiming,
       partId,
       triggerMode,
@@ -236,15 +447,34 @@ async function applyActivityTriggerEffect({
   tokenDocument,
   triggerConfig,
   timing = "custom",
-  partId = null
+  partId = null,
+  context = {}
 }) {
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const triggerMode = "activity";
   const selectedActivity = triggerConfig?.activity?.id ?? null;
   const item = await resolveRuntimeItem(runtime);
   const activity = resolveItemActivity(item, triggerConfig?.activity ?? {});
+  const baseDiagnostic = {
+    regionId: regionDocument?.id ?? null,
+    tokenId: tokenDocument?.id ?? null,
+    partId,
+    groupId: runtime.groupId ?? null,
+    architecturePath: runtime.architecturePath ?? null,
+    geometryType: runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? null,
+    regionSourceStrategy: runtime.regionSourceStrategy ?? null,
+    regionSegmentIndex: runtime.regionSegmentIndex ?? null,
+    regionSegmentCount: runtime.regionSegmentCount ?? null,
+    triggerTiming: timing,
+    triggerMode,
+    movementSequenceId: context.movementSequenceId ?? null,
+    triggerType: context.triggerType ?? timing,
+    previousInside: context.previousInside ?? null,
+    currentInside: context.currentInside ?? null
+  };
 
   if (!item) {
+    logPzEffectSkipped("no-activity-reference", baseDiagnostic, triggerConfig);
     debug(`Skipped ${timing} activity effect because no source Item could be resolved.`, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
@@ -265,6 +495,7 @@ async function applyActivityTriggerEffect({
   }
 
   if (!activity || typeof activity.use !== "function") {
+    logPzEffectSkipped("no-activity-reference", baseDiagnostic, triggerConfig);
     debug(`Skipped ${timing} activity effect because the configured activity could not be found.`, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
@@ -287,6 +518,15 @@ async function applyActivityTriggerEffect({
   }
 
   const activityCompatibility = resolveZoneTriggeredActivityCompatibility(activity);
+  logV14RuntimeDiagnostic("PZ EFFECT EXECUTION START", {
+    ...baseDiagnostic,
+    effectMode: triggerMode,
+    simpleEffect: null,
+    damageFormula: null,
+    damageType: null,
+    activityUuid: activity?.uuid ?? triggerConfig?.activity?.uuid ?? null,
+    skippedReason: null
+  });
 
   debug(`Resolved ${timing} activity compatibility.`, {
     regionId: regionDocument?.id ?? null,
@@ -312,6 +552,7 @@ async function applyActivityTriggerEffect({
   });
 
   if (!activityCompatibility.supported) {
+    logPzEffectSkipped("executor-not-found", baseDiagnostic, triggerConfig);
     debug(`Skipped ${timing} activity effect because the configured activity is not compatible with zone-trigger execution.`, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
@@ -384,6 +625,33 @@ async function applyActivityTriggerEffect({
       consumptionPrevented: activityCompatibility.consumptionPrevented,
       concentrationPrevented: activityCompatibility.concentrationPrevented
     });
+    logV14RuntimeDiagnostic("activityExecuted", {
+      ...baseDiagnostic,
+      selectedActivity,
+      activityUuid: activity?.uuid ?? triggerConfig?.activity?.uuid ?? null,
+      activityTriggered,
+      activityFound: true
+    });
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTION SUCCESS", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      simpleEffect: null,
+      damageFormula: null,
+      damageType: null,
+      activityUuid: activity?.uuid ?? triggerConfig?.activity?.uuid ?? null,
+      applied: activityTriggered,
+      skippedReason: activityTriggered ? null : "executor-returned-no-application"
+    });
+    logV14RuntimeDiagnostic("partTriggerApplied", {
+      regionId: regionDocument?.id ?? null,
+      tokenId: tokenDocument?.id ?? null,
+      partId,
+      triggerTiming: timing,
+      triggerMode,
+      selectedActivity,
+      activityTriggered,
+      activityFound: true
+    });
 
     return {
       applied: activityTriggered,
@@ -407,6 +675,16 @@ async function applyActivityTriggerEffect({
       ...activityResult
     };
   } catch (caughtError) {
+    logV14RuntimeDiagnostic("PZ EFFECT EXECUTION FAILED", {
+      ...baseDiagnostic,
+      effectMode: triggerMode,
+      simpleEffect: null,
+      damageFormula: null,
+      damageType: null,
+      activityUuid: activity?.uuid ?? triggerConfig?.activity?.uuid ?? null,
+      skippedReason: "effect-execution-error",
+      error: caughtError?.message ?? "unknown"
+    });
     error("Failed to trigger configured activity effect.", caughtError, {
       regionId: regionDocument?.id ?? null,
       tokenId: tokenDocument?.id ?? null,
@@ -1265,12 +1543,45 @@ function resolveItemActivity(item, activityConfig = {}) {
 }
 
 function buildSkippedResult(reason, extra = {}) {
+  logV14RuntimeDiagnostic("triggerSuppressedReason", {
+    reason,
+    ...extra
+  });
+
   return {
     applied: false,
     skipped: true,
     reason,
     ...extra
   };
+}
+
+function logPzEffectSkipped(skippedReason, baseDiagnostic = {}, triggerConfig = {}, simpleEffect = null) {
+  logV14RuntimeDiagnostic("PZ EFFECT EXECUTION SKIPPED", {
+    ...baseDiagnostic,
+    onEnterEnabled: baseDiagnostic.triggerTiming === "onEnter" ? Boolean(triggerConfig?.enabled) : null,
+    onMoveEnabled: baseDiagnostic.triggerTiming === "onMove" ? Boolean(triggerConfig?.enabled) : null,
+    effectMode: baseDiagnostic.triggerMode ?? triggerConfig?.mode ?? null,
+    simpleEffect: simpleEffect ?? triggerConfig?.simpleEffect ?? null,
+    damageFormula: simpleEffect?.formula ?? triggerConfig?.damage?.formula ?? triggerConfig?.simpleEffect?.formula ?? null,
+    damageType: simpleEffect?.damageType ?? triggerConfig?.damage?.type ?? triggerConfig?.simpleEffect?.damageType ?? null,
+    activityUuid: triggerConfig?.activity?.uuid ?? null,
+    skippedReason
+  });
+}
+
+function logV14RuntimeDiagnostic(message, data = {}) {
+  if (!isFoundryV14OrNewer()) {
+    return;
+  }
+
+  console.warn(`[${MODULE_ID}][v14-runtime] ${message}`, data);
+}
+
+function isFoundryV14OrNewer() {
+  const version = String(globalThis.game?.version ?? globalThis.game?.data?.version ?? "");
+  const major = Number.parseInt(version.split(".")[0], 10);
+  return Number.isFinite(major) && major >= 14;
 }
 
 function buildNoDamageResult(damageConfig = {}) {
