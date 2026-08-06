@@ -44,6 +44,7 @@ const pendingV14RingSegmentGroups = new Set();
 const pendingV14RingCleanupKeys = new Set();
 const activeGenericOwnerDeleteContexts = new Map();
 const activeNonConcentrationCastRegistry = new Map();
+const activeDedicatedOwnerExpirationCleanups = new Set();
 const DEFAULT_RING_SEGMENTS = 24;
 const STARTUP_EXTERNAL_DELETE_PROTECTION_MS = 8000;
 const NON_CONCENTRATION_CAST_REGISTRY_TTL_MS = 15000;
@@ -122,6 +123,24 @@ export function registerRegionFactoryHooks() {
       });
     });
   });
+  Hooks.on("updateCombat", (combat, changed = {}, options = {}, userId = null) => {
+    Promise.resolve(onDedicatedOwnerExpirationTick("updateCombat", { combat, changed, options, userId })).catch((caughtError) => {
+      logV14RegionDiagnostic("ownerEffectExpirationTickFailed", {
+        hook: "updateCombat",
+        reason: caughtError?.message ?? "unknown",
+        stack: caughtError?.stack ?? null
+      });
+    });
+  });
+  Hooks.on("updateWorldTime", (worldTime, options = {}, userId = null) => {
+    Promise.resolve(onDedicatedOwnerExpirationTick("updateWorldTime", { worldTime, options, userId })).catch((caughtError) => {
+      logV14RegionDiagnostic("ownerEffectExpirationTickFailed", {
+        hook: "updateWorldTime",
+        reason: caughtError?.message ?? "unknown",
+        stack: caughtError?.stack ?? null
+      });
+    });
+  });
   Hooks.on("preCreateActiveEffect", onPreCreateActiveEffect);
   Hooks.on("preDeleteActiveEffect", onPreDeleteActiveEffect);
   Hooks.on("deleteActiveEffect", onDeleteActiveEffectGenericOwnerContextCleanup);
@@ -144,11 +163,18 @@ export function registerRegionFactoryHooks() {
         stack: caughtError?.stack ?? null
       });
     });
+    Promise.resolve(cleanupExpiredDedicatedOwnerEffectsForWorld({ hookName: "ready" })).catch((caughtError) => {
+      logV14RegionDiagnostic("ownerEffectExpirationStartupCleanupFailed", {
+        hook: "ready",
+        reason: caughtError?.message ?? "unknown",
+        stack: caughtError?.stack ?? null
+      });
+    });
   });
   hooksRegistered = true;
   logV14RegionEntry("enteredRegionFactory", {
     selectedCompatibilityPath: "hooks-registered",
-    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
+    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "updateCombat", "updateWorldTime", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
   });
 }
 
@@ -5140,6 +5166,11 @@ async function onOwnerActiveEffectChanged(hook, activeEffect, changed = {}, opti
     changedKeys: Object.keys(changed ?? {})
   });
   logOwnerEffectOwnershipSnapshot({ reason: hook, activeEffect, reconciledCount: reconciled.length });
+  await evaluateDedicatedOwnerEffectExpiration(activeEffect, {
+    hookName: hook,
+    changed,
+    options
+  });
 }
 
 async function reconcileMissingOwnerEffectLinksForWorld({ reason = "manual" } = {}) {
@@ -5169,6 +5200,353 @@ async function reconcileMissingOwnerEffectLinksForWorld({ reason = "manual" } = 
     }
   }
   return results;
+}
+
+async function onDedicatedOwnerExpirationTick(hookName, context = {}) {
+  if (!isPrimaryGM()) {
+    return;
+  }
+  await cleanupExpiredDedicatedOwnerEffectsForWorld({ hookName, context });
+}
+
+async function cleanupExpiredDedicatedOwnerEffectsForWorld({ hookName = "manual", context = {} } = {}) {
+  const results = [];
+  for (const actor of game?.actors?.contents ?? []) {
+    for (const effect of actor?.effects ?? []) {
+      if (!isPersistentZonesDedicatedOwnerEffect(effect)) {
+        continue;
+      }
+      const result = await evaluateDedicatedOwnerEffectExpiration(effect, {
+        hookName,
+        context
+      });
+      results.push(result);
+    }
+  }
+  return results;
+}
+
+async function evaluateDedicatedOwnerEffectExpiration(activeEffect, {
+  hookName = "manual",
+  changed = {},
+  options = {},
+  context = {}
+} = {}) {
+  if (!activeEffect || !isPersistentZonesDedicatedOwnerEffect(activeEffect)) {
+    return { evaluated: false, reason: "not-persistent-zones-dedicated-owner" };
+  }
+  const target = findRegionForDedicatedOwnerEffect(activeEffect);
+  const expiration = isDedicatedOwnerEffectExpired(activeEffect, { hookName, changed, options, context });
+  logOwnerEffectExpirationEvent(activeEffect, target?.region ?? null, {
+    hookName,
+    changed,
+    context,
+    expiration
+  });
+  const decision = buildOwnerEffectExpirationDecision(activeEffect, target?.region ?? null, expiration);
+  logOwnerEffectExpirationDecision(decision);
+  if (!decision.cleanupAllowed) {
+    return decision;
+  }
+  return cleanupExpiredDedicatedOwnerRegion(activeEffect, target.region, {
+    decision,
+    expiration
+  });
+}
+
+function findRegionForDedicatedOwnerEffect(activeEffect) {
+  const effectData = activeEffect?.toObject?.() ?? {};
+  const sceneId = getPropertyPath(effectData, `flags.${MODULE_ID}.sceneId`) ?? activeEffect?.flags?.[MODULE_ID]?.sceneId ?? null;
+  const regionId = getPropertyPath(effectData, `flags.${MODULE_ID}.regionId`) ?? activeEffect?.flags?.[MODULE_ID]?.regionId ?? null;
+  const regionUuid = getPropertyPath(effectData, `flags.${MODULE_ID}.regionUuid`) ?? activeEffect?.flags?.[MODULE_ID]?.regionUuid ?? null;
+  const groupId = getPropertyPath(effectData, `flags.${MODULE_ID}.groupId`) ?? activeEffect?.flags?.[MODULE_ID]?.groupId ?? null;
+  const castInstanceId = getPropertyPath(effectData, `flags.${MODULE_ID}.castInstanceId`) ?? activeEffect?.flags?.[MODULE_ID]?.castInstanceId ?? null;
+  const scene = sceneId ? game?.scenes?.get?.(sceneId) : null;
+  const region = scene?.regions?.get?.(regionId) ??
+    Array.from(scene?.regions ?? []).find((candidate) => candidate?.uuid === regionUuid) ??
+    null;
+  if (!region) {
+    return { region: null, reason: "region-not-found" };
+  }
+  const runtime = getRegionRuntimeFlags(region) ?? {};
+  const valid = getOwnerEffectUuidFromRuntime(runtime) === activeEffect?.uuid &&
+    (!groupId || runtime.groupId === groupId) &&
+    (!castInstanceId || runtime.castInstanceId === castInstanceId);
+  return {
+    region: valid ? region : null,
+    reason: valid ? "exact-region-owner-link" : "region-link-mismatch",
+    runtime
+  };
+}
+
+function isDedicatedOwnerEffectExpired(activeEffect, {
+  hookName = "manual",
+  changed = {},
+  context = {}
+} = {}) {
+  const data = activeEffect?.toObject?.() ?? {};
+  const duration = data.duration ?? activeEffect?.duration ?? {};
+  const disabled = Boolean(activeEffect?.disabled ?? data.disabled);
+  const durationExpired = duration?.expired === true;
+  const remaining = resolveActiveEffectRemaining(activeEffect, duration, context);
+  const remainingExpired = Number.isFinite(remaining) && remaining <= 0;
+  const secondsExpired = isSecondsDurationExpired(duration);
+  const combatExpired = isCombatDurationExpired(duration, context);
+  const expirationDetected = Boolean(durationExpired || remainingExpired || secondsExpired || combatExpired);
+  const disabledOnly = disabled && !expirationDetected;
+  return {
+    expired: expirationDetected && !disabledOnly,
+    reason: durationExpired ? "duration-expired-flag" :
+      remainingExpired ? "duration-remaining-zero" :
+        secondsExpired ? "duration-seconds-elapsed" :
+          combatExpired ? "duration-combat-elapsed" :
+            disabledOnly ? "manual-disabled-or-ambiguous-disabled" : "no-expiration-signal",
+    signalSource: durationExpired ? "duration.expired" :
+      remainingExpired ? "duration.remaining" :
+        secondsExpired ? "duration.seconds-worldTime" :
+          combatExpired ? "duration.rounds-turns-combat" :
+            disabledOnly ? "disabled-without-duration-expiration" : "none",
+    remaining,
+    durationExpired,
+    disabled,
+    deletionExpected: false,
+    duration: duplicateData(duration),
+    changedKeys: Object.keys(changed ?? {}),
+    hookName
+  };
+}
+
+function resolveActiveEffectRemaining(activeEffect, duration = {}, context = {}) {
+  const candidates = [
+    duration?.remaining,
+    duration?.remainingTime,
+    activeEffect?.remaining
+  ];
+  const direct = candidates.map((value) => coerceNumber(value, NaN)).find((value) => Number.isFinite(value));
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+  if (Number.isFinite(coerceNumber(duration?.seconds, NaN)) && Number.isFinite(coerceNumber(duration?.startTime, NaN))) {
+    return (coerceNumber(duration.startTime, 0) + coerceNumber(duration.seconds, 0)) - coerceNumber(game?.time?.worldTime ?? context?.worldTime, 0);
+  }
+  return null;
+}
+
+function isSecondsDurationExpired(duration = {}) {
+  const seconds = coerceNumber(duration?.seconds, NaN);
+  const startTime = coerceNumber(duration?.startTime, NaN);
+  const worldTime = coerceNumber(game?.time?.worldTime, NaN);
+  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(startTime) || !Number.isFinite(worldTime)) {
+    return false;
+  }
+  return worldTime >= startTime + seconds;
+}
+
+function isCombatDurationExpired(duration = {}, context = {}) {
+  const rounds = coerceNumber(duration?.rounds, NaN);
+  const turns = coerceNumber(duration?.turns, 0);
+  const startRound = coerceNumber(duration?.startRound, NaN);
+  const startTurn = coerceNumber(duration?.startTurn, 0);
+  const combat = context?.combat ?? game?.combat ?? null;
+  const currentRound = coerceNumber(combat?.round, NaN);
+  const currentTurn = coerceNumber(combat?.turn, 0);
+  if (!Number.isFinite(rounds) || rounds <= 0 || !Number.isFinite(startRound) || !Number.isFinite(currentRound)) {
+    return false;
+  }
+  const elapsedTurns = ((currentRound - startRound) * Math.max(Array.from(combat?.turns ?? []).length, 1)) + (currentTurn - startTurn);
+  const targetTurns = (rounds * Math.max(Array.from(combat?.turns ?? []).length, 1)) + turns;
+  return elapsedTurns >= targetTurns;
+}
+
+function buildOwnerEffectExpirationDecision(activeEffect, region, expiration) {
+  const effectData = activeEffect?.toObject?.() ?? {};
+  const pzFlags = effectData.flags?.[MODULE_ID] ?? activeEffect?.flags?.[MODULE_ID] ?? {};
+  const runtime = getRegionRuntimeFlags(region) ?? {};
+  const concentrationRequired = pzFlags.concentrationRequired === true || runtime.normalizedDefinition?.concentration?.required === true;
+  const cleanupKey = buildOwnerEffectExpirationCleanupKey(activeEffect, region);
+  const cleanupAlreadyRunning = cleanupKey ? activeDedicatedOwnerExpirationCleanups.has(cleanupKey) : false;
+  const managedOwnerEffect = isPersistentZonesDedicatedOwnerEffect(activeEffect);
+  const cleanupAllowed = Boolean(
+    managedOwnerEffect &&
+    !concentrationRequired &&
+    region &&
+    expiration.expired &&
+    !cleanupAlreadyRunning
+  );
+  return {
+    effectUuid: activeEffect?.uuid ?? null,
+    regionUuid: region?.uuid ?? pzFlags.regionUuid ?? null,
+    sceneId: region?.parent?.id ?? pzFlags.sceneId ?? null,
+    groupId: runtime.groupId ?? pzFlags.groupId ?? null,
+    castInstanceId: runtime.castInstanceId ?? pzFlags.castInstanceId ?? null,
+    managedOwnerEffect,
+    concentrationRequired,
+    disabled: expiration.disabled,
+    duration: duplicateData(expiration.duration ?? {}),
+    remaining: expiration.remaining,
+    durationExpired: expiration.durationExpired,
+    expirationDetected: expiration.expired,
+    decisionReason: cleanupAllowed ? expiration.reason : !managedOwnerEffect ? "not-managed-owner-effect" :
+      concentrationRequired ? "concentration-effect-ignored" :
+        !region ? "linked-region-not-found" :
+          cleanupAlreadyRunning ? "cleanup-already-running" : expiration.reason,
+    cleanupAllowed,
+    cleanupAlreadyRunning
+  };
+}
+
+async function cleanupExpiredDedicatedOwnerRegion(activeEffect, region, {
+  decision = {},
+  expiration = {}
+} = {}) {
+  const cleanupKey = buildOwnerEffectExpirationCleanupKey(activeEffect, region);
+  if (!cleanupKey) {
+    return { cleanupSucceeded: false, reason: "missing-cleanup-key" };
+  }
+  if (activeDedicatedOwnerExpirationCleanups.has(cleanupKey)) {
+    const result = buildOwnerEffectExpirationCleanupResult(activeEffect, region, {
+      alreadyCleaned: true,
+      cleanupSucceeded: true,
+      errors: []
+    });
+    logOwnerEffectExpirationCleanupResult(result);
+    return result;
+  }
+  activeDedicatedOwnerExpirationCleanups.add(cleanupKey);
+  try {
+    const scene = region?.parent ?? null;
+    const runtime = getRegionRuntimeFlags(region) ?? {};
+    const linkedWallCountBefore = Array.from(runtime.linkedDocuments?.wallIds ?? []).length;
+    const linkedLightCountBefore = Array.from(runtime.linkedDocuments?.lightIds ?? []).length;
+    const regionFound = Boolean(scene?.regions?.get?.(region.id));
+    if (regionFound) {
+      await scene.deleteEmbeddedDocuments("Region", [region.id], {
+        persistentZonesEffectLifecycleCleanup: true,
+        persistentZonesOwnerEffectExpirationCleanup: true
+      });
+    }
+    const result = buildOwnerEffectExpirationCleanupResult(activeEffect, region, {
+      linkedWallCountBefore,
+      linkedLightCountBefore,
+      regionFound,
+      regionDeleted: regionFound,
+      linkedDocumentsDeleted: regionFound,
+      effectDeletedByPZ: false,
+      alreadyCleaned: !regionFound,
+      cleanupSucceeded: true,
+      errors: []
+    });
+    logOwnerEffectExpirationCleanupResult(result);
+    return result;
+  } catch (caughtError) {
+    const result = buildOwnerEffectExpirationCleanupResult(activeEffect, region, {
+      cleanupSucceeded: false,
+      errors: [caughtError?.message ?? "unknown"]
+    });
+    logOwnerEffectExpirationCleanupResult(result);
+    return result;
+  } finally {
+    activeDedicatedOwnerExpirationCleanups.delete(cleanupKey);
+  }
+}
+
+function buildOwnerEffectExpirationCleanupKey(activeEffect, region) {
+  const effectUuid = activeEffect?.uuid ?? null;
+  const regionUuid = region?.uuid ?? activeEffect?.flags?.[MODULE_ID]?.regionUuid ?? null;
+  return effectUuid && regionUuid ? `${effectUuid}|${regionUuid}` : null;
+}
+
+function logOwnerEffectExpirationEvent(activeEffect, region, {
+  hookName = "manual",
+  changed = {},
+  context = {},
+  expiration = {}
+} = {}) {
+  try {
+    const data = activeEffect?.toObject?.() ?? {};
+    const beforeDuration = duplicateData(data.duration ?? activeEffect?.duration ?? {});
+    console.warn(`[${MODULE_ID}][lifecycle] PZ OWNER EFFECT EXPIRATION EVENT`, {
+      hookName,
+      timestamp: Date.now(),
+      effectId: activeEffect?.id ?? null,
+      effectUuid: activeEffect?.uuid ?? null,
+      effectName: activeEffect?.name ?? data.name ?? null,
+      actorUuid: activeEffect?.parent?.uuid ?? null,
+      regionId: region?.id ?? data.flags?.[MODULE_ID]?.regionId ?? null,
+      regionUuid: region?.uuid ?? data.flags?.[MODULE_ID]?.regionUuid ?? null,
+      managedOwnerEffect: isPersistentZonesDedicatedOwnerEffect(activeEffect),
+      disabledBefore: changed?.disabled?.from ?? null,
+      disabledAfter: Boolean(activeEffect?.disabled ?? data.disabled),
+      durationBefore: beforeDuration,
+      durationAfter: beforeDuration,
+      expiredBefore: null,
+      expiredAfter: expiration.durationExpired ?? false,
+      remainingBefore: null,
+      remainingAfter: expiration.remaining ?? null,
+      combatId: context?.combat?.id ?? game?.combat?.id ?? null,
+      round: context?.combat?.round ?? game?.combat?.round ?? null,
+      turn: context?.combat?.turn ?? game?.combat?.turn ?? null,
+      worldTime: context?.worldTime ?? game?.time?.worldTime ?? null,
+      deletionObserved: false,
+      expirationSignalDetected: expiration.expired ?? false,
+      expirationSignalSource: expiration.signalSource ?? null
+    });
+  } catch (caughtError) {
+    logV14RegionDiagnostic("ownerEffectExpirationEventLogFailed", {
+      reason: caughtError?.message ?? "unknown"
+    });
+  }
+}
+
+function logOwnerEffectExpirationDecision(decision = {}) {
+  try {
+    console.warn(`[${MODULE_ID}][lifecycle] PZ OWNER EFFECT EXPIRATION DECISION`, duplicateData(decision));
+  } catch (caughtError) {
+    logV14RegionDiagnostic("ownerEffectExpirationDecisionLogFailed", {
+      reason: caughtError?.message ?? "unknown"
+    });
+  }
+}
+
+function buildOwnerEffectExpirationCleanupResult(activeEffect, region, {
+  linkedWallCountBefore = null,
+  linkedLightCountBefore = null,
+  regionFound = null,
+  regionDeleted = false,
+  linkedDocumentsDeleted = false,
+  effectDeletedByPZ = false,
+  alreadyCleaned = false,
+  cleanupSucceeded = false,
+  errors = []
+} = {}) {
+  const runtime = getRegionRuntimeFlags(region) ?? {};
+  const pzFlags = activeEffect?.flags?.[MODULE_ID] ?? {};
+  return {
+    effectUuid: activeEffect?.uuid ?? null,
+    regionUuid: region?.uuid ?? pzFlags.regionUuid ?? null,
+    sceneId: region?.parent?.id ?? pzFlags.sceneId ?? null,
+    groupId: runtime.groupId ?? pzFlags.groupId ?? null,
+    castInstanceId: runtime.castInstanceId ?? pzFlags.castInstanceId ?? null,
+    regionFound,
+    linkedWallCountBefore: linkedWallCountBefore ?? Array.from(runtime.linkedDocuments?.wallIds ?? []).length,
+    linkedLightCountBefore: linkedLightCountBefore ?? Array.from(runtime.linkedDocuments?.lightIds ?? []).length,
+    regionDeleted,
+    linkedDocumentsDeleted,
+    effectDeletedByPZ,
+    alreadyCleaned,
+    cleanupSucceeded,
+    errors: duplicateData(errors ?? [])
+  };
+}
+
+function logOwnerEffectExpirationCleanupResult(result = {}) {
+  try {
+    console.warn(`[${MODULE_ID}][lifecycle] PZ OWNER EFFECT EXPIRATION CLEANUP RESULT`, duplicateData(result));
+  } catch (caughtError) {
+    logV14RegionDiagnostic("ownerEffectExpirationCleanupResultLogFailed", {
+      reason: caughtError?.message ?? "unknown"
+    });
+  }
 }
 
 async function reconcileOwnerEffectLinksForActiveEffect(activeEffect, { reason = "active-effect", changedKeys = [] } = {}) {
