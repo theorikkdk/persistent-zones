@@ -3652,7 +3652,7 @@ function sanitizeGroupIdComponent(value) {
   return String(value ?? "none").replace(/[^a-zA-Z0-9_.-]+/g, "_");
 }
 
-function onUpdateRegion(regionDocument, changed = {}) {
+async function onUpdateRegion(regionDocument, changed = {}, options = {}) {
   logV14RegionDiagnostic("regionDocumentFlagsAfterUpdate", {
     regionDocumentId: regionDocument?.id ?? null,
     sceneId: regionDocument?.parent?.id ?? null,
@@ -3680,6 +3680,46 @@ function onUpdateRegion(regionDocument, changed = {}) {
       hookErrorResolved: true
     });
   }
+
+  if (shouldSyncLinkedDocumentsAfterRegionUpdate(regionDocument, changed, options)) {
+    const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+    await syncLinkedDocumentsSafely({
+      templateDocument: null,
+      regionDocument,
+      normalizedDefinition: runtime.normalizedDefinition ?? null,
+      shapes: null,
+      stage: "update-region-hook"
+    });
+  }
+}
+
+function shouldSyncLinkedDocumentsAfterRegionUpdate(regionDocument, changed = {}, options = {}) {
+  if (options?.persistentZonesLinkedSync) {
+    return false;
+  }
+  const runtime = getRegionRuntimeFlags(regionDocument);
+  if (!runtime?.normalizedDefinition) {
+    return false;
+  }
+  const linkedWallsEnabled = runtime.normalizedDefinition?.linkedWalls?.enabled === true;
+  const linkedLightEnabled = runtime.normalizedDefinition?.linkedLight?.enabled === true;
+  if (!linkedWallsEnabled && !linkedLightEnabled) {
+    return false;
+  }
+  const keys = Object.keys(changed ?? {});
+  if (!keys.length) {
+    return false;
+  }
+  return keys.some((key) => {
+    const normalizedKey = String(key ?? "");
+    return normalizedKey === "shapes" ||
+      normalizedKey.startsWith("shapes.") ||
+      normalizedKey === "elevation" ||
+      normalizedKey.includes(`${RUNTIME_FLAG_KEY}.linkedWalls`) ||
+      normalizedKey.includes(`${RUNTIME_FLAG_KEY}.linkedLight`) ||
+      normalizedKey.includes("normalizedDefinition.linkedWalls") ||
+      normalizedKey.includes("normalizedDefinition.linkedLight");
+  });
 }
 
 export async function createRegionFromTemplate(
