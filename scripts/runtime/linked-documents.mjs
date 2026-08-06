@@ -16,31 +16,154 @@ const DEFAULT_LINKED_LIGHT_ALPHA = 0.15;
 const DEFAULT_LINKED_LIGHT_LUMINOSITY = 0.5;
 const DEFAULT_LINKED_LIGHT_ANGLE = 360;
 const DEFAULT_LINKED_LIGHT_COLOR = "#fff4b0";
+const DEFAULT_RING_LIGHT_MAX_COUNT = 24;
+const DEFAULT_RING_LIGHT_OVERLAP_TARGET = 0.28;
+const MAX_RING_LIGHT_ANGULAR_GAP = Math.PI / 4;
+const linkedSyncStates = new Map();
+let linkedSyncRequestCounter = 0;
 
 export async function syncLinkedDocumentsForRegion({
   templateDocument,
   regionDocument,
   normalizedDefinition = null,
-  shapes = null
+  shapes = null,
+  reason = "syncLinkedDocumentsForRegion"
+} = {}) {
+  return enqueueLinkedDocumentsSync({
+    templateDocument,
+    regionDocument,
+    normalizedDefinition,
+    shapes,
+    reason
+  });
+}
+
+async function enqueueLinkedDocumentsSync({
+  templateDocument,
+  regionDocument,
+  normalizedDefinition = null,
+  shapes = null,
+  reason = "syncLinkedDocumentsForRegion"
 } = {}) {
   const scene = regionDocument?.parent ?? templateDocument?.parent ?? null;
   if (!scene || !regionDocument) {
     return { wallIds: [], lightIds: [], syncApplied: false };
   }
-
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const key = buildLinkedSyncKey(scene, regionDocument);
+  const requestId = `linked-sync-${++linkedSyncRequestCounter}`;
+  const requestedAt = Date.now();
+  const revision = requestedAt;
+  const existingState = linkedSyncStates.get(key);
+  safeLinkedDiagnosticLog("PZ LINKED SYNC REQUEST", {
+    requestId,
+    sceneId: scene?.id ?? null,
+    regionId: regionDocument?.id ?? null,
+    groupId: runtime.groupId ?? null,
+    reason,
+    revision,
+    requestedAt,
+    runningRequestId: existingState?.currentRequestId ?? null,
+    rerunRequested: Boolean(existingState?.rerunRequested),
+    internalSyncOption: false
+  });
+
+  if (existingState?.running) {
+    const previousLatestRevision = existingState.latestRequestedRevision;
+    existingState.latestArgs = { templateDocument, regionDocument, normalizedDefinition, shapes, reason };
+    existingState.latestRequestedRevision = revision;
+    existingState.latestReason = reason;
+    existingState.rerunRequested = true;
+    safeLinkedDiagnosticLog("PZ LINKED SYNC COALESCED", {
+      runningRequestId: existingState.currentRequestId,
+      incomingRequestId: requestId,
+      regionId: regionDocument?.id ?? null,
+      previousLatestRevision,
+      newLatestRevision: revision,
+      latestReason: reason
+    });
+    return existingState.completionPromise;
+  }
+
+  const state = {
+    running: true,
+    currentRequestId: requestId,
+    latestRequestedRevision: revision,
+    latestReason: reason,
+    latestArgs: { templateDocument, regionDocument, normalizedDefinition, shapes, reason },
+    rerunRequested: false,
+    completionPromise: null
+  };
+  state.completionPromise = runLinkedDocumentsSyncQueue(key, state);
+  linkedSyncStates.set(key, state);
+  return state.completionPromise;
+}
+
+async function runLinkedDocumentsSyncQueue(key, state) {
+  let result = { wallIds: [], lightIds: [], syncApplied: false };
+  try {
+    let guard = 0;
+    do {
+      guard += 1;
+      state.rerunRequested = false;
+      const requestId = state.currentRequestId;
+      result = await syncLinkedDocumentsForRegionNow({
+        ...state.latestArgs,
+        requestId,
+        revision: state.latestRequestedRevision
+      });
+      if (state.rerunRequested) {
+        state.currentRequestId = `linked-sync-${++linkedSyncRequestCounter}`;
+      }
+    } while (state.rerunRequested && guard < 3);
+    return result;
+  } finally {
+    linkedSyncStates.delete(key);
+  }
+}
+
+async function syncLinkedDocumentsForRegionNow({
+  templateDocument,
+  regionDocument,
+  normalizedDefinition = null,
+  shapes = null,
+  reason = "syncLinkedDocumentsForRegion",
+  requestId = null,
+  revision = null
+} = {}) {
+  const scene = regionDocument?.parent ?? templateDocument?.parent ?? null;
+  const currentRegion = scene?.regions?.get?.(regionDocument?.id) ?? regionDocument;
+  if (!scene || !currentRegion) {
+    return { wallIds: [], lightIds: [], syncApplied: false };
+  }
+
+  const runtime = getRegionRuntimeFlags(currentRegion) ?? {};
   const activeDefinition = normalizedDefinition ?? runtime.normalizedDefinition ?? null;
   const linkedDocuments = duplicateData(runtime.linkedDocuments) ?? { wallIds: [], lightIds: [] };
-  const shapeData = getFinalRegionShapeData(regionDocument, shapes);
-  const geometrySummary = summarizeLinkedGeometrySource({ scene, regionDocument, shapes: shapeData });
+  const shapeData = getFinalRegionShapeData(currentRegion, shapes);
+  const geometrySummary = summarizeLinkedGeometrySource({ scene, regionDocument: currentRegion, shapes: shapeData });
+  const initialWalls = collectLinkedDocuments({ scene, regionDocument: currentRegion, existingIds: linkedDocuments.wallIds ?? [], collectionName: "walls", kind: "wall" });
+  const initialLights = collectLinkedDocuments({ scene, regionDocument: currentRegion, existingIds: linkedDocuments.lightIds ?? [], collectionName: "lights", kind: "light" });
+  const startedAt = Date.now();
+  safeLinkedDiagnosticLog("PZ LINKED SYNC START", {
+    requestId,
+    sceneId: scene?.id ?? null,
+    regionId: currentRegion?.id ?? null,
+    revision,
+    startedAt,
+    existingWallCount: initialWalls.length,
+    existingLightCount: initialLights.length,
+    existingWallKeys: initialWalls.map((document) => getLinkedWallKey(document)).filter(Boolean),
+    existingLightSlots: initialLights.map((document) => getLinkedLightSlotKey(document)).filter(Boolean)
+  });
   for (const row of geometrySummary) {
-    console.warn(`[${MODULE_ID}][linked] PZ LINKED GEOMETRY SOURCE`, row);
+    safeLinkedDiagnosticLog("PZ LINKED GEOMETRY SOURCE", row);
   }
 
   const wallResult = await syncLinkedWalls({
     scene,
     templateDocument,
-    regionDocument,
+    regionDocument: currentRegion,
     linkedWalls: activeDefinition?.linkedWalls ?? {},
     shapes: shapeData,
     existingIds: linkedDocuments.wallIds ?? [],
@@ -50,7 +173,7 @@ export async function syncLinkedDocumentsForRegion({
   const lightResult = await syncLinkedLight({
     scene,
     templateDocument,
-    regionDocument,
+    regionDocument: currentRegion,
     linkedLight: activeDefinition?.linkedLight ?? {},
     shapes: shapeData,
     existingIds: linkedDocuments.lightIds ?? [],
@@ -61,20 +184,26 @@ export async function syncLinkedDocumentsForRegion({
   const wallIds = wallResult.ids ?? [];
   const lightIds = lightResult.ids ?? [];
   const nextLinkedDocuments = { wallIds, lightIds };
-  await updateRegionLinkedDocuments(regionDocument, nextLinkedDocuments);
-  console.warn(`[${MODULE_ID}][linked] PZ LINKED DOCUMENT SYNC RESULT`, {
-    reason: "syncLinkedDocumentsForRegion",
-    regionId: regionDocument?.id ?? null,
+  await updateRegionLinkedDocuments(currentRegion, nextLinkedDocuments);
+  safeLinkedDiagnosticLog("PZ LINKED DOCUMENT SYNC RESULT", {
+    reason,
+    regionId: currentRegion?.id ?? null,
     groupId: runtime.groupId ?? null,
     shapeType: geometrySummary.map((row) => row.shapeType).filter(Boolean).join(",") || null,
     existingWallCount: wallResult.existingCount ?? 0,
     createdWallIds: wallResult.createdIds ?? [],
     updatedWallIds: wallResult.updatedIds ?? [],
     deletedWallIds: wallResult.deletedIds ?? [],
+    wallSyncSucceeded: wallResult.syncSucceeded !== false,
+    wallCountAfterSync: wallIds.length,
+    wallPreset: activeDefinition?.linkedWalls?.presetId ?? activeDefinition?.linkedWalls?.id ?? activeDefinition?.linkedWalls?.preset ?? null,
+    wallsExistAfterSync: wallIds.every((wallId) => Boolean(scene?.walls?.get?.(wallId))),
     existingLightCount: lightResult.existingCount ?? 0,
     createdLightIds: lightResult.createdIds ?? [],
     updatedLightIds: lightResult.updatedIds ?? [],
     deletedLightIds: lightResult.deletedIds ?? [],
+    lightSyncSucceeded: lightResult.syncSucceeded !== false,
+    lightCountAfterSync: lightIds.length,
     geometryChanged: Boolean(wallResult.geometryChanged || lightResult.geometryChanged),
     positionChanged: Boolean(wallResult.positionChanged || lightResult.positionChanged),
     elevationChanged: Boolean(wallResult.elevationChanged || lightResult.elevationChanged),
@@ -84,10 +213,31 @@ export async function syncLinkedDocumentsForRegion({
 
   debug("linkedDocsSync", {
     templateId: templateDocument?.id ?? runtime.templateId ?? null,
-    regionId: regionDocument?.id ?? null,
+    regionId: currentRegion?.id ?? null,
     wallIds,
     lightIds,
     syncApplied: true
+  });
+
+  safeLinkedDiagnosticLog("PZ LINKED SYNC END", {
+    requestId,
+    regionId: currentRegion?.id ?? null,
+    revision,
+    createdWallIds: wallResult.createdIds ?? [],
+    updatedWallIds: wallResult.updatedIds ?? [],
+    deletedWallIds: wallResult.deletedIds ?? [],
+    createdLightIds: lightResult.createdIds ?? [],
+    updatedLightIds: lightResult.updatedIds ?? [],
+    deletedLightIds: lightResult.deletedIds ?? [],
+    duplicateWallIdsDeleted: wallResult.duplicateIdsDeleted ?? [],
+    duplicateLightIdsDeleted: lightResult.duplicateIdsDeleted ?? [],
+    finalWallCount: wallIds.length,
+    finalLightCount: lightIds.length,
+    staleRequest: false,
+    rerunScheduled: Boolean(linkedSyncStates.get(buildLinkedSyncKey(scene, currentRegion))?.rerunRequested),
+    durationMs: Date.now() - startedAt,
+    syncSucceeded: true,
+    errors: []
   });
 
   return {
@@ -168,7 +318,7 @@ export async function cleanupLinkedDocumentsForRegion(regionDocument, {
     collectionName: "lights",
     kind: "light"
   }).map((document) => document.id);
-  console.warn(`[${MODULE_ID}][lifecycle] PZ LINKED DOCUMENT CLEANUP RESULT`, {
+  safeLinkedDiagnosticLog("PZ LINKED DOCUMENT CLEANUP RESULT", {
     regionId: regionDocument?.id ?? null,
     groupId: runtime.groupId ?? null,
     ownerEffectUuid: runtime.ownerEffectUuid ?? runtime.activeEffectUuid ?? runtime.concentrationEffectUuid ?? null,
@@ -206,9 +356,14 @@ async function syncLinkedWalls({
     collectionName: "walls",
     kind: "wall"
   });
+  const wallDuplicateReconciliation = await reconcileDuplicateLinkedDocuments(scene, regionDocument, existingWalls, {
+    kind: "wall",
+    existingIds
+  });
+  const usableExistingWalls = wallDuplicateReconciliation.keptDocuments;
 
   if (!linkedWalls?.enabled) {
-    return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, existingWalls, "disabled");
+    return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, usableExistingWalls, "disabled");
   }
 
   const desiredWalls = buildLinkedWallData({
@@ -220,13 +375,13 @@ async function syncLinkedWalls({
   });
 
   if (!desiredWalls.length) {
-    return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, existingWalls, "unsupported-shape");
+    return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, usableExistingWalls, "unsupported-shape");
   }
 
-  const existingUsesWallHeight = existingWalls.some((wallDocument) => wallDocument?.flags?.["wall-height"] !== undefined);
+  const existingUsesWallHeight = usableExistingWalls.some((wallDocument) => wallDocument?.flags?.["wall-height"] !== undefined);
   const desiredUsesWallHeight = desiredWalls.some((wallData) => wallData?.flags?.["wall-height"] !== undefined);
   const wallHeightModeChanged = existingUsesWallHeight !== desiredUsesWallHeight;
-  const orderedExisting = orderLinkedDocumentsForDesired(existingWalls, "wall");
+  const orderedExisting = orderLinkedDocumentsForDesired(usableExistingWalls, "wall");
 
   if (orderedExisting.length === desiredWalls.length && orderedExisting.length && !wallHeightModeChanged) {
     const updates = orderedExisting.map((wallDocument, index) => ({
@@ -249,7 +404,8 @@ async function syncLinkedWalls({
       existingCount: existingWalls.length,
       createdIds: [],
       updatedIds: Array.from(updated ?? []).map((document) => document?.id ?? null).filter(Boolean),
-      deletedIds: [],
+      deletedIds: wallDuplicateReconciliation.deletedIds,
+      duplicateIdsDeleted: wallDuplicateReconciliation.deletedIds,
       geometryChanged: true,
       positionChanged: true,
       elevationChanged: false
@@ -268,7 +424,10 @@ async function syncLinkedWalls({
   }
 
   const excessWalls = wallHeightModeChanged ? orderedExisting : orderedExisting.slice(reusableCount);
-  const deletedIds = excessWalls.map((document) => document.id).filter(Boolean);
+  const deletedIds = [
+    ...wallDuplicateReconciliation.deletedIds,
+    ...excessWalls.map((document) => document.id).filter(Boolean)
+  ];
   if (deletedIds.length) {
     await scene.deleteEmbeddedDocuments("Wall", deletedIds, { persistentZonesLinkedSync: true }).catch(() => []);
     debug("Linked wall documents deleted.", {
@@ -305,6 +464,7 @@ async function syncLinkedWalls({
     createdIds: linkedDocumentIds,
     updatedIds,
     deletedIds,
+    duplicateIdsDeleted: wallDuplicateReconciliation.deletedIds,
     geometryChanged: true,
     positionChanged: true,
     elevationChanged: false
@@ -328,9 +488,14 @@ async function syncLinkedLight({
     collectionName: "lights",
     kind: "light"
   });
+  const lightDuplicateReconciliation = await reconcileDuplicateLinkedDocuments(scene, regionDocument, existingLights, {
+    kind: "light",
+    existingIds
+  });
+  const usableExistingLights = lightDuplicateReconciliation.keptDocuments;
 
   if (!linkedLight?.enabled) {
-    return deleteLinkedLightDocuments(scene, regionDocument, templateDocument, existingLights, "disabled");
+    return deleteLinkedLightDocuments(scene, regionDocument, templateDocument, usableExistingLights, "disabled");
   }
 
   const desiredLights = buildLinkedLightData({
@@ -343,86 +508,96 @@ async function syncLinkedLight({
   });
 
   if (!desiredLights.length) {
-    return deleteLinkedLightDocuments(scene, regionDocument, templateDocument, existingLights, "unsupported-shape");
+    const deleteResult = await deleteLinkedLightDocuments(scene, regionDocument, templateDocument, usableExistingLights, "no-valid-light-slots");
+    deleteResult.deletedIds = [...(deleteResult.deletedIds ?? []), ...lightDuplicateReconciliation.deletedIds];
+    deleteResult.duplicateIdsDeleted = lightDuplicateReconciliation.deletedIds;
+    logLinkedLightSceneClipResult({
+      regionDocument,
+      reason: "no-valid-light-slots",
+      theoreticalSlots: desiredLights._pzTheoreticalSlots ?? [],
+      acceptedSlots: [],
+      rejectedOutsideSceneSlots: desiredLights._pzRejectedOutsideSceneSlots ?? [],
+      existingLights: usableExistingLights,
+      updatedSlots: [],
+      createdSlots: [],
+      deletedSlots: existingLights.map((document) => getLinkedLightSlotKey(document)).filter(Boolean),
+      syncSucceeded: true,
+      errors: []
+    });
+    return deleteResult;
   }
 
-  const orderedExisting = orderLinkedDocumentsForDesired(existingLights, "light");
-  if (orderedExisting.length === desiredLights.length && orderedExisting.length) {
-    const updates = orderedExisting.map((lightDocument, index) => ({
-      _id: lightDocument.id,
-      ...desiredLights[index]
-    }));
-    const updated = await scene.updateEmbeddedDocuments("AmbientLight", updates, { persistentZonesLinkedSync: true });
-    const linkedDocumentIds = orderedExisting.map((document) => document.id);
+  const desiredBySlot = new Map(desiredLights.map((light) => [getLinkedLightSlotKey(light), light]));
+  const existingBySlot = new Map(orderLinkedDocumentsForDesired(usableExistingLights, "light")
+    .map((document) => [getLinkedLightSlotKey(document), document])
+    .filter(([slot]) => Boolean(slot)));
+  const updates = [];
+  const updatedSlots = [];
+  for (const [slot, desiredLight] of desiredBySlot.entries()) {
+    const existingLight = existingBySlot.get(slot);
+    if (!existingLight) {
+      continue;
+    }
+    updates.push({
+      _id: existingLight.id,
+      ...desiredLight
+    });
+    updatedSlots.push(slot);
+  }
 
+  const updated = updates.length
+    ? await scene.updateEmbeddedDocuments("AmbientLight", updates, { persistentZonesLinkedSync: true })
+    : [];
+  const slotsToDelete = Array.from(existingBySlot.keys()).filter((slot) => !desiredBySlot.has(slot));
+  const deletedIds = slotsToDelete.map((slot) => existingBySlot.get(slot)?.id).filter(Boolean);
+  if (deletedIds.length) {
+    await scene.deleteEmbeddedDocuments("AmbientLight", deletedIds, { persistentZonesLinkedSync: true }).catch(() => []);
     debug("Linked light document updated.", {
       templateId: templateDocument?.id ?? null,
       regionId: regionDocument?.id ?? null,
-      linkedDocumentIds,
-      syncApplied: true
-    });
-
-    return {
-      ids: linkedDocumentIds,
-      existingCount: existingLights.length,
-      createdIds: [],
-      updatedIds: Array.from(updated ?? []).map((document) => document?.id ?? null).filter(Boolean),
-      deletedIds: [],
-      geometryChanged: true,
-      positionChanged: true,
-      elevationChanged: updates.some((update) => update.elevation !== undefined)
-    };
-  }
-
-  const reusableCount = Math.min(orderedExisting.length, desiredLights.length);
-  const updatedIds = [];
-  if (reusableCount) {
-    const updates = orderedExisting.slice(0, reusableCount).map((lightDocument, index) => ({
-      _id: lightDocument.id,
-      ...desiredLights[index]
-    }));
-    const updated = await scene.updateEmbeddedDocuments("AmbientLight", updates, { persistentZonesLinkedSync: true });
-    updatedIds.push(...Array.from(updated ?? []).map((document) => document?.id ?? null).filter(Boolean));
-  }
-
-  const excessLights = orderedExisting.slice(reusableCount);
-  const deletedIds = excessLights.map((document) => document.id).filter(Boolean);
-  if (deletedIds.length) {
-    await scene.deleteEmbeddedDocuments("AmbientLight", deletedIds, { persistentZonesLinkedSync: true }).catch(() => []);
-    debug("Linked light documents deleted.", {
-      templateId: templateDocument?.id ?? null,
-      regionId: regionDocument?.id ?? null,
-      linkedDocumentIds: deletedIds,
-      reason: "recreate",
+      linkedDocumentIds: Array.from(updated ?? []).map((document) => document?.id ?? null).filter(Boolean),
       syncApplied: true
     });
   }
 
-  const lightsToCreate = desiredLights.slice(reusableCount);
+  const lightsToCreate = Array.from(desiredBySlot.entries())
+    .filter(([slot]) => !existingBySlot.has(slot))
+    .map(([, desiredLight]) => desiredLight);
   const created = lightsToCreate.length
     ? await scene.createEmbeddedDocuments("AmbientLight", lightsToCreate, { persistentZonesLinkedSync: true })
     : [];
-  const linkedDocumentIds = (Array.isArray(created) ? created : [])
+  const createdIds = (Array.isArray(created) ? created : [])
     .map((document) => document?.id ?? null)
     .filter(Boolean);
+  const createdSlots = lightsToCreate.map((light) => getLinkedLightSlotKey(light)).filter(Boolean);
   const finalIds = [
-    ...orderedExisting.slice(0, reusableCount).map((document) => document.id).filter(Boolean),
-    ...linkedDocumentIds
+    ...Array.from(desiredBySlot.keys())
+      .map((slot) => existingBySlot.get(slot)?.id)
+      .filter(Boolean),
+    ...createdIds
   ];
 
-  debug("Linked light document created.", {
-    templateId: templateDocument?.id ?? null,
-    regionId: regionDocument?.id ?? null,
-    linkedDocumentIds,
-    syncApplied: linkedDocumentIds.length > 0
+  logLinkedLightSceneClipResult({
+    regionDocument,
+    reason: "sync-linked-light",
+    theoreticalSlots: desiredLights._pzTheoreticalSlots ?? Array.from(desiredBySlot.keys()),
+    acceptedSlots: Array.from(desiredBySlot.keys()),
+    rejectedOutsideSceneSlots: desiredLights._pzRejectedOutsideSceneSlots ?? [],
+    existingLights: usableExistingLights,
+    updatedSlots,
+    createdSlots,
+    deletedSlots: slotsToDelete,
+    syncSucceeded: true,
+    errors: []
   });
 
   return {
     ids: finalIds,
     existingCount: existingLights.length,
-    createdIds: linkedDocumentIds,
-    updatedIds,
-    deletedIds,
+    createdIds,
+    updatedIds: Array.from(updated ?? []).map((document) => document?.id ?? null).filter(Boolean),
+    deletedIds: [...lightDuplicateReconciliation.deletedIds, ...deletedIds],
+    duplicateIdsDeleted: lightDuplicateReconciliation.deletedIds,
     geometryChanged: true,
     positionChanged: true,
     elevationChanged: desiredLights.some((light) => light.elevation !== undefined)
@@ -508,7 +683,7 @@ function buildLinkedWallData({
     segments,
     shapes
   });
-  console.warn(`[${MODULE_ID}][linked] PZ LINKED WALL GEOMETRY PLAN`, geometryPlan);
+  safeLinkedDiagnosticLog("PZ LINKED WALL GEOMETRY PLAN", geometryPlan);
 
   return segments.map((segment, index) => {
     const flags = buildLinkedDocumentFlags({
@@ -575,7 +750,12 @@ function buildLinkedLightData({
     dim
   });
   if (!layout.positions.length) {
-    return [];
+    const emptyLights = [];
+    Object.defineProperties(emptyLights, {
+      _pzTheoreticalSlots: { value: layout.positions._pzTheoreticalSlots ?? [], enumerable: false },
+      _pzRejectedOutsideSceneSlots: { value: layout.positions._pzRejectedOutsideSceneSlots ?? [], enumerable: false }
+    });
+    return emptyLights;
   }
 
   debug("Prepared linked light config.", {
@@ -586,9 +766,9 @@ function buildLinkedLightData({
     linkedLightDim: dim,
     linkedLightLuminosity: coerceNumber(linkedLight?.luminosity, DEFAULT_LINKED_LIGHT_LUMINOSITY)
   });
-  console.warn(`[${MODULE_ID}][linked] PZ LINKED LIGHT LAYOUT PLAN`, layout.logData);
+  safeLinkedDiagnosticLog("PZ LINKED LIGHT LAYOUT PLAN", layout.logData);
 
-  return layout.positions.map((position, index) => ({
+  const lightDocuments = layout.positions.map((position, index) => ({
     x: position.x,
     y: position.y,
     rotation: 0,
@@ -619,9 +799,17 @@ function buildLinkedLightData({
       groupId: runtime.groupId ?? null,
       lightIndex: index,
       layoutType: layout.layoutType,
+      layoutSlot: position.slot ?? null,
+      layoutTrack: position.track ?? null,
+      layoutTrackRadius: position.trackRadius ?? null,
       layoutAngle: position.angle ?? null
     })
   }));
+  Object.defineProperties(lightDocuments, {
+    _pzTheoreticalSlots: { value: layout.positions._pzTheoreticalSlots ?? layout.positions.map((position) => position.slot).filter(Boolean), enumerable: false },
+    _pzRejectedOutsideSceneSlots: { value: layout.positions._pzRejectedOutsideSceneSlots ?? [], enumerable: false }
+  });
+  return lightDocuments;
 }
 
 function collectLinkedDocuments({
@@ -633,33 +821,44 @@ function collectLinkedDocuments({
 }) {
   const collection = scene?.[collectionName];
   const existing = new Map();
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const expectedGroupId = runtime.groupId ?? null;
 
   for (const id of Array.from(existingIds ?? [])) {
     const document = collection?.get?.(id);
-    if (document) {
+    if (document && isManagedLinkedDocumentForRegion(document, regionDocument, kind, expectedGroupId)) {
       existing.set(document.id, document);
     }
   }
 
   for (const document of collection?.contents ?? []) {
-    const pzFlags = document?.flags?.[MODULE_ID] ?? {};
-    const linkedFlag = pzFlags.linkedDocument ?? null;
-    const documentKind = pzFlags.linkedDocumentType ?? linkedFlag?.kind ?? null;
-    if (documentKind !== kind) {
-      continue;
-    }
-
-    if (
-      pzFlags.regionId === regionDocument?.id ||
-      pzFlags.regionUuid === regionDocument?.uuid ||
-      linkedFlag?.regionId === regionDocument?.id ||
-      linkedFlag?.regionUuid === regionDocument?.uuid
-    ) {
+    if (isManagedLinkedDocumentForRegion(document, regionDocument, kind, expectedGroupId)) {
       existing.set(document.id, document);
     }
   }
 
   return Array.from(existing.values());
+}
+
+function isManagedLinkedDocumentForRegion(document, regionDocument, kind, expectedGroupId = null) {
+  const pzFlags = document?.flags?.[MODULE_ID] ?? {};
+  const linkedFlag = pzFlags.linkedDocument ?? null;
+  const documentKind = pzFlags.linkedDocumentType ?? linkedFlag?.kind ?? null;
+  if (documentKind !== kind) {
+    return false;
+  }
+  if (pzFlags.managedLinkedDocument !== true && !linkedFlag) {
+    return false;
+  }
+  const regionMatches = pzFlags.regionId === regionDocument?.id ||
+    pzFlags.regionUuid === regionDocument?.uuid ||
+    linkedFlag?.regionId === regionDocument?.id ||
+    linkedFlag?.regionUuid === regionDocument?.uuid;
+  if (!regionMatches) {
+    return false;
+  }
+  const documentGroupId = pzFlags.groupId ?? linkedFlag?.groupId ?? null;
+  return !(expectedGroupId && documentGroupId && documentGroupId !== expectedGroupId);
 }
 
 async function updateRegionLinkedDocuments(regionDocument, linkedDocuments) {
@@ -684,6 +883,9 @@ function buildLinkedDocumentFlags({
   segmentIndex = null,
   lightIndex = null,
   layoutType = null,
+  layoutSlot = null,
+  layoutTrack = null,
+  layoutTrackRadius = null,
   layoutAngle = null
 }) {
   return {
@@ -697,6 +899,9 @@ function buildLinkedDocumentFlags({
       ...(segmentIndex !== null ? { segmentIndex } : {}),
       ...(lightIndex !== null ? { lightIndex } : {}),
       ...(layoutType ? { layoutType } : {}),
+      ...(layoutSlot !== null ? { layoutSlot } : {}),
+      ...(layoutTrack !== null ? { layoutTrack } : {}),
+      ...(layoutTrackRadius !== null ? { layoutTrackRadius } : {}),
       ...(layoutAngle !== null ? { layoutAngle } : {}),
       linkedDocument: {
         kind,
@@ -710,6 +915,9 @@ function buildLinkedDocumentFlags({
         segmentIndex,
         lightIndex,
         layoutType,
+        layoutSlot,
+        layoutTrack,
+        layoutTrackRadius,
         layoutAngle
       }
     }
@@ -1001,6 +1209,199 @@ function orderLinkedDocumentsForDesired(documents = [], kind = "wall") {
   });
 }
 
+function getLinkedLightSlotKey(documentOrData) {
+  const flags = documentOrData?.flags?.[MODULE_ID] ?? {};
+  const linked = flags.linkedDocument ?? {};
+  const explicitSlot = flags.layoutSlot ?? linked.layoutSlot ?? null;
+  if (explicitSlot !== null && explicitSlot !== undefined) {
+    return String(explicitSlot);
+  }
+  const track = flags.layoutTrack ?? linked.layoutTrack ?? null;
+  const index = flags.lightIndex ?? linked.lightIndex ?? null;
+  if (track !== null && index !== null) {
+    return `${track}:${index}`;
+  }
+  if (index !== null) {
+    return `legacy:${index}`;
+  }
+  return null;
+}
+
+function getLinkedWallKey(documentOrData) {
+  const flags = documentOrData?.flags?.[MODULE_ID] ?? {};
+  const linked = flags.linkedDocument ?? {};
+  const boundary = flags.boundary ?? linked.boundary ?? "outer";
+  const segmentIndex = flags.segmentIndex ?? linked.segmentIndex ?? null;
+  if (segmentIndex === null || segmentIndex === undefined) {
+    return null;
+  }
+  return `${boundary}:${segmentIndex}`;
+}
+
+async function reconcileDuplicateLinkedDocuments(scene, regionDocument, documents = [], {
+  kind = "wall",
+  existingIds = []
+} = {}) {
+  const keyGetter = kind === "light" ? getLinkedLightSlotKey : getLinkedWallKey;
+  const byKey = new Map();
+  for (const document of Array.from(documents ?? [])) {
+    const key = keyGetter(document);
+    if (!key) {
+      continue;
+    }
+    if (!byKey.has(key)) {
+      byKey.set(key, []);
+    }
+    byKey.get(key).push(document);
+  }
+  const keptDocuments = [];
+  const deletedIds = [];
+  const duplicatedKeys = [];
+  const existingIdSet = new Set(Array.from(existingIds ?? []));
+  for (const [key, group] of byKey.entries()) {
+    const sorted = Array.from(group).sort((a, b) => {
+      const aPreferred = existingIdSet.has(a?.id) ? 0 : 1;
+      const bPreferred = existingIdSet.has(b?.id) ? 0 : 1;
+      return aPreferred - bPreferred || String(a?.id ?? "").localeCompare(String(b?.id ?? ""));
+    });
+    const [kept, ...duplicates] = sorted;
+    if (kept) {
+      keptDocuments.push(kept);
+    }
+    if (duplicates.length) {
+      duplicatedKeys.push(key);
+      deletedIds.push(...duplicates.map((document) => document?.id).filter(Boolean));
+    }
+  }
+  const withoutKey = Array.from(documents ?? []).filter((document) => !keyGetter(document));
+  keptDocuments.push(...withoutKey);
+  if (deletedIds.length) {
+    const embeddedName = kind === "light" ? "AmbientLight" : "Wall";
+    await scene.deleteEmbeddedDocuments(embeddedName, deletedIds, { persistentZonesLinkedSync: true }).catch(() => []);
+  }
+  if (deletedIds.length) {
+    const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+    safeLinkedDiagnosticLog("PZ LINKED DOCUMENT DUPLICATE RECONCILIATION", {
+      sceneId: scene?.id ?? null,
+      regionId: regionDocument?.id ?? null,
+      groupId: runtime.groupId ?? null,
+      duplicatedWallKeys: kind === "wall" ? duplicatedKeys : [],
+      keptWallIds: kind === "wall" ? keptDocuments.map((document) => document?.id).filter(Boolean) : [],
+      deletedDuplicateWallIds: kind === "wall" ? deletedIds : [],
+      duplicatedLightSlots: kind === "light" ? duplicatedKeys : [],
+      keptLightIds: kind === "light" ? keptDocuments.map((document) => document?.id).filter(Boolean) : [],
+      deletedDuplicateLightIds: kind === "light" ? deletedIds : [],
+      reconciliationReason: "logical-key-deduplication"
+    });
+  }
+  return { keptDocuments, deletedIds, duplicatedKeys };
+}
+
+function buildLinkedSyncKey(scene, regionDocument) {
+  return `${scene?.id ?? "scene"}:${regionDocument?.id ?? "region"}`;
+}
+
+function resolveScenePlaceableBounds(scene = null) {
+  const dimensions = canvas?.scene?.id === scene?.id ? canvas?.dimensions ?? null : null;
+  const rect = dimensions?.sceneRect ?? dimensions?.rect ?? null;
+  if (rect) {
+    const minX = coerceNumber(rect.x ?? rect.left, 0);
+    const minY = coerceNumber(rect.y ?? rect.top, 0);
+    const width = coerceNumber(rect.width, 0);
+    const height = coerceNumber(rect.height, 0);
+    return {
+      minX,
+      minY,
+      maxX: minX + width,
+      maxY: minY + height,
+      width,
+      height,
+      source: "canvas.dimensions.sceneRect"
+    };
+  }
+  const sceneX = coerceNumber(dimensions?.sceneX, null);
+  const sceneY = coerceNumber(dimensions?.sceneY, null);
+  const sceneWidth = coerceNumber(dimensions?.sceneWidth, null);
+  const sceneHeight = coerceNumber(dimensions?.sceneHeight, null);
+  if (sceneX !== null && sceneY !== null && sceneWidth !== null && sceneHeight !== null) {
+    return {
+      minX: sceneX,
+      minY: sceneY,
+      maxX: sceneX + sceneWidth,
+      maxY: sceneY + sceneHeight,
+      width: sceneWidth,
+      height: sceneHeight,
+      source: "canvas.dimensions.sceneX-sceneY-sceneWidth-sceneHeight"
+    };
+  }
+  const width = coerceNumber(scene?.width, null);
+  const height = coerceNumber(scene?.height, null);
+  const padding = coerceNumber(scene?.padding, 0) ?? 0;
+  const gridSize = coerceNumber(scene?.grid?.size ?? canvas?.grid?.size, 100) || 100;
+  if (width !== null && height !== null) {
+    const padPixels = padding > 0 && padding < 1 ? Math.max(width, height) * padding : padding * gridSize;
+    return {
+      minX: -padPixels,
+      minY: -padPixels,
+      maxX: width + padPixels,
+      maxY: height + padPixels,
+      width: width + (padPixels * 2),
+      height: height + (padPixels * 2),
+      source: "scene.width-height-padding"
+    };
+  }
+  return {
+    minX: 0,
+    minY: 0,
+    maxX: Number.POSITIVE_INFINITY,
+    maxY: Number.POSITIVE_INFINITY,
+    width: null,
+    height: null,
+    source: "unbounded-fallback"
+  };
+}
+
+function isPointInsideSceneBounds(point, bounds, margin = 0) {
+  if (!bounds) {
+    return true;
+  }
+  return coerceNumber(point?.x, 0) >= bounds.minX + margin &&
+    coerceNumber(point?.x, 0) <= bounds.maxX - margin &&
+    coerceNumber(point?.y, 0) >= bounds.minY + margin &&
+    coerceNumber(point?.y, 0) <= bounds.maxY - margin;
+}
+
+function logLinkedLightSceneClipResult({
+  regionDocument = null,
+  reason = "manual",
+  theoreticalSlots = [],
+  acceptedSlots = [],
+  rejectedOutsideSceneSlots = [],
+  existingLights = [],
+  updatedSlots = [],
+  createdSlots = [],
+  deletedSlots = [],
+  syncSucceeded = true,
+  errors = []
+} = {}) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  safeLinkedDiagnosticLog("PZ LINKED LIGHT SCENE CLIP RESULT", {
+    regionId: regionDocument?.id ?? null,
+    groupId: runtime.groupId ?? null,
+    reason,
+    theoreticalSlots: duplicateData(theoreticalSlots),
+    acceptedSlots: duplicateData(acceptedSlots),
+    rejectedOutsideSceneSlots: duplicateData(rejectedOutsideSceneSlots),
+    existingSlotsBefore: Array.from(existingLights ?? []).map((document) => getLinkedLightSlotKey(document)).filter(Boolean),
+    updatedSlots: duplicateData(updatedSlots),
+    createdSlots: duplicateData(createdSlots),
+    deletedSlots: duplicateData(deletedSlots),
+    clampedPositionCount: 0,
+    syncSucceeded,
+    errors: duplicateData(errors)
+  });
+}
+
 function findLinkedLightCenter(shapes, templateDocument) {
   const shapeList = Array.from(shapes ?? []);
   if (!shapeList.length) {
@@ -1045,47 +1446,117 @@ function buildLinkedLightLayout({
   );
 
   if (ring && ring.innerRadius > 0 && ring.outerRadius > ring.innerRadius) {
-    const lightPathRadius = (ring.innerRadius + ring.outerRadius) / 2;
-    const circumference = Math.PI * 2 * lightPathRadius;
-    const safetyCap = Math.max(3, Math.min(24, Math.round(coerceNumber(linkedLight?.maxCount, 16))));
-    const requestedLightCount = Math.max(3, Math.ceil(circumference / Math.max(effectiveCoverageRadius * 1.5, gridSize)));
-    const finalLightCount = Math.min(requestedLightCount, safetyCap);
-    const safetyCapApplied = finalLightCount < requestedLightCount;
-    const positions = [];
-    for (let index = 0; index < finalLightCount; index += 1) {
-      const angle = (index / finalLightCount) * Math.PI * 2;
-      const x = ring.centerX + Math.cos(angle) * lightPathRadius;
-      const y = ring.centerY + Math.sin(angle) * lightPathRadius;
-      positions.push({ x, y, angle });
+    const sceneBounds = resolveScenePlaceableBounds(scene);
+    safeLinkedDiagnosticLog("PZ LINKED SCENE BOUNDS RESOLVED", {
+      sceneId: scene?.id ?? null,
+      minX: sceneBounds.minX,
+      minY: sceneBounds.minY,
+      maxX: sceneBounds.maxX,
+      maxY: sceneBounds.maxY,
+      width: sceneBounds.width,
+      height: sceneBounds.height,
+      boundsSource: sceneBounds.source,
+      canvasReady: Boolean(canvas?.ready),
+      sceneDimensions: duplicateData(canvas?.dimensions ?? null)
+    });
+    const plan = buildAdaptiveRingLightPlan({
+      ring,
+      gridSize,
+      effectiveCoverageRadius,
+      linkedLight
+    });
+    const sceneMargin = Math.max(1, Math.min(gridSize * 0.02, 8));
+    const theoreticalPositions = plan.tracks.flatMap((track, trackIndex) => {
+      const trackPositions = [];
+      for (let index = 0; index < track.finalCount; index += 1) {
+        const angle = track.angularOffset + (index / track.finalCount) * Math.PI * 2;
+        const safeTrackRadius = clampTrackRadiusInsideRing(track.radius, ring, plan.margin);
+        const x = ring.centerX + Math.cos(angle) * safeTrackRadius;
+        const y = ring.centerY + Math.sin(angle) * safeTrackRadius;
+        trackPositions.push({
+          x,
+          y,
+          angle: normalizeRadians(angle),
+          track: track.name ?? trackIndex,
+          trackIndex,
+          trackRadius: safeTrackRadius,
+          slot: `${track.name ?? trackIndex}:${index}`
+        });
+      }
+      return trackPositions;
+    });
+    const insideRegionPositions = theoreticalPositions.filter((position) => isPointInsideRingBand(position, ring, plan.margin));
+    const positions = insideRegionPositions.filter((position) => isPointInsideSceneBounds(position, sceneBounds, sceneMargin));
+    const rejectedOutsideRegionSlots = theoreticalPositions
+      .filter((position) => !isPointInsideRingBand(position, ring, plan.margin))
+      .map((position) => position.slot);
+    const rejectedOutsideSceneSlots = insideRegionPositions
+      .filter((position) => !isPointInsideSceneBounds(position, sceneBounds, sceneMargin))
+      .map((position) => position.slot);
+    const everyLightInsideRegion = positions.every((position) => isPointInsideRingBand(position, ring, plan.margin));
+    const everyCreatedLightInsideRegion = everyLightInsideRegion;
+    const everyCreatedLightInsideScene = positions.every((position) => isPointInsideSceneBounds(position, sceneBounds, sceneMargin));
+    const visualAudits = plan.tracks.map((track, trackIndex) => buildRingLightVisualCoverageAudit({
+      regionDocument,
+      track,
+      trackIndex,
+      effectiveCoverageRadius,
+      requiredRadialReach: plan.requiredRadialReach
+    }));
+    for (const audit of visualAudits) {
+      safeLinkedDiagnosticLog("PZ LINKED LIGHT VISUAL COVERAGE AUDIT", audit);
     }
-    const everyLightInsideRegion = positions.every((position) => isPointInsideRingBand(position, ring));
-    return {
+    const result = {
       layoutType: "ring-path",
       positions,
       logData: {
         regionId: regionDocument?.id ?? null,
         groupId: getRegionRuntimeFlags(regionDocument)?.groupId ?? null,
-        shapeType: "ring",
-        centerX: ring.centerX,
-        centerY: ring.centerY,
         innerRadius: ring.innerRadius,
         outerRadius: ring.outerRadius,
-        lightPathRadius,
-        configuredBright,
-        configuredDim,
+        bandWidth: plan.bandWidth,
         effectiveCoverageRadius,
-        circumference,
-        requestedLightCount,
-        finalLightCount,
-        safetyCapApplied,
+        requiredRadialReach: plan.requiredRadialReach,
+        selectedTrackCount: plan.tracks.length,
+        trackRadii: plan.tracks.map((track) => roundForLog(track.radius)),
+        theoreticalCountsPerTrack: plan.tracks.map((track) => track.theoreticalCount),
+        finalCountsPerTrack: plan.tracks.map((track) => track.finalCount),
+        totalTheoreticalLightCount: plan.totalTheoreticalLightCount,
+        totalFinalLightCount: positions.length,
+        angularSteps: plan.tracks.map((track) => roundForLog(track.angularStep)),
+        angularOffsets: plan.tracks.map((track) => roundForLog(track.angularOffset)),
+        overlapTarget: plan.overlapTarget,
+        safetyCap: plan.safetyCap,
+        safetyCapApplied: plan.safetyCapApplied,
+        theoreticalLightCount: theoreticalPositions.length,
+        insideRegionLightCount: insideRegionPositions.length,
+        insideSceneLightCount: positions.length,
+        rejectedOutsideRegionSlots,
+        rejectedOutsideSceneSlots,
+        createdLightCount: positions.length,
+        sceneBounds,
+        sceneMargin,
         lightPositions: positions.map((position) => ({
-          x: Math.round(position.x * 100) / 100,
-          y: Math.round(position.y * 100) / 100,
-          angle: Math.round(position.angle * 1000) / 1000
+          x: roundForLog(position.x),
+          y: roundForLog(position.y),
+          angle: roundForLog(position.angle),
+          track: position.track,
+          slot: position.slot,
+          trackRadius: roundForLog(position.trackRadius)
         })),
-        everyLightInsideRegion
+        everyLightInsideRegion,
+        everyCreatedLightInsideRegion,
+        everyCreatedLightInsideScene,
+        layoutReason: plan.layoutReason,
+        configuredBright,
+        configuredDim
       }
     };
+    Object.defineProperties(result.positions, {
+      _pzTheoreticalSlots: { value: theoreticalPositions.map((position) => position.slot), enumerable: false },
+      _pzRejectedOutsideSceneSlots: { value: rejectedOutsideSceneSlots, enumerable: false }
+    });
+    return result;
   }
 
   const center = findLinkedLightCenter(shapes, templateDocument);
@@ -1118,11 +1589,155 @@ function buildLinkedLightLayout({
   };
 }
 
-function isPointInsideRingBand(point, ring) {
+function buildAdaptiveRingLightPlan({
+  ring,
+  gridSize,
+  effectiveCoverageRadius,
+  linkedLight = {}
+} = {}) {
+  const bandWidth = Math.max(0, ring.outerRadius - ring.innerRadius);
+  const margin = Math.max(1, Math.min(gridSize * 0.05, bandWidth * 0.08));
+  const overlapTarget = clampNumber(coerceNumber(linkedLight?.overlap, DEFAULT_RING_LIGHT_OVERLAP_TARGET), 0.2, 0.35);
+  const requiredRadialReach = (bandWidth / 2) + margin;
+  const visuallyThickBand = bandWidth >= gridSize * 1.5;
+  const radialCoverageWeak = effectiveCoverageRadius < requiredRadialReach * 1.25;
+  const selectedTrackCount = radialCoverageWeak || visuallyThickBand ? 2 : 1;
+  const minimumCap = selectedTrackCount * 3;
+  const safetyCap = Math.max(minimumCap, Math.min(64, Math.round(coerceNumber(linkedLight?.maxCount, DEFAULT_RING_LIGHT_MAX_COUNT))));
+  const unclampedRadii = selectedTrackCount === 1
+    ? [{ name: "middle", radius: (ring.innerRadius + ring.outerRadius) / 2 }]
+    : [
+      { name: "inner", radius: ring.innerRadius + bandWidth * 0.3 },
+      { name: "outer", radius: ring.innerRadius + bandWidth * 0.7 }
+    ];
+  const tracks = unclampedRadii.map((track) => {
+    const radius = clampTrackRadiusInsideRing(track.radius, ring, margin);
+    const circumference = Math.PI * 2 * radius;
+    const chordSpacing = Math.max(gridSize, effectiveCoverageRadius * (1 - overlapTarget));
+    const countByCoverage = Math.ceil(circumference / chordSpacing);
+    const countByAngularGap = Math.ceil((Math.PI * 2) / MAX_RING_LIGHT_ANGULAR_GAP);
+    const theoreticalCount = Math.max(selectedTrackCount === 1 ? 6 : 4, countByCoverage, countByAngularGap);
+    return {
+      ...track,
+      radius,
+      circumference,
+      theoreticalCount,
+      finalCount: theoreticalCount,
+      angularStep: (Math.PI * 2) / theoreticalCount,
+      angularOffset: 0
+    };
+  });
+  const totalTheoreticalLightCount = tracks.reduce((sum, track) => sum + track.theoreticalCount, 0);
+  const safetyCapApplied = totalTheoreticalLightCount > safetyCap;
+  if (safetyCapApplied) {
+    distributeRingLightCapAcrossTracks(tracks, safetyCap);
+  }
+  for (const [index, track] of tracks.entries()) {
+    track.angularStep = (Math.PI * 2) / Math.max(track.finalCount, 1);
+    track.angularOffset = index === 0 ? track.angularStep / 2 : track.angularStep;
+  }
+  return {
+    bandWidth,
+    margin,
+    overlapTarget,
+    requiredRadialReach,
+    safetyCap,
+    safetyCapApplied,
+    totalTheoreticalLightCount,
+    tracks,
+    layoutReason: selectedTrackCount === 1
+      ? "single-track-radial-coverage-sufficient"
+      : radialCoverageWeak ? "two-tracks-effective-coverage-below-band-reach" : "two-tracks-visually-thick-band"
+  };
+}
+
+function distributeRingLightCapAcrossTracks(tracks, safetyCap) {
+  const total = tracks.reduce((sum, track) => sum + track.theoreticalCount, 0);
+  let remaining = safetyCap;
+  tracks.forEach((track, index) => {
+    const tracksLeft = tracks.length - index;
+    const minimumForTrack = Math.min(track.theoreticalCount, 3);
+    const proportional = Math.max(minimumForTrack, Math.floor((track.theoreticalCount / total) * safetyCap));
+    const maximumAllowed = remaining - ((tracksLeft - 1) * 3);
+    track.finalCount = Math.max(minimumForTrack, Math.min(proportional, maximumAllowed));
+    remaining -= track.finalCount;
+  });
+  let index = 0;
+  while (remaining > 0 && tracks.length) {
+    tracks[index % tracks.length].finalCount += 1;
+    remaining -= 1;
+    index += 1;
+  }
+}
+
+function clampTrackRadiusInsideRing(radius, ring, margin = 1) {
+  const lower = ring.innerRadius + margin;
+  const upper = ring.outerRadius - margin;
+  if (upper <= lower) {
+    return (ring.innerRadius + ring.outerRadius) / 2;
+  }
+  return Math.min(Math.max(radius, lower), upper);
+}
+
+function buildRingLightVisualCoverageAudit({
+  regionDocument = null,
+  track = {},
+  trackIndex = 0,
+  effectiveCoverageRadius = 0,
+  requiredRadialReach = 0
+} = {}) {
+  const lightCount = Math.max(track.finalCount ?? 0, 0);
+  const maximumAngularGap = lightCount ? (Math.PI * 2) / lightCount : null;
+  const maximumArcGap = maximumAngularGap !== null ? maximumAngularGap * track.radius : null;
+  const estimatedCoverageGap = maximumArcGap !== null ? Math.max(0, maximumArcGap - (effectiveCoverageRadius * 2)) : null;
+  const radialCoverageSatisfied = effectiveCoverageRadius >= requiredRadialReach;
+  const tangentialCoverageSatisfied = maximumAngularGap !== null && maximumAngularGap <= MAX_RING_LIGHT_ANGULAR_GAP;
+  return {
+    regionId: regionDocument?.id ?? null,
+    trackIndex,
+    trackRadius: roundForLog(track.radius),
+    lightCount,
+    maximumAngularGap: roundForLog(maximumAngularGap),
+    maximumArcGap: roundForLog(maximumArcGap),
+    estimatedCoverageGap: roundForLog(estimatedCoverageGap),
+    radialCoverageSatisfied,
+    tangentialCoverageSatisfied,
+    visualCoverageSatisfied: radialCoverageSatisfied && tangentialCoverageSatisfied && (estimatedCoverageGap ?? 0) <= 0
+  };
+}
+
+function isPointInsideRingBand(point, ring, margin = 0) {
   const dx = coerceNumber(point?.x, 0) - ring.centerX;
   const dy = coerceNumber(point?.y, 0) - ring.centerY;
   const distance = Math.hypot(dx, dy);
-  return distance >= ring.innerRadius && distance <= ring.outerRadius;
+  return distance > ring.innerRadius + margin && distance < ring.outerRadius - margin;
+}
+
+function clampNumber(value, min, max) {
+  const numeric = Number.isFinite(value) ? value : min;
+  return Math.min(Math.max(numeric, min), max);
+}
+
+function normalizeRadians(value) {
+  const fullCircle = Math.PI * 2;
+  return ((value % fullCircle) + fullCircle) % fullCircle;
+}
+
+function roundForLog(value) {
+  if (!Number.isFinite(value)) {
+    return value ?? null;
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function safeLinkedDiagnosticLog(label, data = {}) {
+  try {
+    console.warn(`[${MODULE_ID}][linked] ${label}`, duplicateData(data ?? {}));
+  } catch (caughtError) {
+    console.warn(`[${MODULE_ID}][linked] ${label} failed`, {
+      reason: caughtError?.message ?? "unknown"
+    });
+  }
 }
 
 function resolveLinkedLightElevation(regionDocument, linkedLight = {}) {

@@ -1597,7 +1597,8 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     logV14NativeRegionPayloadJson("v14NativeRegionPayloadJson", payload);
     const updatedRegion = await regionDocument.update(payload, {
       persistentZonesV14NativeRegionUpdateInPlace: true,
-      persistentZonesV14NativeGroupId: nativeRuntimeFlags.groupId
+      persistentZonesV14NativeGroupId: nativeRuntimeFlags.groupId,
+      persistentZonesLinkedSync: true
     });
     createdRegion = scene.regions?.get?.(regionDocument.id) ?? updatedRegion ?? regionDocument;
     console.info(`[${MODULE_ID}][lifecycle] REGION SOURCE UPDATED IN PLACE`, {
@@ -3695,6 +3696,16 @@ async function onUpdateRegion(regionDocument, changed = {}, options = {}) {
 
 function shouldSyncLinkedDocumentsAfterRegionUpdate(regionDocument, changed = {}, options = {}) {
   if (options?.persistentZonesLinkedSync) {
+    const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+    console.warn(`[${MODULE_ID}][linked] PZ LINKED INITIAL SYNC DECISION`, {
+      regionId: regionDocument?.id ?? null,
+      entryPoint: "updateRegion-hook",
+      updateWasInternal: true,
+      updateHookSyncSkipped: true,
+      explicitFinalSyncScheduled: true,
+      groupId: runtime.groupId ?? null,
+      decisionReason: "persistentZonesLinkedSync-option"
+    });
     return false;
   }
   const runtime = getRegionRuntimeFlags(regionDocument);
@@ -11607,7 +11618,8 @@ async function syncLinkedDocumentsSafely({
       templateDocument,
       regionDocument,
       normalizedDefinition,
-      shapes
+      shapes,
+      reason: stage
     });
   } catch (caughtError) {
     error("Failed to sync linked documents for managed Region.", caughtError, {
