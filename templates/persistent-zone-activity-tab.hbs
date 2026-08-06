@@ -1,0 +1,290 @@
+<section class="tab activity-{{ tab.id }} {{ tab.cssClass }}" data-tab="{{ tab.id }}" data-group="{{ tab.group }}">
+<div class="persistent-zone-activity">
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Configuration"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.UI.Fields.Enabled"}}</label>
+      <input type="checkbox" name="persistentZone.enabled" data-pz-toggle-source="pz-enabled" {{#if persistentZone.enabled}}checked{{/if}}>
+      <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.ActivityConfig"}}</p>
+    </div>
+  </fieldset>
+
+  <div data-pz-toggle-target="pz-enabled">
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.Shape"}}</label>
+      <select name="persistentZone.geometry.type">
+        {{selectOptions persistentZoneChoices.geometryTypes selected=persistentZone.geometry.type localize=true}}
+      </select>
+    </div>
+    <div data-pz-geometry="circle">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
+        <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
+      </div>
+    </div>
+    <div data-pz-geometry="ring">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingReferenceRadius"}}</label>
+        <input type="number" name="persistentZone.geometry.ringReferenceRadius" value="{{persistentZone.geometry.ringReferenceRadius}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingInnerWidth"}}</label>
+        <input type="number" name="persistentZone.geometry.ringInnerWidth" value="{{persistentZone.geometry.ringInnerWidth}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingOuterWidth"}}</label>
+        <input type="number" name="persistentZone.geometry.ringOuterWidth" value="{{persistentZone.geometry.ringOuterWidth}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ReferenceRadiusMode"}}</label>
+        <select name="persistentZone.geometry.referenceRadiusMode">
+          {{selectOptions persistentZoneChoices.referenceRadiusModes selected=persistentZone.geometry.referenceRadiusMode localize=true}}
+        </select>
+      </div>
+    </div>
+    <div data-pz-geometry="wall">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallLength"}}</label>
+        <input type="number" name="persistentZone.geometry.wallLength" value="{{persistentZone.geometry.wallLength}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallThickness"}}</label>
+        <input type="number" name="persistentZone.geometry.wallThickness" value="{{persistentZone.geometry.wallThickness}}" min="0" step="any">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</legend>
+    {{#each persistentZoneTriggerRows as |triggerRow|}}
+      <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
+        <header class="persistent-zone-activity__trigger-header">
+          <label>{{triggerRow.label}}</label>
+          <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.enabled" {{#if triggerRow.state.enabled}}checked{{/if}}>
+        </header>
+        <div data-pz-trigger-details>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
+            <select name="persistentZone.triggers.{{triggerRow.timing}}.mode">
+              {{selectOptions ../persistentZoneChoices.triggerModes selected=triggerRow.state.mode localize=true}}
+            </select>
+          </div>
+
+          <div data-pz-mode="simple-effect">
+            <fieldset>
+              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Damage"}}</legend>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageEnabled"}}</label>
+                <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.enabled" data-pz-toggle-source="{{triggerRow.timing}}-damage" {{#if triggerRow.state.simpleEffect.damage.enabled}}checked{{/if}}>
+              </div>
+              <div data-pz-toggle-target="{{triggerRow.timing}}-damage">
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.formula" value="{{triggerRow.state.simpleEffect.damage.formula}}">
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.type">
+                    {{#each ../persistentZoneDamageTypes as |option|}}
+                      <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.damage.type)}}selected{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Healing"}}</legend>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.HealingEnabled"}}</label>
+                <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.enabled" data-pz-toggle-source="{{triggerRow.timing}}-healing" {{#if triggerRow.state.simpleEffect.healing.enabled}}checked{{/if}}>
+              </div>
+              <div data-pz-toggle-target="{{triggerRow.timing}}-healing">
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.HealingFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.formula" value="{{triggerRow.state.simpleEffect.healing.formula}}">
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.TemporaryHitPoints"}}</legend>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TempHpEnabled"}}</label>
+                <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.enabled" data-pz-toggle-source="{{triggerRow.timing}}-temphp" {{#if triggerRow.state.simpleEffect.temporaryHitPoints.enabled}}checked{{/if}}>
+              </div>
+              <div data-pz-toggle-target="{{triggerRow.timing}}-temphp">
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TempHpFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.formula" value="{{triggerRow.state.simpleEffect.temporaryHitPoints.formula}}">
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Save"}}</legend>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveEnabled"}}</label>
+                <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.enabled" data-pz-toggle-source="{{triggerRow.timing}}-save" {{#if triggerRow.state.simpleEffect.save.enabled}}checked{{/if}}>
+              </div>
+              <div data-pz-toggle-target="{{triggerRow.timing}}-save">
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.ability">
+                    {{#each ../persistentZoneAbilities as |option|}}
+                      <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.save.ability)}}selected{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.dcMode">
+                    {{selectOptions ../persistentZoneChoices.saveDcModes selected=triggerRow.state.simpleEffect.save.dcMode localize=true}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
+                  <input type="number" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.dc" value="{{triggerRow.state.simpleEffect.save.dc}}" min="1" step="1">
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveResult"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.onSave">
+                    {{selectOptions ../persistentZoneChoices.saveResults selected=triggerRow.state.simpleEffect.save.onSave localize=true}}
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Statuses"}}</legend>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusesEnabled"}}</label>
+                <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.enabled" data-pz-toggle-source="{{triggerRow.timing}}-statuses" {{#if triggerRow.state.simpleEffect.statuses.enabled}}checked{{/if}}>
+              </div>
+              <div data-pz-toggle-target="{{triggerRow.timing}}-statuses">
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusId"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.statusId">
+                    {{#each ../persistentZoneStatusOptions as |option|}}
+                      <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.statuses.statusId)}}selected{{/if}}>{{option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.PersistenceMode"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.persistenceMode">
+                    {{#if triggerRow.allowsWhileInside}}
+                      {{selectOptions ../persistentZoneChoices.persistenceModes selected=triggerRow.state.simpleEffect.statuses.persistenceMode localize=true}}
+                    {{else}}
+                      {{selectOptions ../persistentZoneChoices.exitPersistenceModes selected=triggerRow.state.simpleEffect.statuses.persistenceMode localize=true}}
+                    {{/if}}
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+
+          <div data-pz-mode="linked-activity">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedActivity"}}</label>
+              <select name="persistentZone.triggers.{{triggerRow.timing}}.linkedActivity.id">
+                {{#each triggerRow.linkedActivityOptions as |option|}}
+                  <option value="{{option.value}}" data-uuid="{{option.uuid}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+                {{/each}}
+              </select>
+              <input type="hidden" name="persistentZone.triggers.{{triggerRow.timing}}.linkedActivity.uuid" value="{{triggerRow.state.linkedActivity.uuid}}">
+            </div>
+          </div>
+        </div>
+      </section>
+    {{/each}}
+  </fieldset>
+
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StopMovement"}}</label>
+      <input type="checkbox" name="persistentZone.movement.stopOnTrigger" data-pz-toggle-source="movement-stop" {{#if persistentZone.movement.stopOnTrigger}}checked{{/if}}>
+    </div>
+    <div data-pz-toggle-target="movement-stop">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementStop"}}</label>
+        <select name="persistentZone.movement.stopMode">
+          {{selectOptions persistentZoneChoices.stopModes selected=persistentZone.movement.stopMode localize=true}}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementMode"}}</label>
+        <select name="persistentZone.movement.movementMode">
+          {{selectOptions persistentZoneChoices.movementModes selected=persistentZone.movement.movementMode localize=true}}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.StepMode"}}</label>
+        <select name="persistentZone.movement.stepMode">
+          {{selectOptions persistentZoneChoices.stepModes selected=persistentZone.movement.stepMode localize=true}}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedWalls"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateWalls"}}</label>
+      <input type="checkbox" name="persistentZone.linkedWalls.enabled" data-pz-toggle-source="linked-walls" {{#if persistentZone.linkedWalls.enabled}}checked{{/if}}>
+    </div>
+    <div data-pz-toggle-target="linked-walls">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedWallsPreset"}}</label>
+        <select name="persistentZone.linkedWalls.preset">
+          {{#each persistentZoneWallPresets as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallHeight"}}</label>
+        <input type="number" name="persistentZone.linkedWalls.height" value="{{persistentZone.linkedWalls.height}}" min="0" step="any">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedLights"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateLights"}}</label>
+      <input type="checkbox" name="persistentZone.linkedLights.enabled" data-pz-toggle-source="linked-lights" {{#if persistentZone.linkedLights.enabled}}checked{{/if}}>
+    </div>
+    <div data-pz-toggle-target="linked-lights">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedLightPreset"}}</label>
+        <select name="persistentZone.linkedLights.preset">
+          {{#each persistentZoneLightPresets as |option|}}
+            <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LightColor"}}</label>
+        <input type="color" name="persistentZone.linkedLights.color" value="{{persistentZone.linkedLights.color}}">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedLightBright"}}</label>
+        <input type="number" name="persistentZone.linkedLights.bright" value="{{persistentZone.linkedLights.bright}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.LinkedLightDim"}}</label>
+        <input type="number" name="persistentZone.linkedLights.dim" value="{{persistentZone.linkedLights.dim}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedLightMax"}}</label>
+        <input type="number" name="persistentZone.linkedLights.max" value="{{persistentZone.linkedLights.max}}" min="1" step="1">
+      </div>
+    </div>
+  </fieldset>
+  </div>
+</div>
+</section>

@@ -1,6 +1,119 @@
 {
   "PERSISTENT_ZONES": {
     "ZoneSuffix": "Persistent Zone",
+    "Activity": {
+      "TypeLabel": "Persistent Zone",
+      "TypeTitle": "Persistent Zone",
+      "TypeHint": "Create a persistent Region that can trigger effects while it remains on the scene.",
+      "Title": "Persistent Zone",
+      "Hint": "Create a persistent Region that can trigger effects while it remains on the scene.",
+      "Help": {
+        "ActivityConfig": "This activity stores the Persistent Zones configuration used by the V14-native runtime.",
+        "TerrainRuntimePending": "Stores a terrain request for the zone. Runtime difficult terrain is not enabled from this activity yet."
+      },
+      "Sections": {
+        "Configuration": "Usage",
+        "Geometry": "Geometry",
+        "Triggers": "Triggers",
+        "Save": "Save",
+        "Damage": "Damage",
+        "Healing": "Healing",
+        "TemporaryHitPoints": "Temporary HP",
+        "Statuses": "Statuses",
+        "Effects": "Effects",
+        "Movement": "Movement",
+        "MovementAndTerrain": "Movement and Terrain",
+        "LinkedDocuments": "Walls and Lights",
+        "LinkedWalls": "Linked Walls",
+        "LinkedLights": "Linked Lights"
+      },
+      "Tabs": {
+        "PersistentZone": "Persistent Zone"
+      },
+      "Fields": {
+        "Shape": "Zone shape",
+        "CircleRadius": "Circle radius",
+        "RingReferenceRadius": "Ring reference radius",
+        "RingInnerWidth": "Inner band width",
+        "RingOuterWidth": "Outer band width",
+        "ReferenceRadiusMode": "Reference radius mode",
+        "WallLength": "Wall length",
+        "WallThickness": "Wall thickness",
+        "DamageEnabled": "Apply damage",
+        "HealingEnabled": "Apply healing",
+        "HealingFormula": "Healing formula",
+        "TempHpEnabled": "Apply temporary HP",
+        "TempHpFormula": "Temporary HP formula",
+        "SaveEnabled": "Use save",
+        "SaveResult": "On successful save",
+        "StatusesEnabled": "Apply statuses",
+        "StatusId": "Status or effect",
+        "PersistenceMode": "Persistence mode",
+        "LinkedActivity": "Activity to execute",
+        "StopMovement": "Stop movement",
+        "DifficultTerrain": "Zone terrain",
+        "TerrainMultiplier": "Terrain multiplier",
+        "CreateWalls": "Create linked walls",
+        "WallHeight": "Wall height",
+        "CreateLights": "Create linked lights",
+        "LightColor": "Light color",
+        "LinkedLightMax": "Maximum linked lights"
+      },
+      "Geometry": {
+        "Circle": "Circle",
+        "Ring": "Ring",
+        "Wall": "Wall"
+      },
+      "TriggerModes": {
+        "None": "None",
+        "Simple": "Simple effect",
+        "LinkedActivity": "Linked activity"
+      },
+      "SaveResults": {
+        "Half": "Half damage",
+        "None": "No effect"
+      },
+      "ReferenceRadiusModes": {
+        "OuterEdge": "Outer edge",
+        "Centerline": "Centerline",
+        "InnerEdge": "Inner edge"
+      },
+      "Triggers": {
+        "enter": "On enter",
+        "move": "On move",
+        "exit": "On exit",
+        "turnStart": "On start turn",
+        "turnEnd": "On end turn",
+        "onEnter": "On enter",
+        "onMove": "On move",
+        "onExit": "On exit",
+        "onStartTurn": "On start turn",
+        "onEndTurn": "On end turn"
+      },
+      "PersistenceModes": {
+        "Persistent": "Persistent",
+        "WhileInsideRegion": "While inside the region"
+      },
+      "LinkedActivity": {
+        "None": "None"
+      },
+      "Statuses": {
+        "None": "None"
+      },
+      "LinkedWallPresets": {
+        "solid": "Solid",
+        "terrain": "Terrain wall",
+        "invisible": "Invisible wall",
+        "ethereal": "Ethereal"
+      },
+      "LinkedLightPresets": {
+        "glow": "Glow",
+        "moonlight": "Moonlight",
+        "fire": "Fire",
+        "holy": "Holy light",
+        "darkness": "Darkness"
+      }
+    },
     "UI": {
       "ConfigTitle": "Persistent Zones",
       "HeaderButtonLabel": "Open Persistent Zones configuration",

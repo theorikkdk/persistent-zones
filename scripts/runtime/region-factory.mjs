@@ -27,11 +27,12 @@ import {
   cleanupLinkedDocumentsForRegion,
   syncLinkedDocumentsForRegion
 } from "./linked-documents.mjs";
+import { cleanupWhileInsideStatusesForRegion } from "./entry-effects.mjs";
 import { resolveTemplateSourceContext } from "./template-source-context.mjs";
 import {
-  getZoneDefinitionFromItem,
-  normalizeZoneDefinition
-} from "./zone-definition.mjs";
+  findPersistentZoneActivityOnItem,
+  resolvePersistentZoneConfiguration
+} from "./configuration-resolver.mjs";
 import {
   REGION_ARCHITECTURE_PATHS,
   buildManagedRegionRuntimeContract,
@@ -3848,7 +3849,8 @@ export async function createRegionFromTemplate(
   const sourceContext = {
     item: item ?? resolvedContext.item ?? null,
     actor: actor ?? item?.actor ?? resolvedContext.actor ?? null,
-    caster: caster ?? resolvedContext.caster ?? actor ?? item?.actor ?? null
+    caster: caster ?? resolvedContext.caster ?? actor ?? item?.actor ?? null,
+    activity: resolvedContext.activity ?? null
   };
   logRingCastDiagnostic("ringCastSourceResolved", {
     entryPoint: "createRegionFromTemplate",
@@ -3886,8 +3888,15 @@ export async function createRegionFromTemplate(
     return null;
   }
 
-  const zoneDefinition = rawDefinition ?? getZoneDefinitionFromItem(sourceContext.item);
-  if (!zoneDefinition) {
+  const configuration = resolvePersistentZoneConfiguration({
+    actor: sourceContext.actor,
+    item: sourceContext.item,
+    activity: sourceContext.activity,
+    templateDocument,
+    rawDefinition,
+    entryPoint: "createRegionFromTemplate"
+  });
+  if (!configuration.hasConfiguration) {
     logRingCastDiagnostic("ringCastSkipReason", {
       entryPoint: "createRegionFromTemplate",
       templateId: templateDocument.id,
@@ -3910,12 +3919,7 @@ export async function createRegionFromTemplate(
     return null;
   }
 
-  const normalizedDefinition = normalizeZoneDefinition(zoneDefinition, {
-    item: sourceContext.item,
-    actor: sourceContext.actor,
-    caster: sourceContext.caster,
-    templateDocument
-  });
+  const normalizedDefinition = configuration.normalizedDefinition;
   const ringDefinitionSummary = summarizeRingDefinition(normalizedDefinition);
   if (ringDefinitionSummary.hasRingDefinition) {
     logRingCastDiagnostic("ringCastDefinitionResolved", {
@@ -4980,8 +4984,12 @@ async function onDeleteRegion(regionDocument, options = {}) {
       reason: "region-deleted",
       skipRuntimeUpdate: true
     });
+    await cleanupWhileInsideStatusesForRegion({
+      regionDocument,
+      cleanupReason: "region-deleted"
+    });
   } catch (caughtError) {
-    error("Failed to cleanup linked documents after Region deletion.", caughtError, {
+    error("Failed to cleanup linked documents or triggered statuses after Region deletion.", caughtError, {
       regionId: regionDocument?.id ?? null,
       templateId: runtime?.templateId ?? null
     });
@@ -6691,6 +6699,9 @@ function buildManagedRegionRuntimeFlags({
     itemUuid: normalizedDefinition?.itemUuid ?? sourceContext?.item?.uuid ?? null,
     actorUuid: normalizedDefinition?.actorUuid ?? sourceContext?.actor?.uuid ?? null,
     casterUuid: normalizedDefinition?.casterUuid ?? sourceContext?.caster?.uuid ?? null,
+    activityId: normalizedDefinition?.activityId ?? sourceContext?.activity?.id ?? null,
+    activityUuid: normalizedDefinition?.activityUuid ?? sourceContext?.activity?.uuid ?? null,
+    activityType: normalizedDefinition?.activityType ?? sourceContext?.activity?.type ?? null,
     selectedVariantId: normalizedDefinition?.selectedVariant?.id ?? null,
     defaultVariantId: normalizedDefinition?.defaultVariantId ?? null,
     variantResolutionMode: normalizedDefinition?.variantResolution?.resolutionMode ?? "none",
@@ -6724,14 +6735,16 @@ async function buildRegionSyncPayload(templateDocument, regionDocuments) {
   let normalizedDefinition = runtime.normalizedDefinition ?? null;
 
   if (sourceContext.item) {
-    const zoneDefinition = getZoneDefinitionFromItem(sourceContext.item);
-    if (zoneDefinition) {
-      normalizedDefinition = normalizeZoneDefinition(zoneDefinition, {
-        item: sourceContext.item,
-        actor: sourceContext.actor,
-        caster: sourceContext.caster,
-        templateDocument
-      });
+    const configuration = resolvePersistentZoneConfiguration({
+      actor: sourceContext.actor,
+      item: sourceContext.item,
+      activity: sourceContext.activity,
+      templateDocument,
+      regionDocument: primaryRegion,
+      entryPoint: "buildRegionSyncPayload"
+    });
+    if (configuration.normalizedDefinition) {
+      normalizedDefinition = configuration.normalizedDefinition;
     }
   }
 
@@ -7581,19 +7594,22 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
     const sourceContext = {
       item: resolvedContext.item ?? null,
       actor: resolvedContext.actor ?? null,
-      caster: resolvedContext.caster ?? resolvedContext.actor ?? null
+      caster: resolvedContext.caster ?? resolvedContext.actor ?? null,
+      activity: resolvedContext.activity ?? null
     };
-    const zoneDefinition = sourceContext.item ? getZoneDefinitionFromItem(sourceContext.item) : null;
-    if (!zoneDefinition) {
+    const configuration = resolvePersistentZoneConfiguration({
+      actor: sourceContext.actor,
+      item: sourceContext.item,
+      activity: sourceContext.activity,
+      templateDocument,
+      regionDocument,
+      entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion"
+    });
+    if (!configuration.hasConfiguration) {
       continue;
     }
 
-    const normalizedDefinition = normalizeZoneDefinition(zoneDefinition, {
-      item: sourceContext.item,
-      actor: sourceContext.actor,
-      caster: sourceContext.caster,
-      templateDocument
-    });
+    const normalizedDefinition = configuration.normalizedDefinition;
     if (!normalizedDefinition || normalizedDefinition.enabled === false || normalizedDefinition.validation?.valid === false) {
       continue;
     }
@@ -8242,11 +8258,20 @@ async function resolveRegionSourceContext(templateDocument, regionDocument) {
   const itemByRuntime = await resolveDocumentFromRuntimeUuid(runtime.itemUuid, "Item");
   const actorByRuntime = await resolveDocumentFromRuntimeUuid(runtime.actorUuid, "Actor");
   const casterByRuntime = await resolveDocumentFromRuntimeUuid(runtime.casterUuid, "Actor");
+  const item = itemByRuntime ?? resolvedContext.item ?? null;
+  const activity =
+    resolvedContext.activity ??
+    findPersistentZoneActivityOnItem(item, {
+      activityId: runtime.activityId,
+      activityUuid: runtime.activityUuid,
+      fallbackToSinglePersistentZoneActivity: false
+    });
 
   return {
-    item: itemByRuntime ?? resolvedContext.item ?? null,
-    actor: actorByRuntime ?? resolvedContext.actor ?? itemByRuntime?.actor ?? null,
-    caster: casterByRuntime ?? resolvedContext.caster ?? actorByRuntime ?? itemByRuntime?.actor ?? null
+    item,
+    actor: actorByRuntime ?? resolvedContext.actor ?? item?.actor ?? null,
+    caster: casterByRuntime ?? resolvedContext.caster ?? actorByRuntime ?? item?.actor ?? null,
+    activity: activity ?? null
   };
 }
 

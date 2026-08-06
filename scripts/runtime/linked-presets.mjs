@@ -229,6 +229,10 @@ export function resolveLinkedLightConfig(linkedLightDefinition, {
       pickFirstDefined(definition.radius, presetRadius, templateDistance),
       coerceNumber(templateDistance, null)
     ),
+    maxCount: coerceNumber(
+      pickFirstDefined(definition.maxCount, definition.max),
+      null
+    ),
     color: pickFirstDefined(definition.color, presetConfig?.color, DEFAULT_LINKED_LIGHT_COLOR),
     alpha: coerceNumber(
       pickFirstDefined(definition.alpha, presetConfig?.alpha),

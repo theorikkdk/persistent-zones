@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.mjs";
+import { findPersistentZoneActivityOnItem } from "./configuration-resolver.mjs";
 import {
   debug,
   duplicateData,
@@ -94,6 +95,24 @@ const REFERENCE_UUID_PATHS = [
   ["system", "source", "uuid"]
 ];
 
+const ACTIVITY_UUID_PATHS = [
+  ["flags", MODULE_ID, "activityUuid"],
+  ["flags", "dnd5e", "activityUuid"],
+  ["flags", "dnd5e", "activity", "uuid"],
+  ["flags", "dnd5e", "usage", "activityUuid"],
+  ["flags", "dnd5e", "usage", "activity", "uuid"],
+  ["system", "activityUuid"]
+];
+
+const ACTIVITY_ID_PATHS = [
+  ["flags", MODULE_ID, "activityId"],
+  ["flags", "dnd5e", "activityId"],
+  ["flags", "dnd5e", "activity", "id"],
+  ["flags", "dnd5e", "usage", "activityId"],
+  ["flags", "dnd5e", "usage", "activity", "id"],
+  ["system", "activityId"]
+];
+
 export async function resolveTemplateSourceContext(
   templateDocument,
   { emitDebug = true } = {}
@@ -114,9 +133,10 @@ export async function resolveTemplateSourceContext(
   if (directItem) {
     const actor = directItem.actor ?? null;
     const caster = actor ?? null;
+    const activity = resolveActivityFromDocumentMetadata(directItem, templateDocument);
     recordMatch(report, "direct-item", "template.item", directItem.uuid);
-    emitResolutionLog("resolved", report, snapshot, { item: directItem, actor, caster }, emitDebug);
-    return { item: directItem, actor, caster, report, snapshot };
+    emitResolutionLog("resolved", report, snapshot, { item: directItem, actor, caster, activity }, emitDebug);
+    return { item: directItem, actor, caster, activity, report, snapshot };
   }
 
   const referenceCandidates = [
@@ -131,6 +151,7 @@ export async function resolveTemplateSourceContext(
   let item = referenceContext.item;
   let actor = referenceContext.actor;
   let caster = referenceContext.caster;
+  let activity = referenceContext.activity;
 
   actor = actor ?? resolveActorFromIds(collectCandidatesFromPaths(templateDocument, ACTOR_ID_PATHS, "actor-id"), report);
   caster = caster ?? actor ?? null;
@@ -149,12 +170,19 @@ export async function resolveTemplateSourceContext(
     recordMatch(report, "item-actor", "item.actor", actor.uuid);
   }
 
+  if (!activity && item) {
+    activity = resolveActivityFromDocumentMetadata(item, templateDocument);
+    if (activity) {
+      recordMatch(report, "activity-metadata", "template.activity", activity.uuid ?? activity.id ?? null);
+    }
+  }
+
   if (!item) {
     report.notes.push("No linked Item could be resolved from template metadata.");
   }
 
-  emitResolutionLog(item ? "resolved" : "unresolved", report, snapshot, { item, actor, caster }, emitDebug);
-  return { item: item ?? null, actor: actor ?? null, caster: caster ?? actor ?? null, report, snapshot };
+  emitResolutionLog(item ? "resolved" : "unresolved", report, snapshot, { item, actor, caster, activity }, emitDebug);
+  return { item: item ?? null, actor: actor ?? null, caster: caster ?? actor ?? null, activity: activity ?? null, report, snapshot };
 }
 
 export function collectTemplateSourceDebugSnapshot(templateDocument) {
@@ -190,20 +218,37 @@ async function resolveFromReferenceCandidates(candidates, report) {
 
     const item = normalizeResolvedItemFromUnknown(resolved);
     const actor = normalizeResolvedActorFromUnknown(resolved);
-    recordAttempt(report, candidate.kind, candidate.path, value, item || actor ? "resolved-related-document" : "resolved-unrelated-document");
+    const activity = normalizeResolvedActivityFromUnknown(resolved);
+    recordAttempt(report, candidate.kind, candidate.path, value, item || actor || activity ? "resolved-related-document" : "resolved-unrelated-document");
 
-    if (item || actor) {
+    if (item || actor || activity) {
       if (item) {
         recordMatch(report, candidate.kind, candidate.path, item.uuid);
       }
       if (actor) {
         recordMatch(report, candidate.kind, candidate.path, actor.uuid);
       }
-      return { item, actor, caster: actor ?? null };
+      if (activity) {
+        recordMatch(report, candidate.kind, candidate.path, activity.uuid ?? activity.id ?? null);
+      }
+      return { item: item ?? activity?.item ?? activity?.parent ?? null, actor, caster: actor ?? null, activity };
     }
   }
 
-  return { item: null, actor: null, caster: null };
+  return { item: null, actor: null, caster: null, activity: null };
+}
+
+function resolveActivityFromDocumentMetadata(item, sourceDocument) {
+  const activityUuidCandidates = collectCandidatesFromPaths(sourceDocument, ACTIVITY_UUID_PATHS, "activity-uuid");
+  const activityIdCandidates = collectCandidatesFromPaths(sourceDocument, ACTIVITY_ID_PATHS, "activity-id");
+  const activityUuid = activityUuidCandidates.find((candidate) => typeof candidate.value === "string")?.value ?? null;
+  const activityId = activityIdCandidates.find((candidate) => typeof candidate.value === "string")?.value ?? null;
+
+  return findPersistentZoneActivityOnItem(item, {
+    activityId,
+    activityUuid,
+    fallbackToSinglePersistentZoneActivity: false
+  });
 }
 
 function resolveActorFromIds(candidates, report) {
@@ -357,6 +402,20 @@ function normalizeResolvedActorFromUnknown(resolvedDocument) {
   return null;
 }
 
+function normalizeResolvedActivityFromUnknown(resolvedDocument) {
+  let current = resolvedDocument;
+
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (current.parent?.documentName === "Item" && current.id) {
+      return current;
+    }
+
+    current = current.parent ?? null;
+  }
+
+  return null;
+}
+
 function normalizeResolvedItem(resolvedDocument) {
   if (!resolvedDocument) {
     return null;
@@ -415,7 +474,10 @@ function emitResolutionLog(status, report, snapshot, context, emitDebug) {
     found: {
       itemUuid: context.item?.uuid ?? null,
       actorUuid: context.actor?.uuid ?? null,
-      casterUuid: context.caster?.uuid ?? null
+      casterUuid: context.caster?.uuid ?? null,
+      activityId: context.activity?.id ?? null,
+      activityUuid: context.activity?.uuid ?? null,
+      activityType: context.activity?.type ?? null
     },
     attempted: report.attempted,
     matched: report.matched,

@@ -1,6 +1,7 @@
 import { createPersistentZonesApi } from "./api.mjs";
 import { MODULE_API_NAMESPACE, MODULE_ID } from "./constants.mjs";
 import { registerPersistentZoneProfileSettings } from "./profiles.mjs";
+import { registerPersistentZoneActivityType } from "./activity/register-persistent-zone-activity.mjs";
 import {
   migrateLegacyMovementStopGlobalSetting,
   registerPersistentZoneModuleSettings
@@ -42,6 +43,7 @@ function onInit() {
   );
   registerPersistentZoneProfileSettings();
   registerPersistentZoneModuleSettings();
+  registerPersistentZoneActivityType();
   console.warn(`[${MODULE_ID}] settingsRegistered`);
   apiInstance = createPersistentZonesApi();
   game[MODULE_API_NAMESPACE] = apiInstance;

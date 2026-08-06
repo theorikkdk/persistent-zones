@@ -1,6 +1,9 @@
 import { ENTRY_DEDUP_TTL_MS, MODULE_ID, RUNTIME_FLAG_KEY } from "../constants.mjs";
 import { resolveMovementStopGlobalState } from "../settings.mjs";
-import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
+import {
+  applyConfiguredTriggerEffect,
+  cleanupWhileInsideStatusesForRegionToken
+} from "./entry-effects.mjs";
 import {
   coerceNumber,
   debug,
@@ -2191,6 +2194,12 @@ async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
   if (!exitDetected) {
     return false;
   }
+
+  await cleanupWhileInsideStatusesForRegionToken({
+    regionDocument,
+    tokenDocument,
+    cleanupReason: "onExit-detected"
+  });
 
   if (!onExit.enabled) {
     if (triggerMode === "none") {

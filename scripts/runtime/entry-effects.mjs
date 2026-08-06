@@ -11,6 +11,7 @@ import {
   normalizeZoneTriggerActivityType,
   resolveZoneTriggeredActivityCompatibility
 } from "./activity-compatibility.mjs";
+import { resolveTriggerActionConfiguration } from "./trigger-action-config.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -37,7 +38,29 @@ export async function applyConfiguredTriggerEffect({
   const configuredTrigger = triggerConfig ?? {};
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const partId = runtime.partId ?? runtime.part?.id ?? runtime.normalizedDefinition?.part?.id ?? null;
-  const triggerMode = resolveTriggerEffectMode(configuredTrigger);
+  const actionConfig = resolveTriggerActionConfiguration({
+    zoneConfiguration: runtime.normalizedDefinition,
+    triggerId: normalizedTiming,
+    triggerConfig: configuredTrigger
+  });
+  const resolvedTrigger = {
+    ...configuredTrigger,
+    mode: actionConfig.mode,
+    damage: actionConfig.damage,
+    save: actionConfig.save,
+    statuses: actionConfig.statuses,
+    healing: actionConfig.healing,
+    temporaryHitPoints: actionConfig.temporaryHitPoints,
+    simpleEffect: {
+      ...(configuredTrigger.simpleEffect ?? {}),
+      healing: actionConfig.healing,
+      temporaryHitPoints: actionConfig.temporaryHitPoints,
+      statuses: actionConfig.statuses
+    },
+    linkedActivity: actionConfig.linkedActivity,
+    activity: actionConfig.linkedActivity
+  };
+  const triggerMode = actionConfig.mode;
   const isV14RingRuntime = runtime.regionSourceStrategy === "v14-region-native-segment-group" ||
     String(runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? "").toLowerCase() === "ring";
   const baseDiagnostic = {
@@ -65,15 +88,15 @@ export async function applyConfiguredTriggerEffect({
     onEnterEnabled: normalizedTiming === "onEnter" ? Boolean(configuredTrigger?.enabled) : null,
     onMoveEnabled: normalizedTiming === "onMove" ? Boolean(configuredTrigger?.enabled) : null,
     effectMode: triggerMode,
-    simpleEffect: configuredTrigger?.simpleEffect ?? null,
-    damageFormula: configuredTrigger?.damage?.formula ?? configuredTrigger?.simpleEffect?.formula ?? null,
-    damageType: configuredTrigger?.damage?.type ?? configuredTrigger?.simpleEffect?.damageType ?? null,
-    activityUuid: configuredTrigger?.activity?.uuid ?? null,
+    simpleEffect: resolvedTrigger?.simpleEffect ?? null,
+    damageFormula: resolvedTrigger?.damage?.formula ?? resolvedTrigger?.simpleEffect?.formula ?? null,
+    damageType: resolvedTrigger?.damage?.type ?? resolvedTrigger?.simpleEffect?.damageType ?? null,
+    activityUuid: resolvedTrigger?.activity?.uuid ?? null,
     skippedReason: null
   });
 
   if (!actor) {
-    logPzEffectSkipped("token-has-no-actor", baseDiagnostic, configuredTrigger);
+    logPzEffectSkipped("token-has-no-actor", baseDiagnostic, resolvedTrigger);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
       simpleEffectAllowed: false,
@@ -88,8 +111,8 @@ export async function applyConfiguredTriggerEffect({
     });
   }
 
-  if (!configuredTrigger.enabled) {
-    logPzEffectSkipped("trigger-disabled", baseDiagnostic, configuredTrigger);
+  if (!actionConfig.enabled) {
+    logPzEffectSkipped("trigger-disabled", baseDiagnostic, resolvedTrigger);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
       simpleEffectAllowed: false,
@@ -113,7 +136,7 @@ export async function applyConfiguredTriggerEffect({
       triggerMode
     });
 
-    logPzEffectSkipped("no-effect-configured", baseDiagnostic, configuredTrigger);
+    logPzEffectSkipped("no-effect-configured", baseDiagnostic, resolvedTrigger);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
       simpleEffectAllowed: false,
@@ -133,29 +156,29 @@ export async function applyConfiguredTriggerEffect({
       ...baseDiagnostic,
       effectMode: triggerMode,
       executor: "activity",
-      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      activityUuid: resolvedTrigger?.activity?.uuid ?? null,
       damageFormula: null,
       damageType: null
     });
     return applyActivityTriggerEffect({
       regionDocument,
       tokenDocument,
-      triggerConfig: configuredTrigger,
+      triggerConfig: resolvedTrigger,
       timing: normalizedTiming,
       partId,
       context
     });
   }
 
-  const simpleEffect = resolveSimpleEffectConfig(configuredTrigger);
+  const simpleEffect = resolveSimpleEffectConfig(resolvedTrigger);
   logV14RuntimeDiagnostic("PZ EFFECT EXECUTOR SELECTED", {
     ...baseDiagnostic,
     effectMode: triggerMode,
     executor: "simple",
     simpleEffect,
-    damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
-    damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
-    activityUuid: configuredTrigger?.activity?.uuid ?? null
+    damageFormula: simpleEffect.formula ?? resolvedTrigger?.damage?.formula ?? null,
+    damageType: simpleEffect.damageType ?? resolvedTrigger?.damage?.type ?? null,
+    activityUuid: resolvedTrigger?.activity?.uuid ?? null
   });
   logV14RuntimeDiagnostic("simpleEffectType", {
     ...baseDiagnostic,
@@ -165,7 +188,7 @@ export async function applyConfiguredTriggerEffect({
   });
 
   if (simpleEffect.type !== "damage" && !simpleEffect.formula) {
-    logPzEffectSkipped("no-damage-formula", baseDiagnostic, configuredTrigger, simpleEffect);
+    logPzEffectSkipped("no-damage-formula", baseDiagnostic, resolvedTrigger, simpleEffect);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
       simpleEffectType: simpleEffect.type,
@@ -184,8 +207,20 @@ export async function applyConfiguredTriggerEffect({
     });
   }
 
-  if (simpleEffect.type === "damage" && !configuredTrigger.damage?.enabled && !configuredTrigger.save?.enabled) {
-    logPzEffectSkipped("no-effect-configured", baseDiagnostic, configuredTrigger, simpleEffect);
+  const statusesEnabled = Boolean(resolvedTrigger.statuses?.enabled && resolvedTrigger.statuses?.statusId);
+  const healingEnabled = Boolean(resolvedTrigger.healing?.enabled && resolvedTrigger.healing?.formula);
+  const temporaryHitPointsEnabled = Boolean(
+    resolvedTrigger.temporaryHitPoints?.enabled && resolvedTrigger.temporaryHitPoints?.formula
+  );
+  if (
+    simpleEffect.type === "damage" &&
+    !resolvedTrigger.damage?.enabled &&
+    !resolvedTrigger.save?.enabled &&
+    !statusesEnabled &&
+    !healingEnabled &&
+    !temporaryHitPointsEnabled
+  ) {
+    logPzEffectSkipped("no-effect-configured", baseDiagnostic, resolvedTrigger, simpleEffect);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
       simpleEffectType: simpleEffect.type,
@@ -209,9 +244,9 @@ export async function applyConfiguredTriggerEffect({
       ...baseDiagnostic,
       effectMode: triggerMode,
       simpleEffect,
-      damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
-      damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
-      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      damageFormula: simpleEffect.formula ?? resolvedTrigger?.damage?.formula ?? null,
+      damageType: simpleEffect.damageType ?? resolvedTrigger?.damage?.type ?? null,
+      activityUuid: resolvedTrigger?.activity?.uuid ?? null,
       skippedReason: null
     });
     if (simpleEffect.type === "heal" || simpleEffect.type === "tempHP") {
@@ -258,7 +293,7 @@ export async function applyConfiguredTriggerEffect({
         simpleEffect,
         damageFormula: simpleEffect.formula ?? null,
         damageType: simpleEffect.damageType ?? null,
-        activityUuid: configuredTrigger?.activity?.uuid ?? null,
+        activityUuid: resolvedTrigger?.activity?.uuid ?? null,
         applied: effectEntries.length > 0,
         skippedReason: effectEntries.length > 0 ? null : "no-effect-configured"
       });
@@ -297,12 +332,12 @@ export async function applyConfiguredTriggerEffect({
       };
     }
 
-    const saveResult = configuredTrigger.save?.enabled
-      ? await resolveSaveResult(actor, configuredTrigger.save, regionDocument, tokenDocument, normalizedTiming)
+    const saveResult = resolvedTrigger.save?.enabled
+      ? await resolveSaveResult(actor, resolvedTrigger.save, regionDocument, tokenDocument, normalizedTiming)
       : null;
 
     if (saveResult?.unresolved) {
-      logPzEffectSkipped("save-dc-unresolved", baseDiagnostic, configuredTrigger, simpleEffect);
+      logPzEffectSkipped("save-dc-unresolved", baseDiagnostic, resolvedTrigger, simpleEffect);
       logV14RuntimeDiagnostic("simpleEffectSuppressed", {
         ...baseDiagnostic,
         simpleEffectType: simpleEffect.type,
@@ -320,15 +355,15 @@ export async function applyConfiguredTriggerEffect({
       });
     }
 
-    const damageResult = configuredTrigger.damage?.enabled
+    const damageResult = resolvedTrigger.damage?.enabled
       ? await resolveDamageResult(
-        configuredTrigger.damage,
+        resolvedTrigger.damage,
         saveResult,
         regionDocument,
         tokenDocument,
         normalizedTiming
       )
-      : buildNoDamageResult(configuredTrigger.damage);
+      : buildNoDamageResult(resolvedTrigger.damage);
     const appliedDamage = coerceNumber(damageResult?.appliedDamage, 0);
 
     if (appliedDamage > 0) {
@@ -336,16 +371,51 @@ export async function applyConfiguredTriggerEffect({
     }
     logV14RuntimeDiagnostic("damageRoll", {
       ...baseDiagnostic,
-      damageFormula: damageResult?.formula ?? configuredTrigger?.damage?.formula ?? null,
-      damageType: damageResult?.type ?? configuredTrigger?.damage?.type ?? null,
+      damageFormula: damageResult?.formula ?? resolvedTrigger?.damage?.formula ?? null,
+      damageType: damageResult?.type ?? resolvedTrigger?.damage?.type ?? null,
       rolledDamage: damageResult?.rolledDamage ?? null,
       appliedDamage
     });
     logV14RuntimeDiagnostic("damageApplied", {
       ...baseDiagnostic,
       appliedDamage,
-      damageType: damageResult?.type ?? configuredTrigger?.damage?.type ?? null
+      damageType: damageResult?.type ?? resolvedTrigger?.damage?.type ?? null
     });
+
+    const statusResult = await applyTriggeredStatuses({
+      regionDocument,
+      tokenDocument,
+      triggerConfig: resolvedTrigger,
+      timing: normalizedTiming,
+      baseDiagnostic
+    });
+    const healingResult = await applySimpleRecoveryEffect({
+      actor,
+      regionDocument,
+      tokenDocument,
+      timing: normalizedTiming,
+      type: "heal",
+      config: resolvedTrigger.healing
+    });
+    const temporaryHitPointsResult = await applySimpleRecoveryEffect({
+      actor,
+      regionDocument,
+      tokenDocument,
+      timing: normalizedTiming,
+      type: "tempHP",
+      config: resolvedTrigger.temporaryHitPoints
+    });
+    const recoverySummary = summarizeDamageEntries([
+      ...(healingResult.entries ?? []),
+      ...(temporaryHitPointsResult.entries ?? [])
+    ]);
+    const simpleEffectApplied = Boolean(
+      saveResult ||
+      resolvedTrigger.damage?.enabled ||
+      statusResult.applied ||
+      healingResult.applied ||
+      temporaryHitPointsResult.applied
+    );
 
     debug(`Applied ${normalizedTiming} simple effect.`, {
       regionId: regionDocument?.id ?? null,
@@ -356,63 +426,70 @@ export async function applyConfiguredTriggerEffect({
       triggerMode,
       simpleEffectType: simpleEffect.type,
       simpleEffectFormula: simpleEffect.formula ?? null,
-      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      simpleEffectApplied,
       save: saveResult,
       damage: damageResult,
       appliedDamage,
-      healApplied: 0,
-      tempHpApplied: 0
+      healApplied: recoverySummary.healingTotal,
+      tempHpApplied: recoverySummary.tempHpTotal
     });
     logV14RuntimeDiagnostic("simpleEffectApplied", {
       ...baseDiagnostic,
       simpleEffectType: simpleEffect.type,
       simpleEffectFormula: simpleEffect.formula ?? null,
-      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      simpleEffectApplied,
       save: saveResult,
       damage: damageResult,
       appliedDamage,
-      healApplied: 0,
-      tempHpApplied: 0
+      healApplied: recoverySummary.healingTotal,
+      tempHpApplied: recoverySummary.tempHpTotal
     });
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION SUCCESS", {
       ...baseDiagnostic,
       effectMode: triggerMode,
       simpleEffect,
-      damageFormula: simpleEffect.formula ?? configuredTrigger?.damage?.formula ?? null,
-      damageType: simpleEffect.damageType ?? configuredTrigger?.damage?.type ?? null,
-      activityUuid: configuredTrigger?.activity?.uuid ?? null,
-      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      damageFormula: simpleEffect.formula ?? resolvedTrigger?.damage?.formula ?? null,
+      damageType: simpleEffect.damageType ?? resolvedTrigger?.damage?.type ?? null,
+      activityUuid: resolvedTrigger?.activity?.uuid ?? null,
+      applied: simpleEffectApplied,
       appliedDamage,
       skippedReason: null
     });
     logV14RuntimeDiagnostic("partTriggerApplied", {
       ...baseDiagnostic,
-      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      applied: simpleEffectApplied,
       skipped: false,
-      appliedDamage
+      appliedDamage,
+      healApplied: recoverySummary.healingTotal,
+      tempHpApplied: recoverySummary.tempHpTotal
     });
     if (isV14RingRuntime) {
       logV14RuntimeDiagnostic("v14RingEffectApplied", {
         ...baseDiagnostic,
-        v14RingEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+        v14RingEffectApplied: simpleEffectApplied,
         skipped: false,
-        appliedDamage
+        appliedDamage,
+        healApplied: recoverySummary.healingTotal,
+        tempHpApplied: recoverySummary.tempHpTotal
       });
     }
     return {
-      applied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      applied: simpleEffectApplied,
       skipped: false,
       partId,
       triggerMode,
       timing: normalizedTiming,
       simpleEffectType: simpleEffect.type,
       simpleEffectFormula: simpleEffect.formula ?? null,
-      simpleEffectApplied: Boolean(saveResult || configuredTrigger.damage?.enabled),
+      simpleEffectApplied,
       save: saveResult,
       damage: damageResult,
+      statuses: statusResult,
+      healing: healingResult,
+      temporaryHitPoints: temporaryHitPointsResult,
       appliedDamage,
-      healApplied: 0,
-      tempHpApplied: 0
+      healApplied: recoverySummary.healingTotal,
+      tempHpApplied: recoverySummary.tempHpTotal
     };
   } catch (caughtError) {
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION FAILED", {
@@ -421,7 +498,7 @@ export async function applyConfiguredTriggerEffect({
       simpleEffect: typeof simpleEffect !== "undefined" ? simpleEffect : null,
       damageFormula: typeof simpleEffect !== "undefined" ? simpleEffect?.formula ?? null : null,
       damageType: typeof simpleEffect !== "undefined" ? simpleEffect?.damageType ?? null : null,
-      activityUuid: configuredTrigger?.activity?.uuid ?? null,
+      activityUuid: resolvedTrigger?.activity?.uuid ?? null,
       skippedReason: "effect-execution-error",
       error: caughtError?.message ?? "unknown"
     });
@@ -440,6 +517,128 @@ export async function applyConfiguredTriggerEffect({
       error: caughtError?.message ?? "unknown"
     });
   }
+}
+
+export async function cleanupWhileInsideStatusesForRegionToken({
+  regionDocument,
+  tokenDocument,
+  triggerId = null,
+  cleanupReason = "region-exit"
+} = {}) {
+  const actor = tokenDocument?.actor ?? null;
+  const regionId = regionDocument?.id ?? null;
+  const sceneId = regionDocument?.parent?.id ?? canvas?.scene?.id ?? null;
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  const matchedEffects = Array.from(actor?.effects ?? []).filter((effect) => {
+    const flags = effect?.flags?.[MODULE_ID] ?? {};
+    if (!flags.managedTriggeredEffect || flags.persistenceMode !== "while-inside-region") {
+      return false;
+    }
+    if (flags.sceneId !== sceneId || flags.regionId !== regionId || flags.tokenUuid !== tokenUuid) {
+      return false;
+    }
+    return !triggerId || flags.triggerId === triggerId;
+  });
+  const persistentEffects = Array.from(actor?.effects ?? []).filter((effect) => {
+    const flags = effect?.flags?.[MODULE_ID] ?? {};
+    return flags.managedTriggeredEffect &&
+      flags.persistenceMode === "persistent" &&
+      flags.sceneId === sceneId &&
+      flags.regionId === regionId &&
+      flags.tokenUuid === tokenUuid;
+  });
+  const matchedEffectIds = matchedEffects.map((effect) => effect.id).filter(Boolean);
+  const removedEffectIds = [];
+  const errors = [];
+
+  for (const effectId of matchedEffectIds) {
+    try {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [effectId], { persistentZonesTriggeredStatusCleanup: true });
+      removedEffectIds.push(effectId);
+    } catch (caughtError) {
+      errors.push(caughtError?.message ?? "unknown");
+    }
+  }
+
+  logV14RuntimeDiagnostic("PZ WHILE INSIDE STATUS CLEANUP RESULT", {
+    sceneId,
+    regionId,
+    tokenUuid,
+    triggerId,
+    matchedEffectIds,
+    removedEffectIds,
+    preservedPersistentEffectIds: persistentEffects.map((effect) => effect.id).filter(Boolean),
+    cleanupReason,
+    cleanupSucceeded: errors.length === 0,
+    errors
+  });
+
+  return {
+    matchedEffectIds,
+    removedEffectIds,
+    preservedPersistentEffectIds: persistentEffects.map((effect) => effect.id).filter(Boolean),
+    cleanupSucceeded: errors.length === 0,
+    errors
+  };
+}
+
+export async function cleanupWhileInsideStatusesForRegion({
+  regionDocument,
+  cleanupReason = "region-deleted"
+} = {}) {
+  const sceneId = regionDocument?.parent?.id ?? canvas?.scene?.id ?? null;
+  const regionId = regionDocument?.id ?? null;
+  const matchedEffectIds = [];
+  const removedEffectIds = [];
+  const preservedPersistentEffectIds = [];
+  const errors = [];
+
+  for (const actor of game.actors?.contents ?? []) {
+    const actorMatches = Array.from(actor?.effects ?? []).filter((effect) => {
+      const flags = effect?.flags?.[MODULE_ID] ?? {};
+      if (!flags.managedTriggeredEffect || flags.sceneId !== sceneId || flags.regionId !== regionId) {
+        return false;
+      }
+      if (flags.persistenceMode === "persistent") {
+        preservedPersistentEffectIds.push(effect.id);
+        return false;
+      }
+      return flags.persistenceMode === "while-inside-region";
+    });
+    const ids = actorMatches.map((effect) => effect.id).filter(Boolean);
+    matchedEffectIds.push(...ids);
+    if (!ids.length) {
+      continue;
+    }
+
+    try {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", ids, { persistentZonesTriggeredStatusCleanup: true });
+      removedEffectIds.push(...ids);
+    } catch (caughtError) {
+      errors.push(caughtError?.message ?? "unknown");
+    }
+  }
+
+  logV14RuntimeDiagnostic("PZ WHILE INSIDE STATUS CLEANUP RESULT", {
+    sceneId,
+    regionId,
+    tokenUuid: null,
+    triggerId: null,
+    matchedEffectIds,
+    removedEffectIds,
+    preservedPersistentEffectIds,
+    cleanupReason,
+    cleanupSucceeded: errors.length === 0,
+    errors
+  });
+
+  return {
+    matchedEffectIds,
+    removedEffectIds,
+    preservedPersistentEffectIds,
+    cleanupSucceeded: errors.length === 0,
+    errors
+  };
 }
 
 async function applyActivityTriggerEffect({
@@ -717,6 +916,148 @@ async function applyActivityTriggerEffect({
       error: caughtError?.message ?? "unknown"
     });
   }
+}
+
+async function applyTriggeredStatuses({
+  regionDocument,
+  tokenDocument,
+  triggerConfig,
+  timing,
+  baseDiagnostic = {}
+} = {}) {
+  const actor = tokenDocument?.actor ?? null;
+  const statusConfig = triggerConfig?.statuses ?? triggerConfig?.simpleEffect?.statuses ?? {};
+  const statusId = String(statusConfig?.statusId ?? "").trim();
+  const persistenceMode = normalizeStatusPersistenceMode(statusConfig?.persistenceMode);
+  const sceneId = regionDocument?.parent?.id ?? canvas?.scene?.id ?? null;
+  const regionId = regionDocument?.id ?? null;
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const triggerId = normalizeStatusTriggerId(timing);
+  const identity = {
+    managedTriggeredEffect: true,
+    persistenceMode,
+    sceneId,
+    regionId,
+    groupId: runtime.groupId ?? null,
+    tokenUuid,
+    triggerId,
+    statusId,
+    castInstanceId: runtime.castInstanceId ?? runtime.ringOperationId ?? null
+  };
+
+  if (!actor || !statusConfig?.enabled || !statusId) {
+    logTriggeredStatusDecision({
+      ...baseDiagnostic,
+      sceneId,
+      regionId,
+      tokenUuid,
+      triggerId,
+      statusId,
+      persistenceMode,
+      existingExactEffectFound: false,
+      applicationAllowed: false,
+      decisionReason: !actor ? "token-has-no-actor" : !statusConfig?.enabled ? "statuses-disabled" : "missing-status-id"
+    });
+    return { applied: false, skipped: true, reason: "status-not-configured" };
+  }
+
+  const existing = findExactTriggeredStatusEffect(actor, identity);
+  if (existing) {
+    logTriggeredStatusDecision({
+      ...baseDiagnostic,
+      sceneId,
+      regionId,
+      tokenUuid,
+      triggerId,
+      statusId,
+      persistenceMode,
+      existingExactEffectFound: true,
+      applicationAllowed: false,
+      decisionReason: "existing-exact-effect-found"
+    });
+    return { applied: false, skipped: false, existingEffectId: existing.id, deduped: true };
+  }
+
+  const statusData = resolveStatusEffectData(statusId);
+  const created = await actor.createEmbeddedDocuments("ActiveEffect", [{
+    name: statusData.name,
+    img: statusData.img,
+    icon: statusData.img,
+    statuses: [statusId],
+    origin: regionDocument?.uuid ?? null,
+    duration: {},
+    changes: [],
+    flags: {
+      [MODULE_ID]: identity
+    }
+  }], { persistentZonesTriggeredStatus: true });
+
+  logTriggeredStatusDecision({
+    ...baseDiagnostic,
+    sceneId,
+    regionId,
+    tokenUuid,
+    triggerId,
+    statusId,
+    persistenceMode,
+    existingExactEffectFound: false,
+    applicationAllowed: true,
+    decisionReason: "created-managed-triggered-status"
+  });
+
+  return {
+    applied: Array.isArray(created) && created.length > 0,
+    skipped: false,
+    createdEffectIds: Array.from(created ?? []).map((effect) => effect.id).filter(Boolean)
+  };
+}
+
+async function applySimpleRecoveryEffect({
+  actor,
+  regionDocument,
+  tokenDocument,
+  timing = "custom",
+  type = "heal",
+  config = {}
+} = {}) {
+  const enabled = Boolean(config?.enabled);
+  const formula = String(config?.formula ?? "").trim();
+  if (!actor || !enabled || !formula) {
+    return {
+      applied: false,
+      skipped: true,
+      skippedReason: !actor ? "token-has-no-actor" : !enabled ? "recovery-disabled" : "missing-recovery-formula",
+      entries: []
+    };
+  }
+
+  const simpleRecoveryResult = await resolveSimpleRecoveryResult(
+    { type, formula },
+    regionDocument,
+    tokenDocument,
+    timing
+  );
+  const entries = simpleRecoveryResult.rolledTotal > 0
+    ? [{
+      value: simpleRecoveryResult.rolledTotal,
+      type: type === "tempHP" ? "temphp" : "healing",
+      properties: new Set()
+    }]
+    : [];
+
+  await applyDamageEntriesToActor(actor, entries);
+
+  return {
+    applied: entries.length > 0,
+    skipped: entries.length === 0,
+    skippedReason: entries.length > 0 ? null : "recovery-roll-zero",
+    type,
+    formula: simpleRecoveryResult.formula,
+    rolledTotal: simpleRecoveryResult.rolledTotal,
+    entries,
+    summary: summarizeDamageEntries(entries)
+  };
 }
 
 async function executeZoneTriggeredActivity({
@@ -1477,6 +1818,64 @@ function resolveSimpleEffectConfig(triggerConfig = {}) {
       ? pickFirstDefined(simpleEffectDefinition.damageType, triggerConfig?.damage?.type, "force")
       : null
   };
+}
+
+function findExactTriggeredStatusEffect(actor, identity) {
+  return Array.from(actor?.effects ?? []).find((effect) => {
+    const flags = effect?.flags?.[MODULE_ID] ?? {};
+    return flags.managedTriggeredEffect === true &&
+      flags.persistenceMode === identity.persistenceMode &&
+      flags.sceneId === identity.sceneId &&
+      flags.regionId === identity.regionId &&
+      flags.tokenUuid === identity.tokenUuid &&
+      flags.triggerId === identity.triggerId &&
+      flags.statusId === identity.statusId;
+  }) ?? null;
+}
+
+function resolveStatusEffectData(statusId) {
+  const status = Array.from(CONFIG.statusEffects ?? []).find((entry) => entry.id === statusId) ?? {};
+  return {
+    name: game.i18n?.localize?.(status.name ?? status.label ?? statusId) ?? statusId,
+    img: status.img ?? status.icon ?? "icons/svg/aura.svg"
+  };
+}
+
+function normalizeStatusPersistenceMode(value) {
+  return String(value ?? "persistent").trim().toLowerCase() === "while-inside-region"
+    ? "while-inside-region"
+    : "persistent";
+}
+
+function normalizeStatusTriggerId(timing) {
+  switch (String(timing ?? "")) {
+    case "onEnter":
+      return "enter";
+    case "onMove":
+      return "move";
+    case "onExit":
+      return "exit";
+    case "onStartTurn":
+      return "turnStart";
+    case "onEndTurn":
+      return "turnEnd";
+    default:
+      return String(timing ?? "custom");
+  }
+}
+
+function logTriggeredStatusDecision(data = {}) {
+  logV14RuntimeDiagnostic("PZ TRIGGERED STATUS APPLICATION DECISION", {
+    sceneId: data.sceneId ?? null,
+    regionId: data.regionId ?? null,
+    tokenUuid: data.tokenUuid ?? null,
+    triggerId: data.triggerId ?? null,
+    statusId: data.statusId ?? null,
+    persistenceMode: data.persistenceMode ?? null,
+    existingExactEffectFound: data.existingExactEffectFound === true,
+    applicationAllowed: data.applicationAllowed === true,
+    decisionReason: data.decisionReason ?? null
+  });
 }
 
 function resolveTriggerEffectMode(triggerConfig = {}) {

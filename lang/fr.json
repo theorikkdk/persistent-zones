@@ -1,6 +1,119 @@
 {
   "PERSISTENT_ZONES": {
     "ZoneSuffix": "Zone persistante",
+    "Activity": {
+      "TypeLabel": "Zone persistante",
+      "TypeTitle": "Zone persistante",
+      "TypeHint": "Crée une Région persistante qui peut déclencher des effets tant qu'elle reste sur la scène.",
+      "Title": "Zone persistante",
+      "Hint": "Crée une Région persistante qui peut déclencher des effets tant qu'elle reste sur la scène.",
+      "Help": {
+        "ActivityConfig": "Cette activité stocke la configuration Persistent Zones utilisée par le runtime V14 natif.",
+        "TerrainRuntimePending": "Stocke une demande de terrain pour la zone. Le terrain difficile runtime n'est pas encore activé depuis cette activité."
+      },
+      "Sections": {
+        "Configuration": "Utilisation",
+        "Geometry": "Géométrie",
+        "Triggers": "Déclenchements",
+        "Save": "Sauvegarde",
+        "Damage": "Dégâts",
+        "Healing": "Soin",
+        "TemporaryHitPoints": "PV temporaires",
+        "Statuses": "États",
+        "Effects": "Effets",
+        "Movement": "Mouvement",
+        "MovementAndTerrain": "Mouvement et terrain",
+        "LinkedDocuments": "Murs et lumières",
+        "LinkedWalls": "Murs liés",
+        "LinkedLights": "Lumières liées"
+      },
+      "Tabs": {
+        "PersistentZone": "Zone persistante"
+      },
+      "Fields": {
+        "Shape": "Forme de zone",
+        "CircleRadius": "Rayon du cercle",
+        "RingReferenceRadius": "Rayon de référence de l'anneau",
+        "RingInnerWidth": "Largeur intérieure de la bande",
+        "RingOuterWidth": "Largeur extérieure de la bande",
+        "ReferenceRadiusMode": "Mode du rayon de référence",
+        "WallLength": "Longueur du mur",
+        "WallThickness": "Épaisseur du mur",
+        "DamageEnabled": "Appliquer des dégâts",
+        "HealingEnabled": "Appliquer un soin",
+        "HealingFormula": "Formule de soin",
+        "TempHpEnabled": "Appliquer des PV temporaires",
+        "TempHpFormula": "Formule de PV temporaires",
+        "SaveEnabled": "Utiliser une sauvegarde",
+        "SaveResult": "En cas de sauvegarde réussie",
+        "StatusesEnabled": "Appliquer des états",
+        "StatusId": "État ou effet",
+        "PersistenceMode": "Mode de persistance",
+        "LinkedActivity": "Activité à exécuter",
+        "StopMovement": "Arrêter le mouvement",
+        "DifficultTerrain": "Terrain de la zone",
+        "TerrainMultiplier": "Multiplicateur de terrain",
+        "CreateWalls": "Créer des murs liés",
+        "WallHeight": "Hauteur du mur",
+        "CreateLights": "Créer des lumières liées",
+        "LightColor": "Couleur de lumière",
+        "LinkedLightMax": "Nombre maximum de lumières liées"
+      },
+      "Geometry": {
+        "Circle": "Cercle",
+        "Ring": "Anneau",
+        "Wall": "Mur"
+      },
+      "TriggerModes": {
+        "None": "Aucun",
+        "Simple": "Effet simple",
+        "LinkedActivity": "Activité liée"
+      },
+      "SaveResults": {
+        "Half": "Demi-dégâts",
+        "None": "Aucun effet"
+      },
+      "ReferenceRadiusModes": {
+        "OuterEdge": "Bord extérieur",
+        "Centerline": "Ligne centrale",
+        "InnerEdge": "Bord intérieur"
+      },
+      "Triggers": {
+        "enter": "À l'entrée",
+        "move": "Au mouvement",
+        "exit": "À la sortie",
+        "turnStart": "Au début du tour",
+        "turnEnd": "À la fin du tour",
+        "onEnter": "À l'entrée",
+        "onMove": "Au mouvement",
+        "onExit": "À la sortie",
+        "onStartTurn": "Au début du tour",
+        "onEndTurn": "À la fin du tour"
+      },
+      "PersistenceModes": {
+        "Persistent": "Persistant",
+        "WhileInsideRegion": "Tant que le token est dans la région"
+      },
+      "LinkedActivity": {
+        "None": "Aucune"
+      },
+      "Statuses": {
+        "None": "Aucun"
+      },
+      "LinkedWallPresets": {
+        "solid": "Solide",
+        "terrain": "Mur de terrain",
+        "invisible": "Mur invisible",
+        "ethereal": "Éthéré"
+      },
+      "LinkedLightPresets": {
+        "glow": "Lueur",
+        "moonlight": "Clair de lune",
+        "fire": "Feu",
+        "holy": "Lumière sacrée",
+        "darkness": "Ténèbres"
+      }
+    },
     "UI": {
       "ConfigTitle": "Zones persistantes",
       "HeaderButtonLabel": "Ouvrir la configuration Persistent Zones",
