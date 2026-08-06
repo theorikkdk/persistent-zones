@@ -41,8 +41,13 @@ import {
 let hooksRegistered = false;
 const pendingTemplateSync = new Set();
 const pendingV14RingSegmentGroups = new Set();
+const pendingV14RingCleanupKeys = new Set();
+const activeGenericOwnerDeleteContexts = new Map();
+const activeNonConcentrationCastRegistry = new Map();
 const DEFAULT_RING_SEGMENTS = 24;
 const STARTUP_EXTERNAL_DELETE_PROTECTION_MS = 8000;
+const NON_CONCENTRATION_CAST_REGISTRY_TTL_MS = 15000;
+const GENERIC_OWNER_DELETE_CONTEXT_TTL_MS = 8000;
 let startupDeleteProtectionActive = false;
 const REGION_FACTORY_BUILD_SIGNATURE = "v14-runtime-audit-2026-08-05-01";
 const REGION_FACTORY_BUILD_GIT_BRANCH = "codex-v14-first-phase-1";
@@ -98,6 +103,7 @@ export function registerRegionFactoryHooks() {
     });
   });
   Hooks.on("createActiveEffect", (activeEffect, options = {}, userId = null) => {
+    logOwnerEffectEvent("createActiveEffect", activeEffect);
     Promise.resolve(onOwnerActiveEffectChanged("createActiveEffect", activeEffect, {}, options, userId)).catch((caughtError) => {
       logV14RegionDiagnostic("ownerEffectLinkReconciliationFailed", {
         hook: "createActiveEffect",
@@ -107,6 +113,7 @@ export function registerRegionFactoryHooks() {
     });
   });
   Hooks.on("updateActiveEffect", (activeEffect, changed = {}, options = {}, userId = null) => {
+    logOwnerEffectEvent("updateActiveEffect", activeEffect);
     Promise.resolve(onOwnerActiveEffectChanged("updateActiveEffect", activeEffect, changed, options, userId)).catch((caughtError) => {
       logV14RegionDiagnostic("ownerEffectLinkReconciliationFailed", {
         hook: "updateActiveEffect",
@@ -115,6 +122,9 @@ export function registerRegionFactoryHooks() {
       });
     });
   });
+  Hooks.on("preCreateActiveEffect", onPreCreateActiveEffect);
+  Hooks.on("preDeleteActiveEffect", onPreDeleteActiveEffect);
+  Hooks.on("deleteActiveEffect", onDeleteActiveEffectGenericOwnerContextCleanup);
   Hooks.on("preDeleteRegion", onPreDeleteRegion);
   Hooks.on("deleteRegion", (...args) => {
     Promise.resolve(onDeleteRegion(...args)).catch((caughtError) => {
@@ -138,7 +148,7 @@ export function registerRegionFactoryHooks() {
   hooksRegistered = true;
   logV14RegionEntry("enteredRegionFactory", {
     selectedCompatibilityPath: "hooks-registered",
-    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "createRegion", "updateRegion", "createActiveEffect", "updateActiveEffect", "preDeleteRegion", "deleteRegion"]
+    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
   });
 }
 
@@ -1306,7 +1316,8 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
   });
   const sourceHints = readV14SourceResolutionHints(regionDocument);
   const concentrationDefinition = runtimeFlags.normalizedDefinition?.concentration ?? {};
-  const ownerEffectUuid =
+  const concentrationRequired = concentrationDefinition.required === true;
+  const ownerEffectUuid = concentrationRequired ? (
     runtimeFlags.ownerEffectUuid ??
     runtimeFlags.activeEffectUuid ??
     runtimeFlags.concentrationEffectUuid ??
@@ -1314,7 +1325,8 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     sourceHints.activeEffectUuid ??
     sourceHints.concentrationEffectUuid ??
     concentrationDefinition.effectUuid ??
-    null;
+    null
+  ) : null;
   const profileId =
     runtimeFlags.profileId ??
     runtimeFlags.selectedVariantId ??
@@ -1340,12 +1352,15 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     regionSegmentIndex: null,
     regionSegmentCount: null,
     ringOperationId: null,
+    castInstanceId: runtimeFlags.castInstanceId ?? operationId,
     nativeRegionId: regionDocument?.id ?? null,
     sourceRegionId: regionDocument?.id ?? null,
     finalRegionId: regionDocument?.id ?? null,
     ownerEffectUuid,
     activeEffectUuid: ownerEffectUuid,
-    concentrationEffectUuid: runtimeFlags.concentrationEffectUuid ?? sourceHints.concentrationEffectUuid ?? concentrationDefinition.effectUuid ?? ownerEffectUuid ?? null,
+    concentrationEffectUuid: concentrationRequired
+      ? runtimeFlags.concentrationEffectUuid ?? sourceHints.concentrationEffectUuid ?? concentrationDefinition.effectUuid ?? ownerEffectUuid ?? null
+      : null,
     activityId: runtimeFlags.activityId ?? sourceHints.activityId ?? null,
     workflowId: runtimeFlags.workflowId ?? sourceHints.workflowId ?? null,
     profileId,
@@ -1543,6 +1558,13 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
   });
 
   let createdRegion = null;
+  registerNonConcentrationCastForGenericCleanupSuppression({
+    regionDocument,
+    runtime: nativeRuntimeFlags,
+    sourceContext: resolved.sourceContext,
+    operationId,
+    stage: "before-source-region-update-in-place"
+  });
   try {
     logCastAuditLine("FINAL REGION CREATE START", {
       operationId,
@@ -1747,6 +1769,22 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     shapes: serializedShapes,
     stage: "v14-native-ring-update-in-place"
   });
+  const dedicatedOwnerEffect = await ensureDedicatedOwnerEffectForNonConcentrationRegion(createdRegion, nativeRuntimeFlags, {
+    sourceContext: resolved.sourceContext,
+    operationId
+  });
+  if (dedicatedOwnerEffect) {
+    nativeRuntimeFlags.ownerEffectUuid = dedicatedOwnerEffect.uuid;
+    nativeRuntimeFlags.activeEffectUuid = dedicatedOwnerEffect.uuid;
+    nativeRuntimeFlags.concentrationEffectUuid = null;
+    registerNonConcentrationCastForGenericCleanupSuppression({
+      regionDocument: createdRegion,
+      runtime: nativeRuntimeFlags,
+      sourceContext: resolved.sourceContext,
+      operationId,
+      stage: "dedicated-owner-effect-created"
+    });
+  }
   console.info(`[${MODULE_ID}][lifecycle] REGION LIFECYCLE LINK WRITTEN`, {
     regionId: createdRegion?.id ?? null,
     sourceRegionId: nativeRuntimeFlags.sourceRegionId ?? null,
@@ -2995,57 +3033,83 @@ async function cleanupExistingV14RingSegments(scene, {
     return [];
   }
 
-  await cleanupExistingV14RingVisualOverlays(scene, {
-    itemUuid,
-    partId,
-    keepGroupId: newGroupId,
-    ringOperationId,
-    reason: "replace-v14-ring-segments"
-  });
-
-  const regionIds = listSceneRegions(scene)
-    .filter((regionDocument) => {
-      if (regionDocument?.id === nativeRegionId) {
-        return false;
-      }
-      const runtimeFlags = getRegionRuntimeFlags(regionDocument);
-      if (!isV14RingRuntimeFlags(runtimeFlags)) {
-        return false;
-      }
-      return runtimeFlags?.itemUuid === itemUuid &&
-        runtimeFlags?.partId === partId &&
-        runtimeFlags?.groupId !== newGroupId;
-    })
-    .map((regionDocument) => regionDocument?.id)
-    .filter(Boolean);
-
-  if (!regionIds.length) {
-    logV14RegionDiagnostic("v14RingLegacyCleanupSkipped", {
-      entryPoint: "createManagedRegionFromRegion",
-      sceneId: scene?.id ?? null,
-      itemUuid,
-      partId,
-      newGroupId,
-      ringOperationId,
-      reason: "no-existing-v14-ring-segments"
+  const cleanupKey = [
+    scene?.id ?? "scene",
+    newGroupId ?? "group",
+    nativeRegionId ?? "region",
+    ringOperationId ?? "operation"
+  ].join("|");
+  if (pendingV14RingCleanupKeys.has(cleanupKey)) {
+    logV14RingSegmentCleanupDecision({
+      scene,
+      operationId: ringOperationId,
+      currentRegionId: nativeRegionId,
+      currentSourceRegionId: nativeRegionId,
+      currentGroupId: newGroupId,
+      candidateDecisions: [],
+      deletionIds: [],
+      cleanupReentrant: true,
+      cleanupSkippedReason: "cleanup-already-running-for-operation"
     });
     return [];
   }
 
-  logV14RegionDiagnostic("v14RingLegacyCleanupAttempt", {
-    entryPoint: "createManagedRegionFromRegion",
-    sceneId: scene?.id ?? null,
-    itemUuid,
-    partId,
-    newGroupId,
-    ringOperationId,
-    regionIds
-  });
-
+  pendingV14RingCleanupKeys.add(cleanupKey);
+  let regionIds = [];
   try {
+    const candidateDecisions = listSceneRegions(scene)
+      .map((regionDocument) => buildV14RingSegmentCleanupCandidateDecision(regionDocument, {
+        itemUuid,
+        partId,
+        newGroupId,
+        nativeRegionId
+      }));
+    regionIds = candidateDecisions
+      .filter((decision) => decision.delete)
+      .map((decision) => decision.regionId)
+      .filter(Boolean);
+
+    logV14RingSegmentCleanupDecision({
+      scene,
+      operationId: ringOperationId,
+      currentRegionId: nativeRegionId,
+      currentSourceRegionId: nativeRegionId,
+      currentGroupId: newGroupId,
+      candidateDecisions,
+      deletionIds: regionIds,
+      cleanupReentrant: false,
+      cleanupSkippedReason: regionIds.length ? null : "no-exact-v14-ring-segment-match"
+    });
+
+    if (!regionIds.length) {
+      logV14RegionDiagnostic("v14RingLegacyCleanupSkipped", {
+        entryPoint: "createManagedRegionFromRegion",
+        sceneId: scene?.id ?? null,
+        itemUuid,
+        partId,
+        newGroupId,
+        ringOperationId,
+        reason: "no-exact-v14-ring-segment-match"
+      });
+      return [];
+    }
+
+    const deletedGroupIds = Array.from(new Set(candidateDecisions
+      .filter((decision) => decision.delete)
+      .map((decision) => decision.groupId)
+      .filter(Boolean)));
+    for (const groupId of deletedGroupIds) {
+      await cleanupExistingV14RingVisualOverlays(scene, {
+        groupId,
+        ringOperationId,
+        reason: "replace-exact-v14-ring-segments"
+      });
+    }
+
     await scene.deleteEmbeddedDocuments("Region", regionIds, {
       persistentZonesCleanup: true,
       persistentZonesV14RingCleanup: true,
+      persistentZonesLegacySegmentCleanup: true,
       persistentZonesRingOperationId: ringOperationId
     });
     logV14RegionDiagnostic("v14RingLegacyCleanupSuccess", {
@@ -3066,7 +3130,109 @@ async function cleanupExistingV14RingSegments(scene, {
       reason: caughtError?.message ?? "unknown"
     });
     return [];
+  } finally {
+    pendingV14RingCleanupKeys.delete(cleanupKey);
   }
+}
+
+function buildV14RingSegmentCleanupCandidateDecision(regionDocument, {
+  itemUuid = null,
+  partId = null,
+  newGroupId = null,
+  nativeRegionId = null
+} = {}) {
+  const runtimeFlags = getRegionRuntimeFlags(regionDocument);
+  const regionId = regionDocument?.id ?? null;
+  const groupId = runtimeFlags?.groupId ?? null;
+  const sourceRegionId = runtimeFlags?.sourceRegionId ?? null;
+  const finalRegionId = runtimeFlags?.finalRegionId ?? null;
+  const ringOperationId = runtimeFlags?.ringOperationId ?? null;
+
+  if (regionId === nativeRegionId || finalRegionId === nativeRegionId) {
+    return {
+      regionId,
+      groupId,
+      sourceRegionId,
+      finalRegionId,
+      ringOperationId,
+      delete: false,
+      matchingReason: null,
+      rejectedReason: "current-source-region"
+    };
+  }
+
+  if (!isV14RingRuntimeFlags(runtimeFlags)) {
+    return {
+      regionId,
+      groupId,
+      sourceRegionId,
+      finalRegionId,
+      ringOperationId,
+      delete: false,
+      matchingReason: null,
+      rejectedReason: "not-v14-ring-runtime"
+    };
+  }
+
+  const itemMatches = runtimeFlags?.itemUuid === itemUuid;
+  const partMatches = runtimeFlags?.partId === partId;
+  const exactGroupMatch = Boolean(newGroupId && groupId === newGroupId);
+  const exactSourceMatch = Boolean(nativeRegionId && sourceRegionId === nativeRegionId);
+  const deleteCandidate = Boolean((exactGroupMatch || exactSourceMatch) && itemMatches && partMatches);
+
+  return {
+    regionId,
+    groupId,
+    sourceRegionId,
+    finalRegionId,
+    ringOperationId,
+    itemUuid: runtimeFlags?.itemUuid ?? null,
+    partId: runtimeFlags?.partId ?? null,
+    delete: deleteCandidate,
+    matchingReason: deleteCandidate
+      ? exactGroupMatch ? "exact-group-id" : "exact-source-region-id"
+      : null,
+    rejectedReason: deleteCandidate
+      ? null
+      : !itemMatches ? "different-item"
+        : !partMatches ? "different-part"
+          : "different-group-and-source"
+  };
+}
+
+function logV14RingSegmentCleanupDecision({
+  scene = null,
+  operationId = null,
+  currentRegionId = null,
+  currentSourceRegionId = null,
+  currentGroupId = null,
+  candidateDecisions = [],
+  deletionIds = [],
+  cleanupReentrant = false,
+  cleanupSkippedReason = null
+} = {}) {
+  const consideredCandidates = Array.from(candidateDecisions ?? [])
+    .filter((decision) => decision?.regionId && decision.rejectedReason !== "not-v14-ring-runtime");
+  console.warn(`[${MODULE_ID}][lifecycle] PZ V14 RING SEGMENT CLEANUP DECISION`, {
+    operationId,
+    currentRegionId,
+    currentSourceRegionId,
+    currentGroupId,
+    candidateRegionIds: consideredCandidates.map((decision) => decision.regionId),
+    candidateGroupIds: consideredCandidates.map((decision) => decision.groupId ?? null),
+    matchingReason: consideredCandidates.map((decision) => ({
+      regionId: decision.regionId,
+      reason: decision.matchingReason
+    })),
+    rejectedReason: consideredCandidates.map((decision) => ({
+      regionId: decision.regionId,
+      reason: decision.rejectedReason
+    })),
+    deletionIds,
+    cleanupReentrant,
+    cleanupSkippedReason,
+    sceneId: scene?.id ?? null
+  });
 }
 
 async function removeNativeV14RingSourceRegion(regionDocument, {
@@ -4193,6 +4359,12 @@ function summarizeExistingGroupCompatibility(existingRegions, groupPlan) {
 }
 
 function onPreDeleteRegion(regionDocument, options = {}, userId = null) {
+  const genericOwnerCascadeDecision = evaluateGenericOwnerDeleteCascadeProtection(regionDocument, options, userId);
+  if (genericOwnerCascadeDecision.blocked) {
+    console.warn(`[${MODULE_ID}][lifecycle] PZ GENERIC OWNER DELETE CASCADE BLOCKED`, genericOwnerCascadeDecision.logData);
+    return false;
+  }
+
   const decision = evaluateStartupExternalDeleteProtection(regionDocument, options, userId);
   if (decision.blocked) {
     console.warn(`[${MODULE_ID}][lifecycle] PZ EXTERNAL STARTUP DELETE BLOCKED`, decision.logData);
@@ -4204,6 +4376,516 @@ function onPreDeleteRegion(regionDocument, options = {}, userId = null) {
   }
 
   return undefined;
+}
+
+function onPreCreateActiveEffect(activeEffect, data = {}, options = {}, userId = null) {
+  const decision = evaluateGenericCleanupEffectSuppression(activeEffect, data, options, userId);
+  logGenericCleanupEffectMatchDecision(decision);
+  if (!decision.effectSuppressionAllowed) {
+    console.warn(`[${MODULE_ID}][lifecycle] PZ GENERIC CLEANUP EFFECT NOT SUPPRESSED`, {
+      candidateCastInstanceIds: duplicateData(decision.candidateCastInstanceIds),
+      unresolvedSignals: duplicateData(decision.unresolvedSignals),
+      effectName: decision.effectName ?? null,
+      effectOrigin: decision.effectOrigin ?? null,
+      changes: duplicateData(decision.changes),
+      statuses: duplicateData(decision.statuses),
+      decisionReason: decision.decisionReason
+    });
+    return undefined;
+  }
+
+  const castRecord = activeNonConcentrationCastRegistry.get(decision.selectedCastInstanceId);
+  if (castRecord) {
+    castRecord.genericCleanupEffectSuppressed = true;
+    castRecord.genericCleanupEffectSuppressedAt = Date.now();
+    activeNonConcentrationCastRegistry.set(decision.selectedCastInstanceId, castRecord);
+  }
+  console.warn(`[${MODULE_ID}][lifecycle] PZ GENERIC CLEANUP EFFECT SUPPRESSED`, {
+    castInstanceId: decision.selectedCastInstanceId,
+    operationId: castRecord?.operationId ?? null,
+    actorUuid: decision.actorUuid ?? null,
+    itemUuid: decision.itemUuid ?? null,
+    regionId: castRecord?.finalRegionId ?? castRecord?.sourceRegionId ?? null,
+    effectName: decision.effectName ?? null,
+    effectOrigin: decision.effectOrigin ?? null,
+    changesCount: decision.changesCount,
+    statuses: duplicateData(decision.statuses),
+    concentrationRequired: decision.concentrationRequired,
+    suppressionReason: decision.decisionReason
+  });
+  return false;
+}
+
+function onPreDeleteActiveEffect(activeEffect, options = {}, userId = null) {
+  const audit = buildGenericOwnerDependencyAudit(activeEffect, {
+    hookName: "preDeleteActiveEffect",
+    options,
+    userId
+  });
+  logGenericOwnerDependencyAudit(audit);
+
+  const context = buildGenericOwnerDeleteContext(activeEffect, audit, {
+    options,
+    userId
+  });
+  if (!context.protectedRegionIds.length) {
+    return undefined;
+  }
+
+  activeGenericOwnerDeleteContexts.set(activeEffect.uuid, context);
+  setTimeout(() => {
+    cleanupGenericOwnerDeleteContext(activeEffect.uuid, "timeout");
+  }, GENERIC_OWNER_DELETE_CONTEXT_TTL_MS);
+  return undefined;
+}
+
+function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect) {
+  const context = activeEffect?.uuid ? activeGenericOwnerDeleteContexts.get(activeEffect.uuid) : null;
+  if (context) {
+    context.effectDeletedAt = Date.now();
+    activeGenericOwnerDeleteContexts.set(activeEffect.uuid, context);
+    cleanupGenericOwnerDeleteContext(activeEffect.uuid, "deleteActiveEffect");
+  }
+}
+
+function evaluateGenericOwnerDeleteCascadeProtection(regionDocument, options = {}, userId = null) {
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? null;
+  const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtime ?? {});
+  const dedicatedOwnerEffect = ownerEffectUuid ? resolveOwnerEffectSync(ownerEffectUuid) : null;
+  const context = Array.from(activeGenericOwnerDeleteContexts.values())
+    .find((candidate) => candidate.protectedRegionIds.includes(regionDocument?.id) || candidate.pendingRegionIds.includes(regionDocument?.id));
+  const concentrationRequired = runtime?.normalizedDefinition?.concentration?.required === true;
+  const persistentZonesCleanup = hasPersistentZonesLegitimateDeletionOption(options);
+  const pendingRegionIdsBefore = Array.from(context?.pendingRegionIds ?? []);
+  const blocked = Boolean(
+    context &&
+    runtime &&
+    isNonConcentrationRuntime(runtime) &&
+    ownerEffectUuid &&
+    isPersistentZonesDedicatedOwnerEffect(dedicatedOwnerEffect) &&
+    !persistentZonesCleanup
+  );
+  if (context && regionDocument?.id) {
+    context.pendingRegionIds = context.pendingRegionIds.filter((regionId) => regionId !== regionDocument.id);
+    if (blocked && !context.blockedRegionIds.includes(regionDocument.id)) {
+      context.blockedRegionIds.push(regionDocument.id);
+    }
+    activeGenericOwnerDeleteContexts.set(context.genericEffectUuid, context);
+    cleanupGenericOwnerDeleteContext(context.genericEffectUuid, "preDeleteRegion");
+  }
+
+  return {
+    blocked,
+    logData: {
+      genericEffectUuid: context?.genericEffectUuid ?? null,
+      regionId: regionDocument?.id ?? null,
+      dedicatedOwnerEffectUuid: ownerEffectUuid ?? null,
+      pendingRegionIdsBefore: duplicateData(pendingRegionIdsBefore),
+      pendingRegionIdsAfter: duplicateData(context?.pendingRegionIds ?? []),
+      blockedRegionIds: duplicateData(context?.blockedRegionIds ?? []),
+      concentrationRequired,
+      deleteOptions: duplicateData(options ?? {}),
+      deletionUserId: userId ?? null,
+      detectionMode: context?.detectionMode ?? null,
+      deletionPrevented: blocked,
+      reason: blocked ? "generic-owner-effect-delete-cascade" : "not-generic-owner-cascade"
+    }
+  };
+}
+
+function hasPersistentZonesLegitimateDeletionOption(options = {}) {
+  return Boolean(
+    options?.persistentZonesCleanup === true ||
+    options?.persistentZonesOwnerCleanup === true ||
+    options?.persistentZonesOrphanCleanup === true ||
+    options?.persistentZonesEffectLifecycleCleanup === true ||
+    options?.persistentZonesRegionLifecycleCleanup === true ||
+    options?.persistentZonesV14RingCleanup === true
+  );
+}
+
+function buildGenericOwnerDeleteContext(activeEffect, audit = {}, { options = {}, userId = null } = {}) {
+  if (isPersistentZonesDedicatedOwnerEffect(activeEffect) || isEffectConcentrationLike(activeEffect)) {
+    return {
+      genericEffectUuid: activeEffect?.uuid ?? null,
+      actorUuid: activeEffect?.parent?.uuid ?? null,
+      protectedRegionIds: [],
+      dedicatedOwnerEffectUuids: [],
+      detectionMode: "not-generic-owner-effect",
+      options: duplicateData(options ?? {}),
+      userId: userId ?? null
+    };
+  }
+  const protectedRegions = Array.from(audit.regions ?? [])
+    .filter((row) => row.protectable)
+    .filter((row) => row.referencesGenericEffect || row.genericEffectReferencesRegion);
+  const protectedRegionIds = protectedRegions.map((row) => row.regionId).filter(Boolean);
+  return {
+    genericEffectUuid: activeEffect?.uuid ?? null,
+    actorUuid: activeEffect?.parent?.uuid ?? null,
+    itemUuid: resolveActiveEffectItemUuid(activeEffect, activeEffect?.toObject?.() ?? {}),
+    createdAt: Date.now(),
+    effectDeletedAt: null,
+    expiresAt: Date.now() + GENERIC_OWNER_DELETE_CONTEXT_TTL_MS,
+    protectedRegionIds,
+    pendingRegionIds: Array.from(protectedRegionIds),
+    blockedRegionIds: [],
+    dedicatedOwnerEffectUuids: protectedRegions.map((row) => row.ownerEffectUuid).filter(Boolean),
+    detectionMode: protectedRegions.some((row) => row.effectDependentDocument) ? "effect-getDependents" : "serialized-reference",
+    options: duplicateData(options ?? {}),
+    userId: userId ?? null
+  };
+}
+
+function cleanupGenericOwnerDeleteContext(effectUuid, reason = "manual") {
+  const context = effectUuid ? activeGenericOwnerDeleteContexts.get(effectUuid) : null;
+  if (!context) {
+    return;
+  }
+  context.lastPendingRegionIdsBefore = Array.from(context.pendingRegionIds ?? []);
+  const expired = Date.now() >= (context.expiresAt ?? 0);
+  const completed = Array.isArray(context.pendingRegionIds) && context.pendingRegionIds.length === 0;
+  if (expired || completed) {
+    activeGenericOwnerDeleteContexts.delete(effectUuid);
+    logV14RegionDiagnostic("genericOwnerDeleteContextCleared", {
+      genericEffectUuid: effectUuid,
+      reason,
+      expired,
+      completed,
+      blockedRegionIds: context.blockedRegionIds ?? []
+    });
+    return;
+  }
+  activeGenericOwnerDeleteContexts.set(effectUuid, context);
+}
+
+function registerNonConcentrationCastForGenericCleanupSuppression({
+  regionDocument = null,
+  runtime = {},
+  sourceContext = null,
+  operationId = null,
+  stage = "manual"
+} = {}) {
+  if (!isNonConcentrationRuntime(runtime)) {
+    return null;
+  }
+  const castInstanceId = runtime.castInstanceId ?? operationId ?? buildCastOperationId(regionDocument);
+  if (!castInstanceId) {
+    return null;
+  }
+  const actorUuid = runtime.actorUuid ?? runtime.casterUuid ?? sourceContext?.actor?.uuid ?? sourceContext?.caster?.uuid ?? null;
+  const itemUuid = runtime.itemUuid ?? sourceContext?.item?.uuid ?? null;
+  const now = Date.now();
+  const existing = activeNonConcentrationCastRegistry.get(castInstanceId) ?? {};
+  const record = {
+    ...existing,
+    castInstanceId,
+    operationId,
+    actorUuid,
+    itemUuid,
+    activityId: runtime.activityId ?? sourceContext?.activity?.id ?? sourceContext?.activity?.uuid?.split(".").pop() ?? null,
+    workflowId: runtime.workflowId ?? null,
+    messageId: runtime.messageId ?? null,
+    sourceRegionId: runtime.sourceRegionId ?? regionDocument?.id ?? null,
+    finalRegionId: runtime.finalRegionId ?? regionDocument?.id ?? null,
+    sceneId: regionDocument?.parent?.id ?? runtime.sceneId ?? null,
+    concentrationRequired: false,
+    createdAt: existing.createdAt ?? now,
+    expiresAt: now + NON_CONCENTRATION_CAST_REGISTRY_TTL_MS,
+    dedicatedOwnerEffectUuid: runtime.ownerEffectUuid ?? runtime.activeEffectUuid ?? existing.dedicatedOwnerEffectUuid ?? null,
+    genericCleanupEffectSuppressed: existing.genericCleanupEffectSuppressed === true,
+    stage
+  };
+  activeNonConcentrationCastRegistry.set(castInstanceId, record);
+  setTimeout(() => {
+    const current = activeNonConcentrationCastRegistry.get(castInstanceId);
+    if (current && Date.now() >= current.expiresAt) {
+      activeNonConcentrationCastRegistry.delete(castInstanceId);
+    }
+  }, NON_CONCENTRATION_CAST_REGISTRY_TTL_MS + 250);
+  return record;
+}
+
+function evaluateGenericCleanupEffectSuppression(activeEffect, data = {}, options = {}, userId = null) {
+  const effectData = mergeActiveEffectPreCreateData(activeEffect, data);
+  const effectName = activeEffect?.name ?? effectData.name ?? effectData.label ?? null;
+  const effectOrigin = activeEffect?.origin ?? effectData.origin ?? null;
+  const actorUuid = activeEffect?.parent?.uuid ?? null;
+  const itemUuid = resolveActiveEffectItemUuid(activeEffect, effectData);
+  const activityId = resolveActiveEffectActivityId(activeEffect, effectData);
+  const workflowId = getPropertyPath(effectData, "flags.midi-qol.workflowId") ?? getPropertyPath(effectData, "flags.dnd5e.workflowId") ?? null;
+  const changes = Array.from(effectData.changes ?? activeEffect?.changes ?? []);
+  const statuses = extractEffectStatuses(activeEffect, effectData);
+  const isDedicatedPzEffect = Boolean(getPropertyPath(effectData, `flags.${MODULE_ID}.managedOwnerEffect`) === true);
+  const concentrationLike = isEffectDataConcentrationLike(activeEffect, effectData);
+  const detectedCleanupSignals = detectGenericCleanupEffectSignals(effectData, {
+    effectName,
+    effectOrigin,
+    changes,
+    statuses,
+    isDedicatedPzEffect,
+    concentrationLike
+  });
+  const candidateCasts = findActiveNonConcentrationCastCandidates({
+    actorUuid,
+    itemUuid,
+    activityId,
+    workflowId
+  });
+  const selectedCast = candidateCasts.length === 1 ? candidateCasts[0] : null;
+  const unresolvedSignals = [];
+  if (!actorUuid) unresolvedSignals.push("missing-actor-uuid");
+  if (!itemUuid) unresolvedSignals.push("missing-item-uuid");
+  if (!candidateCasts.length) unresolvedSignals.push("no-active-pz-cast-candidate");
+  if (candidateCasts.length > 1) unresolvedSignals.push("ambiguous-active-pz-cast-candidates");
+  if (changes.length) unresolvedSignals.push("effect-has-changes");
+  if (statuses.length) unresolvedSignals.push("effect-has-statuses");
+  if (isDedicatedPzEffect) unresolvedSignals.push("persistent-zones-dedicated-owner-effect");
+  if (concentrationLike) unresolvedSignals.push("effect-is-concentration-like");
+  if (!detectedCleanupSignals.includes("empty-non-mechanical-template-cleanup-signature")) {
+    unresolvedSignals.push("missing-template-cleanup-signature");
+  }
+  const originMatchesSelectedCast = Boolean(selectedCast?.itemUuid && itemUuid && selectedCast.itemUuid === itemUuid);
+  if (selectedCast && !originMatchesSelectedCast) {
+    unresolvedSignals.push("effect-origin-does-not-match-selected-cast-item");
+  }
+  const effectSuppressionAllowed = Boolean(
+    selectedCast &&
+    selectedCast.concentrationRequired === false &&
+    originMatchesSelectedCast &&
+    !isDedicatedPzEffect &&
+    !concentrationLike &&
+    changes.length === 0 &&
+    statuses.length === 0 &&
+    detectedCleanupSignals.includes("empty-non-mechanical-template-cleanup-signature")
+  );
+  return {
+    effectName,
+    effectOrigin,
+    actorUuid,
+    itemUuid,
+    activityId,
+    workflowId,
+    userId,
+    options: duplicateData(options ?? {}),
+    candidateCastInstanceIds: candidateCasts.map((candidate) => candidate.castInstanceId).filter(Boolean),
+    selectedCastInstanceId: selectedCast?.castInstanceId ?? null,
+    concentrationRequired: selectedCast?.concentrationRequired ?? null,
+    changes,
+    changesCount: changes.length,
+    statuses,
+    detectedCleanupSignals,
+    effectSuppressionAllowed,
+    decisionReason: effectSuppressionAllowed ? "exact-active-pz-non-concentration-template-cleanup-effect" : unresolvedSignals.join(",") || "not-a-pz-template-cleanup-effect",
+    unresolvedSignals
+  };
+}
+
+function mergeActiveEffectPreCreateData(activeEffect, data = {}) {
+  const objectData = activeEffect?.toObject?.() ?? {};
+  return {
+    ...objectData,
+    ...duplicateData(data ?? {}),
+    flags: {
+      ...(objectData.flags ?? {}),
+      ...(data?.flags ?? {})
+    }
+  };
+}
+
+function findActiveNonConcentrationCastCandidates({
+  actorUuid = null,
+  itemUuid = null,
+  activityId = null,
+  workflowId = null
+} = {}) {
+  const now = Date.now();
+  for (const [castInstanceId, record] of Array.from(activeNonConcentrationCastRegistry.entries())) {
+    if (now >= (record.expiresAt ?? 0)) {
+      activeNonConcentrationCastRegistry.delete(castInstanceId);
+    }
+  }
+  return Array.from(activeNonConcentrationCastRegistry.values())
+    .filter((record) => record.concentrationRequired === false)
+    .filter((record) => record.genericCleanupEffectSuppressed !== true)
+    .filter((record) => actorUuid && record.actorUuid === actorUuid)
+    .filter((record) => itemUuid && record.itemUuid === itemUuid)
+    .filter((record) => !activityId || !record.activityId || record.activityId === activityId)
+    .filter((record) => !workflowId || !record.workflowId || record.workflowId === workflowId);
+}
+
+function detectGenericCleanupEffectSignals(effectData = {}, {
+  effectName = null,
+  effectOrigin = null,
+  changes = [],
+  statuses = [],
+  isDedicatedPzEffect = false,
+  concentrationLike = false
+} = {}) {
+  const signals = [];
+  if (changes.length === 0) signals.push("no-changes");
+  if (statuses.length === 0) signals.push("no-statuses");
+  if (effectOrigin) signals.push("has-origin");
+  if (!isDedicatedPzEffect) signals.push("not-persistent-zones-dedicated-owner");
+  if (!concentrationLike) signals.push("not-concentration-like");
+  const text = stringifyCompact({
+    name: effectName,
+    flags: effectData.flags ?? null,
+    duration: effectData.duration ?? null,
+    origin: effectOrigin
+  }).toLowerCase();
+  if (text.includes("template") || text.includes("cleanup") || text.includes("midi-qol") || text.includes("dnd5e")) {
+    signals.push("observed-template-cleanup-text");
+  }
+  if (
+    signals.includes("no-changes") &&
+    signals.includes("no-statuses") &&
+    signals.includes("has-origin") &&
+    signals.includes("not-persistent-zones-dedicated-owner") &&
+    signals.includes("not-concentration-like")
+  ) {
+    signals.push("empty-non-mechanical-template-cleanup-signature");
+  }
+  return signals;
+}
+
+function extractEffectStatuses(activeEffect, effectData = {}) {
+  const rawStatuses = effectData.statuses ?? activeEffect?.statuses ?? [];
+  if (rawStatuses instanceof Set) {
+    return Array.from(rawStatuses).filter(Boolean);
+  }
+  if (Array.isArray(rawStatuses)) {
+    return rawStatuses.filter(Boolean);
+  }
+  if (rawStatuses && typeof rawStatuses === "object") {
+    return Object.keys(rawStatuses).filter((key) => rawStatuses[key]);
+  }
+  return [];
+}
+
+function isEffectDataConcentrationLike(activeEffect, effectData = {}) {
+  const text = stringifyCompact({
+    name: activeEffect?.name ?? effectData.name ?? effectData.label ?? null,
+    statuses: extractEffectStatuses(activeEffect, effectData),
+    flags: effectData.flags ?? null
+  }).toLowerCase();
+  return text.includes("concentrat");
+}
+
+function logGenericCleanupEffectMatchDecision(decision = {}) {
+  console.warn(
+    `[${MODULE_ID}][lifecycle] PZ GENERIC CLEANUP EFFECT MATCH DECISION | effectName=${decision.effectName ?? "null"} | effectOrigin=${decision.effectOrigin ?? "null"} | actorUuid=${decision.actorUuid ?? "null"} | itemUuid=${decision.itemUuid ?? "null"} | activityId=${decision.activityId ?? "null"} | workflowId=${decision.workflowId ?? "null"} | candidateCastInstanceIds=${stringifyCompact(decision.candidateCastInstanceIds ?? [])} | selectedCastInstanceId=${decision.selectedCastInstanceId ?? "null"} | concentrationRequired=${decision.concentrationRequired ?? "null"} | changesCount=${decision.changesCount ?? 0} | statuses=${stringifyCompact(decision.statuses ?? [])} | detectedCleanupSignals=${stringifyCompact(decision.detectedCleanupSignals ?? [])} | effectSuppressionAllowed=${decision.effectSuppressionAllowed === true} | decisionReason=${decision.decisionReason ?? "null"}`
+  );
+}
+
+function buildGenericOwnerDependencyAudit(activeEffect, {
+  hookName = "manual",
+  options = {},
+  userId = null
+} = {}) {
+  const effectSummary = summarizeDocumentDependencyState(activeEffect);
+  const effectData = activeEffect?.toObject?.(false) ?? activeEffect?.toObject?.() ?? {};
+  const effectText = stringifyCompact({
+    flags: effectData.flags ?? null,
+    dependents: effectSummary.dependents,
+    dependencies: effectSummary.dependencies,
+    getDependents: effectSummary.getDependents
+  });
+  const effectItemUuid = resolveActiveEffectItemUuid(activeEffect, effectData);
+  const regions = [];
+  for (const scene of game?.scenes?.contents ?? []) {
+    for (const region of findManagedRegions(scene)) {
+      const runtime = getRegionRuntimeFlags(region) ?? {};
+      if (!isNonConcentrationRuntime(runtime)) {
+        continue;
+      }
+      const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtime);
+      const dedicatedOwnerEffect = ownerEffectUuid ? resolveOwnerEffectSync(ownerEffectUuid) : null;
+      const regionSummary = summarizeDocumentDependencyState(region);
+      const regionText = stringifyCompact({
+        flags: regionSummary.flags,
+        dependents: regionSummary.dependents,
+        dependencies: regionSummary.dependencies,
+        getDependents: regionSummary.getDependents
+      });
+      const regionRefs = [region?.uuid, region?.id].filter(Boolean);
+      const ownerRefs = [activeEffect?.uuid, activeEffect?.id].filter(Boolean);
+      const effectDependentDocument = Array.from(effectSummary.getDependents ?? [])
+        .some((dependent) => dependent.uuid === region?.uuid || dependent.id === region?.id);
+      regions.push({
+        regionId: region?.id ?? null,
+        regionUuid: region?.uuid ?? null,
+        ownerEffectUuid,
+        dedicatedOwnerEffect: isPersistentZonesDedicatedOwnerEffect(dedicatedOwnerEffect),
+        protectable: Boolean(ownerEffectUuid && isPersistentZonesDedicatedOwnerEffect(dedicatedOwnerEffect)),
+        flags: regionSummary.flags,
+        toObject: regionSummary.toObject,
+        source: regionSummary.source,
+        dependents: regionSummary.dependents,
+        dependencies: regionSummary.dependencies,
+        getDependents: regionSummary.getDependents,
+        referencesGenericEffect: ownerRefs.some((ref) => regionText.includes(ref)),
+        genericEffectReferencesRegion: regionRefs.some((ref) => effectText.includes(ref)),
+        effectDependentDocument,
+        sameItem: Boolean(effectItemUuid && runtime.itemUuid === effectItemUuid),
+        groupId: runtime.groupId ?? null,
+        sourceRegionId: runtime.sourceRegionId ?? null
+      });
+    }
+  }
+
+  return {
+    hookName,
+    timestamp: Date.now(),
+    options: duplicateData(options ?? {}),
+    userId: userId ?? null,
+    effect: effectSummary,
+    regions
+  };
+}
+
+function summarizeDocumentDependencyState(document) {
+  const objectData = document?.toObject?.(false) ?? document?.toObject?.() ?? null;
+  const sourceData = document?._source ?? null;
+  const getDependents = typeof document?.getDependents === "function"
+    ? Array.from(document.getDependents() ?? []).map((dependent) => ({
+      id: dependent?.id ?? null,
+      uuid: dependent?.uuid ?? null,
+      documentName: dependent?.documentName ?? null,
+      name: dependent?.name ?? null
+    }))
+    : [];
+  return {
+    documentId: document?.id ?? null,
+    documentUuid: document?.uuid ?? null,
+    documentName: document?.documentName ?? null,
+    name: document?.name ?? objectData?.name ?? null,
+    img: document?.img ?? document?.icon ?? objectData?.img ?? objectData?.icon ?? null,
+    origin: document?.origin ?? objectData?.origin ?? null,
+    flags: duplicateData(objectData?.flags ?? document?.flags ?? null),
+    changes: duplicateData(objectData?.changes ?? document?.changes ?? null),
+    statuses: duplicateData(Array.from(document?.statuses ?? objectData?.statuses ?? [])),
+    duration: duplicateData(objectData?.duration ?? document?.duration ?? null),
+    toObject: duplicateData(objectData),
+    source: duplicateData(sourceData),
+    dependents: duplicateData(objectData?.dependents ?? document?.dependents ?? null),
+    dependencies: duplicateData(objectData?.dependencies ?? document?.dependencies ?? null),
+    getDependents,
+    hasAddDependent: typeof document?.addDependent,
+    hasDeleteDependent: typeof document?.deleteDependent,
+    dependentUuids: getDependents.map((dependent) => dependent.uuid).filter(Boolean)
+  };
+}
+
+function logGenericOwnerDependencyAudit(audit = {}) {
+  console.warn(`[${MODULE_ID}][lifecycle] PZ GENERIC OWNER DEPENDENCY AUDIT`, {
+    hookName: audit.hookName ?? null,
+    timestamp: audit.timestamp ?? Date.now(),
+    options: duplicateData(audit.options ?? {}),
+    userId: audit.userId ?? null,
+    effect: duplicateData(audit.effect ?? null),
+    regions: duplicateData(audit.regions ?? [])
+  });
 }
 
 async function onDeleteRegion(regionDocument, options = {}) {
@@ -4402,10 +5084,11 @@ async function onOwnerActiveEffectChanged(hook, activeEffect, changed = {}, opti
     return;
   }
 
-  await reconcileOwnerEffectLinksForActiveEffect(activeEffect, {
+  const reconciled = await reconcileOwnerEffectLinksForActiveEffect(activeEffect, {
     reason: hook,
     changedKeys: Object.keys(changed ?? {})
   });
+  logOwnerEffectOwnershipSnapshot({ reason: hook, activeEffect, reconciledCount: reconciled.length });
 }
 
 async function reconcileMissingOwnerEffectLinksForWorld({ reason = "manual" } = {}) {
@@ -4541,12 +5224,33 @@ function collectPotentialOwnerEffectsForRegion(runtime = {}) {
 
 function selectOwnerEffectForRegion(regionDocument, effects = [], { sameActorItemCandidateCount = null } = {}) {
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const nonConcentration = isNonConcentrationRuntime(runtime);
   const matches = Array.from(effects ?? [])
     .map((effect) => buildOwnerEffectCandidateMatch(regionDocument, runtime, effect))
-    .filter((match) => match.hasAnySignal);
-  const explicitMatches = matches.filter((match) => match.hasExplicitSignal);
-  const launchMatches = matches.filter((match) => match.hasLaunchSignal);
-  const actorItemMatches = matches.filter((match) => match.actorMatches && match.itemMatches);
+    .filter((match) => match.hasAnySignal)
+    .map((match) => ({
+      ...match,
+      alreadyOwnedByOtherRegionIds: findManagedRegionsReferencingOwnerEffect(match.effect?.uuid ?? null, {
+        excludeRegionId: regionDocument?.id ?? null,
+        excludeRegionUuid: regionDocument?.uuid ?? null
+      }).filter((region) => isNonConcentrationRuntime(getRegionRuntimeFlags(region) ?? {}))
+        .map((region) => region?.id ?? null)
+        .filter(Boolean)
+    }))
+    .filter((match) => {
+      if (!nonConcentration || isPersistentZonesDedicatedOwnerEffect(match.effect)) {
+        return true;
+      }
+      return !match.alreadyOwnedByOtherRegionIds.length;
+    });
+  const ownerEligibleMatches = nonConcentration
+    ? matches.filter((match) => isPersistentZonesDedicatedOwnerEffect(match.effect))
+    : matches;
+  const explicitMatches = ownerEligibleMatches.filter((match) => match.hasExplicitSignal);
+  const launchMatches = ownerEligibleMatches.filter((match) => match.hasLaunchSignal);
+  const actorItemMatches = nonConcentration
+    ? []
+    : ownerEligibleMatches.filter((match) => match.actorMatches && match.itemMatches);
   const selectedMatch =
     uniqueMatch(explicitMatches) ??
     uniqueMatch(launchMatches) ??
@@ -4564,8 +5268,11 @@ function selectOwnerEffectForRegion(regionDocument, effects = [], { sameActorIte
     selectedOwnerEffectUuid: selectedMatch?.effect?.uuid ?? null,
     candidateEffectUuids: matches.map((match) => match.effect?.uuid ?? null).filter(Boolean),
     candidateCount: matches.length,
+    ownerEligibleEffectUuids: ownerEligibleMatches.map((match) => match.effect?.uuid ?? null).filter(Boolean),
     matchingSignals: matches.map((match) => ({
       effectUuid: match.effect?.uuid ?? null,
+      candidateCreatedAt: match.candidateCreatedAt,
+      alreadyOwnedByOtherRegionIds: match.alreadyOwnedByOtherRegionIds ?? [],
       signals: match.signals,
       resolutionMode: match.resolutionMode
     })),
@@ -4584,6 +5291,7 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
   const effectText = stringifyDiagnosticJson(effectData);
   const effectItemUuid = resolveActiveEffectItemUuid(activeEffect, effectData);
   const effectActivityId = resolveActiveEffectActivityId(activeEffect, effectData);
+  const candidateCreatedAt = resolveActiveEffectCreatedAt(activeEffect, effectData);
   const actorUuid = runtime.actorUuid ?? runtime.casterUuid ?? runtime.normalizedDefinition?.actorUuid ?? null;
   const itemUuid = runtime.itemUuid ?? null;
   const regionId = regionDocument?.id ?? runtime.finalRegionId ?? runtime.sourceRegionId ?? null;
@@ -4593,6 +5301,13 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
   const activityId = runtime.activityId ?? null;
   const workflowId = runtime.workflowId ?? null;
   const signals = {
+    dedicatedOwnerEffect: Boolean(isPersistentZonesDedicatedOwnerEffect(activeEffect) && (
+      getPropertyPath(effectData, `flags.${MODULE_ID}.regionId`) === regionId ||
+      getPropertyPath(effectData, `flags.${MODULE_ID}.regionUuid`) === regionUuid ||
+      getPropertyPath(effectData, `flags.${MODULE_ID}.groupId`) === runtime.groupId ||
+      getPropertyPath(effectData, `flags.${MODULE_ID}.sourceRegionId`) === runtime.sourceRegionId ||
+      getPropertyPath(effectData, `flags.${MODULE_ID}.castInstanceId`) === runtime.castInstanceId
+    )),
     explicitRegion: Boolean((regionUuid && effectText.includes(regionUuid)) || (regionId && effectText.includes(regionId))),
     explicitTemplate: Boolean((sourceTemplateUuid && effectText.includes(sourceTemplateUuid)) || (sourceTemplateId && effectText.includes(sourceTemplateId))),
     workflow: Boolean(workflowId && effectText.includes(workflowId)),
@@ -4600,13 +5315,15 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
     actor: Boolean(actorUuid && effectActor?.uuid === actorUuid),
     item: Boolean(itemUuid && (effectItemUuid === itemUuid || String(activeEffect?.origin ?? "").startsWith(itemUuid)))
   };
-  const hasExplicitSignal = signals.explicitRegion || signals.explicitTemplate;
+  const hasExplicitSignal = signals.dedicatedOwnerEffect || signals.explicitRegion || signals.explicitTemplate;
   const hasLaunchSignal = signals.workflow || signals.activity;
   const matchesActorAndItem = signals.actor && signals.item;
   const hasAnySignal = hasExplicitSignal || hasLaunchSignal || matchesActorAndItem;
-  const resolutionMode = signals.explicitRegion
-    ? "explicit-active-effect-region-reference"
-    : signals.explicitTemplate
+  const resolutionMode = signals.dedicatedOwnerEffect
+    ? "persistent-zones-dedicated-owner-effect"
+    : signals.explicitRegion
+      ? "explicit-active-effect-region-reference"
+      : signals.explicitTemplate
       ? "explicit-active-effect-template-reference"
       : signals.workflow
         ? "shared-workflow-id"
@@ -4618,6 +5335,7 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
 
   return {
     effect: activeEffect,
+    candidateCreatedAt,
     signals,
     hasExplicitSignal,
     hasLaunchSignal,
@@ -4637,9 +5355,31 @@ async function applyOwnerEffectBackfill(regionDocument, runtime = {}, activeEffe
   if (!regionDocument?.update || !activeEffect?.uuid) {
     return false;
   }
+  if (!isRegionDocumentStillPresent(regionDocument)) {
+    logV14RegionDiagnostic("ownerEffectLinkBackfillSkipped", {
+      regionId: regionDocument?.id ?? null,
+      reason: "region-no-longer-present"
+    });
+    return false;
+  }
 
   const currentRuntime = getRegionRuntimeFlags(regionDocument) ?? runtime;
   if (getOwnerEffectUuidFromRuntime(currentRuntime)) {
+    return false;
+  }
+  if (isNonConcentrationRuntime(currentRuntime) && !isPersistentZonesDedicatedOwnerEffect(activeEffect)) {
+    logOwnerEffectLinkReconciliation(regionDocument, currentRuntime, {
+      selectedOwnerEffect: null,
+      selectedOwnerEffectUuid: null,
+      candidateEffectUuids: [activeEffect.uuid],
+      candidateCount: 1,
+      matchingSignals,
+      resolutionMode: "non-concentration-generic-owner-rejected",
+      ambiguous: false
+    }, {
+      reason,
+      backfillApplied: false
+    });
     return false;
   }
 
@@ -4649,7 +5389,7 @@ async function applyOwnerEffectBackfill(regionDocument, runtime = {}, activeEffe
     [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkReconciledAt`]: Date.now(),
     [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkResolutionMode`]: resolutionMode
   };
-  if (!currentRuntime.concentrationEffectUuid) {
+  if (!currentRuntime.concentrationEffectUuid && !isNonConcentrationRuntime(currentRuntime)) {
     updateData[`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.concentrationEffectUuid`] = activeEffect.uuid;
   }
 
@@ -4671,11 +5411,565 @@ async function applyOwnerEffectBackfill(regionDocument, runtime = {}, activeEffe
   return true;
 }
 
+async function ensureDedicatedOwnerEffectForNonConcentrationRegion(regionDocument, runtime = {}, {
+  sourceContext = null,
+  operationId = null
+} = {}) {
+  if (!regionDocument || !isNonConcentrationRuntime(runtime)) {
+    return null;
+  }
+  if (!isRegionDocumentStillPresent(regionDocument)) {
+    return null;
+  }
+
+  const existingOwnerEffect = findDedicatedOwnerEffectForRegion(regionDocument, runtime);
+  if (existingOwnerEffect) {
+    await writeDedicatedOwnerEffectToRegion(regionDocument, runtime, existingOwnerEffect, {
+      resolutionMode: "existing-persistent-zones-dedicated-owner"
+    });
+    await detachNonConcentrationRegionFromGenericOwnerEffects(regionDocument, runtime, existingOwnerEffect);
+    return existingOwnerEffect;
+  }
+
+  const actor = resolveActorSync(runtime.actorUuid ?? runtime.casterUuid ?? null) ?? sourceContext?.actor ?? sourceContext?.caster ?? null;
+  if (!actor?.createEmbeddedDocuments) {
+    logNonConcentrationOwnerDetach(regionDocument, runtime, {
+      detachApplied: false,
+      detachReason: "missing-actor-createEmbeddedDocuments",
+      concentrationRequired: false
+    });
+    return null;
+  }
+
+  const castInstanceId = runtime.castInstanceId ?? operationId ?? buildCastOperationId(regionDocument);
+  const durationResolution = resolveDedicatedOwnerEffectDuration(runtime, sourceContext);
+  const durationPayload = durationResolution.applied ? { duration: durationResolution.duration } : {};
+  const presentation = resolveDedicatedOwnerEffectPresentation(regionDocument, runtime, sourceContext);
+  const effectPayload = cleanDocumentCreateData({
+    name: presentation.name,
+    img: presentation.image,
+    origin: runtime.itemUuid ?? null,
+    disabled: false,
+    ...durationPayload,
+    changes: [],
+    flags: {
+      [MODULE_ID]: {
+        managedOwnerEffect: true,
+        sceneId: regionDocument?.parent?.id ?? null,
+        regionId: regionDocument?.id ?? null,
+        regionUuid: regionDocument?.uuid ?? null,
+        sourceRegionId: runtime.sourceRegionId ?? regionDocument?.id ?? null,
+        groupId: runtime.groupId ?? null,
+        itemUuid: runtime.itemUuid ?? null,
+        actorUuid: actor?.uuid ?? runtime.actorUuid ?? runtime.casterUuid ?? null,
+        castInstanceId,
+        concentrationRequired: false
+      }
+    }
+  }, {
+    removeTopLevelFields: new Set(["_id", "id", "parent", "documentName"])
+  });
+
+  let createdEffects = [];
+  try {
+    createdEffects = await actor.createEmbeddedDocuments("ActiveEffect", [effectPayload], {
+      persistentZonesDedicatedOwnerEffectCreate: true
+    });
+  } catch (caughtError) {
+    logDedicatedOwnerEffectCreateFailed(regionDocument, runtime, {
+      castInstanceId,
+      sourceDuration: durationResolution.sourceDuration,
+      normalizedDuration: durationResolution.duration,
+      acceptedDurationUnits: durationResolution.acceptedUnits,
+      error: caughtError
+    });
+    const fallbackPayload = cleanDocumentCreateData({
+      ...effectPayload,
+      duration: undefined
+    }, {
+      removeTopLevelFields: new Set(["_id", "id", "parent", "documentName", "duration"])
+    });
+    createdEffects = await actor.createEmbeddedDocuments("ActiveEffect", [fallbackPayload], {
+      persistentZonesDedicatedOwnerEffectCreate: true,
+      persistentZonesDedicatedOwnerEffectDurationFallback: true
+    });
+  }
+  const dedicatedOwnerEffect = Array.from(createdEffects ?? [])[0] ?? null;
+  if (!dedicatedOwnerEffect) {
+    return null;
+  }
+
+  console.warn(`[${MODULE_ID}][lifecycle] PZ DEDICATED OWNER EFFECT CREATED`, {
+    regionId: regionDocument?.id ?? null,
+    groupId: runtime.groupId ?? null,
+    castInstanceId,
+    effectId: dedicatedOwnerEffect?.id ?? null,
+    effectUuid: dedicatedOwnerEffect?.uuid ?? null,
+    durationSource: durationResolution.source,
+    durationValue: duplicateData(durationResolution.duration),
+    durationApplied: durationResolution.applied,
+    concentrationRequired: false
+  });
+
+  await writeDedicatedOwnerEffectToRegion(regionDocument, {
+    ...runtime,
+    castInstanceId
+  }, dedicatedOwnerEffect, {
+    resolutionMode: "persistent-zones-dedicated-owner-created"
+  });
+  const finalRuntime = {
+    ...runtime,
+    castInstanceId
+  };
+  logDedicatedOwnerPresentationApplied(dedicatedOwnerEffect, regionDocument, presentation);
+  await detachNonConcentrationRegionFromGenericOwnerEffects(regionDocument, finalRuntime, dedicatedOwnerEffect);
+  logV14RegionDiagnostic("genericOwnerEffectPostCreateCleanupDisabled", {
+    regionId: regionDocument?.id ?? null,
+    groupId: finalRuntime.groupId ?? null,
+    castInstanceId,
+    reason: "preCreateActiveEffect-suppression-or-cascade-fallback-owned"
+  });
+  return dedicatedOwnerEffect;
+}
+
+async function writeDedicatedOwnerEffectToRegion(regionDocument, runtime = {}, ownerEffect, {
+  resolutionMode = "persistent-zones-dedicated-owner"
+} = {}) {
+  if (!isRegionDocumentStillPresent(regionDocument) || !ownerEffect?.uuid) {
+    return false;
+  }
+
+  const updateData = {
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectUuid`]: ownerEffect.uuid,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.activeEffectUuid`]: ownerEffect.uuid,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.concentrationEffectUuid`]: null,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.castInstanceId`]: runtime.castInstanceId ?? null,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkReconciledAt`]: Date.now(),
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkResolutionMode`]: resolutionMode
+  };
+  await regionDocument.update(updateData, {
+    persistentZonesOwnerEffectLinkReconciliation: true,
+    persistentZonesDedicatedOwnerEffectBackfill: true
+  });
+  return true;
+}
+
+function findDedicatedOwnerEffectForRegion(regionDocument, runtime = {}) {
+  const actor = resolveActorSync(runtime.actorUuid ?? runtime.casterUuid ?? null);
+  const effects = Array.from(actor?.effects ?? []);
+  return effects.find((effect) => {
+    if (!isPersistentZonesDedicatedOwnerEffect(effect)) {
+      return false;
+    }
+    const data = effect?.toObject?.() ?? {};
+    return getPropertyPath(data, `flags.${MODULE_ID}.regionId`) === regionDocument?.id ||
+      getPropertyPath(data, `flags.${MODULE_ID}.regionUuid`) === regionDocument?.uuid ||
+      getPropertyPath(data, `flags.${MODULE_ID}.groupId`) === runtime.groupId ||
+      getPropertyPath(data, `flags.${MODULE_ID}.sourceRegionId`) === runtime.sourceRegionId ||
+      getPropertyPath(data, `flags.${MODULE_ID}.castInstanceId`) === runtime.castInstanceId;
+  }) ?? null;
+}
+
+async function detachNonConcentrationRegionFromGenericOwnerEffects(regionDocument, runtime = {}, dedicatedOwnerEffect = null) {
+  const actor = resolveActorSync(runtime.actorUuid ?? runtime.casterUuid ?? null);
+  const effects = Array.from(actor?.effects ?? []);
+  const detachRows = [];
+  for (const effect of effects) {
+    if (!effect || effect.uuid === dedicatedOwnerEffect?.uuid || isPersistentZonesDedicatedOwnerEffect(effect)) {
+      continue;
+    }
+    let detachResult = null;
+    try {
+      detachResult = await detachRegionFromEffectDependents(effect, regionDocument);
+    } catch (caughtError) {
+      detachResult = {
+        detected: true,
+        detachApplied: false,
+        removedEffectDependency: false,
+        method: "detach-failed",
+        reason: caughtError?.message ?? "unknown"
+      };
+    }
+    if (detachResult.detected) {
+      detachRows.push({
+        genericEffectUuid: effect.uuid ?? null,
+        ...detachResult
+      });
+    }
+  }
+
+  logNonConcentrationOwnerDetach(regionDocument, runtime, {
+    dedicatedOwnerEffectUuid: dedicatedOwnerEffect?.uuid ?? null,
+    detectedDependencySignals: detachRows,
+    removedEffectDependency: detachRows.some((row) => row.removedEffectDependency),
+    detachApplied: detachRows.some((row) => row.detachApplied),
+    detachReason: detachRows.length ? "generic-effect-dependency-detach-attempted" : "no-generic-effect-dependency-detected",
+    concentrationRequired: false
+  });
+  return detachRows;
+}
+
+async function detachRegionFromEffectDependents(effect, regionDocument) {
+  const data = effect?.toObject?.() ?? {};
+  const regionRefs = [regionDocument?.uuid, regionDocument?.id].filter(Boolean);
+  const dependents = data.dependents ?? effect?.dependents ?? null;
+  const dependentText = stringifyCompact(dependents);
+  const flagsText = stringifyCompact(data.flags ?? {});
+  const detected = regionRefs.some((ref) => dependentText.includes(ref) || flagsText.includes(ref));
+  if (!detected) {
+    return { detected: false, detachApplied: false, removedEffectDependency: false };
+  }
+
+  if (typeof effect.deleteDependent === "function" && regionDocument?.uuid) {
+    await effect.deleteDependent(regionDocument.uuid);
+    return {
+      detected: true,
+      detachApplied: true,
+      removedEffectDependency: true,
+      method: "deleteDependent"
+    };
+  }
+
+  if (Array.isArray(dependents)) {
+    const filteredDependents = dependents.filter((dependent) => {
+      const text = stringifyCompact(dependent);
+      return !regionRefs.some((ref) => text.includes(ref));
+    });
+    if (filteredDependents.length !== dependents.length) {
+      await effect.update({ dependents: filteredDependents }, {
+        persistentZonesNonConcentrationOwnerDetach: true
+      });
+      return {
+        detected: true,
+        detachApplied: true,
+        removedEffectDependency: true,
+        method: "dependents-update"
+      };
+    }
+  }
+
+  return {
+    detected: true,
+    detachApplied: false,
+    removedEffectDependency: false,
+    method: "no-public-detach-api"
+  };
+}
+
+async function cleanupGenericOwnerEffectsIfSafe(regionDocument, runtime = {}, dedicatedOwnerEffect = null, detachRows = []) {
+  const actor = resolveActorSync(runtime.actorUuid ?? runtime.casterUuid ?? null);
+  const genericEffectUuids = Array.from(detachRows ?? [])
+    .map((row) => row.genericEffectUuid)
+    .filter(Boolean);
+  for (const effectUuid of genericEffectUuids) {
+    const effect = Array.from(actor?.effects ?? []).find((candidate) => candidate?.uuid === effectUuid) ?? null;
+    const decision = evaluateGenericOwnerEffectCleanupSafety(effect, {
+      runtime,
+      regionDocument,
+      dedicatedOwnerEffect
+    });
+    if (!decision.safe) {
+      logV14RegionDiagnostic("genericOwnerEffectCleanupSkipped", {
+        effectUuid,
+        regionId: regionDocument?.id ?? null,
+        reason: decision.reason,
+        details: decision
+      });
+      continue;
+    }
+    await effect.delete({
+      persistentZonesGenericOwnerCleanup: true
+    });
+  }
+}
+
+function evaluateGenericOwnerEffectCleanupSafety(effect, {
+  runtime = {},
+  regionDocument = null,
+  dedicatedOwnerEffect = null
+} = {}) {
+  if (!effect || isPersistentZonesDedicatedOwnerEffect(effect)) {
+    return { safe: false, reason: "missing-or-dedicated-owner-effect" };
+  }
+  const data = effect?.toObject?.(false) ?? effect?.toObject?.() ?? {};
+  const changes = Array.from(data.changes ?? []);
+  if (changes.length) {
+    return { safe: false, reason: "effect-has-mechanical-changes", changeCount: changes.length };
+  }
+  if (isEffectConcentrationLike(effect)) {
+    return { safe: false, reason: "effect-is-concentration-like" };
+  }
+  const itemUuid = resolveActiveEffectItemUuid(effect, data);
+  if (itemUuid && runtime.itemUuid && itemUuid !== runtime.itemUuid) {
+    return { safe: false, reason: "different-item", itemUuid };
+  }
+  const dependentRegions = collectEffectDependentRegions(effect);
+  if (!dependentRegions.length) {
+    return { safe: false, reason: "no-dependent-regions-confirmed" };
+  }
+  const unsafeDependent = dependentRegions.find((region) => {
+    const dependentRuntime = getRegionRuntimeFlags(region) ?? {};
+    const ownerEffectUuid = getOwnerEffectUuidFromRuntime(dependentRuntime);
+    const ownerEffect = ownerEffectUuid ? resolveOwnerEffectSync(ownerEffectUuid) : null;
+    return !isNonConcentrationRuntime(dependentRuntime) || !isPersistentZonesDedicatedOwnerEffect(ownerEffect);
+  });
+  if (unsafeDependent) {
+    return {
+      safe: false,
+      reason: "dependent-region-not-pz-non-concentration-owned",
+      unsafeRegionId: unsafeDependent?.id ?? null
+    };
+  }
+  return {
+    safe: true,
+    reason: "generic-template-cleanup-effect-only-depends-on-pz-owned-non-concentration-regions",
+    dependentRegionIds: dependentRegions.map((region) => region?.id ?? null).filter(Boolean),
+    dedicatedOwnerEffectUuid: dedicatedOwnerEffect?.uuid ?? null,
+    currentRegionId: regionDocument?.id ?? null
+  };
+}
+
+function collectEffectDependentRegions(effect) {
+  if (typeof effect?.getDependents !== "function") {
+    return [];
+  }
+  return Array.from(effect.getDependents() ?? [])
+    .filter((dependent) => dependent?.documentName === "Region");
+}
+
+function isEffectConcentrationLike(effect) {
+  const data = effect?.toObject?.() ?? {};
+  const text = stringifyCompact({
+    name: effect?.name ?? data.name ?? null,
+    statuses: Array.from(effect?.statuses ?? data.statuses ?? []),
+    flags: data.flags ?? null
+  }).toLowerCase();
+  return text.includes("concentrat");
+}
+
+function resolveDedicatedOwnerEffectPresentation(regionDocument, runtime = {}, sourceContext = null) {
+  const item = sourceContext?.item ?? null;
+  const itemName = item?.name ?? runtime.normalizedDefinition?.label ?? regionDocument?.name ?? "Zone";
+  const image = item?.img ?? regionDocument?.img ?? "icons/svg/aura.svg";
+  return {
+    name: `Persistent Zone ${itemName}`,
+    image,
+    imageSource: item?.img ? "item" : regionDocument?.img ? "region" : "fallback",
+    copiedFields: ["name", "img"],
+    rejectedFields: ["dependents", "dependencies", "flags.dnd5e", "flags.midi-qol", "changes", "statuses", "duration", "workflow", "regionReferences"]
+  };
+}
+
+function logDedicatedOwnerPresentationApplied(effect, regionDocument, presentation = {}) {
+  console.warn(`[${MODULE_ID}][lifecycle] PZ DEDICATED OWNER PRESENTATION APPLIED`, {
+    effectUuid: effect?.uuid ?? null,
+    regionId: regionDocument?.id ?? null,
+    name: presentation.name ?? null,
+    image: presentation.image ?? null,
+    imageSource: presentation.imageSource ?? null,
+    copiedFields: duplicateData(presentation.copiedFields ?? []),
+    rejectedFields: duplicateData(presentation.rejectedFields ?? [])
+  });
+}
+
+function logNonConcentrationOwnerDetach(regionDocument, runtime = {}, {
+  dedicatedOwnerEffectUuid = null,
+  detectedDependencySignals = [],
+  detectedRegionFlags = null,
+  detectedEffectDependents = null,
+  removedRegionFlags = [],
+  removedEffectDependency = false,
+  detachApplied = false,
+  detachReason = null,
+  concentrationRequired = false
+} = {}) {
+  console.warn(`[${MODULE_ID}][lifecycle] PZ NON-CONCENTRATION OWNER DETACH`, {
+    regionId: regionDocument?.id ?? null,
+    regionUuid: regionDocument?.uuid ?? null,
+    groupId: runtime.groupId ?? null,
+    sourceRegionId: runtime.sourceRegionId ?? null,
+    castInstanceId: runtime.castInstanceId ?? null,
+    genericEffectUuid: Array.from(detectedDependencySignals ?? []).map((row) => row.genericEffectUuid).filter(Boolean).join(",") || null,
+    dedicatedOwnerEffectUuid,
+    detectedDependencySignals: duplicateData(detectedDependencySignals),
+    detectedRegionFlags: duplicateData(detectedRegionFlags),
+    detectedEffectDependents: duplicateData(detectedEffectDependents),
+    removedRegionFlags: duplicateData(removedRegionFlags),
+    removedEffectDependency,
+    detachApplied,
+    detachReason,
+    concentrationRequired
+  });
+}
+
+function resolveDedicatedOwnerEffectDuration(runtime = {}, sourceContext = null) {
+  const normalized = runtime.normalizedDefinition ?? {};
+  const candidates = [
+    { source: "normalized-definition-duration", value: normalized.duration },
+    { source: "normalized-definition-effect-duration", value: normalized.effect?.duration },
+    { source: "source-item-system-duration", value: sourceContext?.item?.system?.duration },
+    { source: "source-activity-duration", value: sourceContext?.activity?.duration ?? sourceContext?.activity?.system?.duration }
+  ];
+  const match = candidates.find((candidate) => candidate.value && typeof candidate.value === "object");
+  if (!match) {
+    return {
+      source: "none",
+      sourceDuration: null,
+      duration: {},
+      acceptedUnits: getAcceptedActiveEffectDurationUnits(),
+      applied: false
+    };
+  }
+  const acceptedUnits = getAcceptedActiveEffectDurationUnits();
+  const normalizedDuration = normalizeActiveEffectDuration(match.value, acceptedUnits);
+  if (!normalizedDuration) {
+    return {
+      source: "unsupported",
+      sourceDuration: duplicateData(match.value),
+      duration: {},
+      acceptedUnits,
+      applied: false
+    };
+  }
+  return {
+    source: match.source,
+    sourceDuration: duplicateData(match.value),
+    duration: normalizedDuration,
+    acceptedUnits,
+    applied: true
+  };
+}
+
+function normalizeActiveEffectDuration(sourceDuration = {}, acceptedUnits = []) {
+  const value = coerceNumber(sourceDuration.value ?? sourceDuration.duration ?? sourceDuration.amount, NaN);
+  const rawUnits = String(sourceDuration.units ?? sourceDuration.unit ?? sourceDuration.type ?? "").trim();
+  if (!Number.isFinite(value) || value <= 0 || !rawUnits) {
+    return null;
+  }
+
+  const canonicalUnits = resolveAcceptedDurationUnit(rawUnits, acceptedUnits);
+  if (!canonicalUnits) {
+    return null;
+  }
+
+  return {
+    value,
+    units: canonicalUnits
+  };
+}
+
+function resolveAcceptedDurationUnit(rawUnits, acceptedUnits = []) {
+  const normalized = String(rawUnits ?? "").trim().toLowerCase();
+  const accepted = Array.from(acceptedUnits ?? [])
+    .map((unit) => String(unit ?? "").trim())
+    .filter(Boolean);
+  const acceptedLower = new Map(accepted.map((unit) => [unit.toLowerCase(), unit]));
+  const candidatesByUnit = {
+    round: ["round", "rounds"],
+    rounds: ["rounds", "round"],
+    turn: ["turn", "turns"],
+    turns: ["turns", "turn"],
+    second: ["second", "seconds"],
+    seconds: ["seconds", "second"],
+    minute: ["minute", "minutes"],
+    minutes: ["minutes", "minute"],
+    hour: ["hour", "hours"],
+    hours: ["hours", "hour"]
+  };
+  const candidates = candidatesByUnit[normalized] ?? [normalized];
+  for (const candidate of candidates) {
+    const acceptedValue = acceptedLower.get(candidate);
+    if (acceptedValue) {
+      return acceptedValue;
+    }
+  }
+  return null;
+}
+
+function getAcceptedActiveEffectDurationUnits() {
+  const choices = [];
+  collectChoiceKeys(choices, globalThis.CONFIG?.ActiveEffect?.durationUnits);
+  collectChoiceKeys(choices, globalThis.CONFIG?.ActiveEffect?.durationTypes);
+  collectChoiceKeys(choices, globalThis.CONFIG?.ActiveEffect?.documentClass?.schema?.fields?.duration?.fields?.units?.choices);
+  collectChoiceKeys(choices, globalThis.ActiveEffect?.schema?.fields?.duration?.fields?.units?.choices);
+  collectChoiceKeys(choices, globalThis.ActiveEffect?.metadata?.schema?.fields?.duration?.fields?.units?.choices);
+  return Array.from(new Set(choices.map((choice) => String(choice ?? "").trim()).filter(Boolean)));
+}
+
+function collectChoiceKeys(output, choices) {
+  if (!choices) {
+    return;
+  }
+  if (Array.isArray(choices)) {
+    output.push(...choices);
+    return;
+  }
+  if (choices instanceof Set) {
+    output.push(...Array.from(choices));
+    return;
+  }
+  if (choices instanceof Map) {
+    output.push(...Array.from(choices.keys()));
+    return;
+  }
+  if (typeof choices === "object") {
+    output.push(...Object.keys(choices));
+  }
+}
+
+function logDedicatedOwnerEffectCreateFailed(regionDocument, runtime = {}, {
+  castInstanceId = null,
+  sourceDuration = null,
+  normalizedDuration = null,
+  acceptedDurationUnits = [],
+  error = null
+} = {}) {
+  console.warn(`[${MODULE_ID}][lifecycle] PZ DEDICATED OWNER EFFECT CREATE FAILED`, {
+    regionId: regionDocument?.id ?? null,
+    groupId: runtime.groupId ?? null,
+    castInstanceId,
+    sourceDuration: duplicateData(sourceDuration),
+    normalizedDuration: duplicateData(normalizedDuration),
+    acceptedDurationUnits: duplicateData(acceptedDurationUnits),
+    errorName: error?.name ?? null,
+    errorMessage: error?.message ?? "unknown"
+  });
+}
+
+function isNonConcentrationRuntime(runtime = {}) {
+  return runtime?.normalizedDefinition?.concentration?.required === false;
+}
+
+function isPersistentZonesDedicatedOwnerEffect(activeEffect) {
+  const data = activeEffect?.toObject?.() ?? {};
+  return Boolean(
+    activeEffect?.flags?.[MODULE_ID]?.managedOwnerEffect === true ||
+      data.flags?.[MODULE_ID]?.managedOwnerEffect === true
+  );
+}
+
+function isRegionDocumentStillPresent(regionDocument) {
+  const scene = regionDocument?.parent ?? null;
+  return Boolean(regionDocument?.id && scene?.regions?.get?.(regionDocument.id));
+}
+
 function logOwnerEffectLinkReconciliation(regionDocument, runtime = {}, resolution = {}, {
   reason = "manual",
   changedKeys = [],
   backfillApplied = false
 } = {}) {
+  const selectedOwnerEffectUuid = resolution.selectedOwnerEffectUuid ?? resolution.selectedOwnerEffect?.uuid ?? null;
+  const alreadyOwnedByOtherRegionIds = selectedOwnerEffectUuid
+    ? findManagedRegionsReferencingOwnerEffect(selectedOwnerEffectUuid, {
+      excludeRegionId: regionDocument?.id ?? null,
+      excludeRegionUuid: regionDocument?.uuid ?? null
+    }).map((region) => region?.id ?? null).filter(Boolean)
+    : [];
+  logOwnerEffectMatchDecisionLine(regionDocument, runtime, resolution, {
+    reason,
+    backfillApplied,
+    alreadyOwnedByOtherRegionIds
+  });
   console.warn(`[${MODULE_ID}][lifecycle] PZ OWNER EFFECT LINK RECONCILIATION`, {
     sceneId: regionDocument?.parent?.id ?? null,
     regionId: regionDocument?.id ?? null,
@@ -4685,13 +5979,126 @@ function logOwnerEffectLinkReconciliation(regionDocument, runtime = {}, resoluti
     candidateEffectUuids: resolution.candidateEffectUuids ?? [],
     candidateCount: resolution.candidateCount ?? 0,
     matchingSignals: duplicateData(resolution.matchingSignals ?? []),
-    selectedOwnerEffectUuid: resolution.selectedOwnerEffectUuid ?? resolution.selectedOwnerEffect?.uuid ?? null,
+    selectedOwnerEffectUuid,
     resolutionMode: resolution.resolutionMode ?? null,
     ambiguous: Boolean(resolution.ambiguous),
     backfillApplied,
+    alreadyOwnedByOtherRegionIds,
     reason,
     changedKeys
   });
+}
+
+function logOwnerEffectEvent(hookName, activeEffect) {
+  const summary = summarizeOwnerEffect(activeEffect);
+  console.warn(
+    `[${MODULE_ID}][lifecycle] PZ OWNER EFFECT EVENT | hookName=${hookName} | timestamp=${Date.now()} | effectId=${summary.effectId ?? "null"} | effectUuid=${summary.effectUuid ?? "null"} | effectName=${summary.effectName ?? "null"} | actorUuid=${summary.actorUuid ?? "null"} | origin=${summary.origin ?? "null"} | itemUuid=${summary.itemUuid ?? "null"} | activityId=${summary.activityId ?? "null"} | workflowId=${summary.workflowId ?? "null"} | messageId=${summary.messageId ?? "null"} | templateId=${summary.templateId ?? "null"} | templateUuid=${summary.templateUuid ?? "null"} | regionId=${summary.regionId ?? "null"} | regionUuid=${summary.regionUuid ?? "null"} | flagsDnd5e=${summary.flagsDnd5eJson} | flagsMidiQol=${summary.flagsMidiQolJson} | dependents=${summary.dependentsJson} | disabled=${summary.disabled} | duration=${summary.durationJson} | concentrationStatus=${summary.concentrationStatus ?? "null"}`
+  );
+}
+
+function logOwnerEffectMatchDecisionLine(regionDocument, runtime = {}, resolution = {}, {
+  reason = "manual",
+  backfillApplied = false,
+  alreadyOwnedByOtherRegionIds = []
+} = {}) {
+  console.warn(
+    `[${MODULE_ID}][lifecycle] PZ OWNER EFFECT MATCH DECISION | reason=${reason} | regionId=${regionDocument?.id ?? "null"} | sourceRegionId=${runtime.sourceRegionId ?? "null"} | groupId=${runtime.groupId ?? "null"} | actorUuid=${runtime.actorUuid ?? runtime.casterUuid ?? "null"} | itemUuid=${runtime.itemUuid ?? "null"} | currentOwnerEffectUuid=${getOwnerEffectUuidFromRuntime(runtime) ?? "null"} | candidateEffectUuids=${stringifyCompact(resolution.candidateEffectUuids ?? [])} | matchingSignals=${stringifyCompact(resolution.matchingSignals ?? [])} | selectedOwnerEffectUuid=${resolution.selectedOwnerEffectUuid ?? resolution.selectedOwnerEffect?.uuid ?? "null"} | resolutionMode=${resolution.resolutionMode ?? "null"} | backfillApplied=${backfillApplied} | alreadyOwnedByOtherRegionIds=${stringifyCompact(alreadyOwnedByOtherRegionIds)}`
+  );
+}
+
+function logOwnerEffectOwnershipSnapshot({ reason = "manual", activeEffect = null, reconciledCount = null } = {}) {
+  const regions = [];
+  for (const scene of game?.scenes?.contents ?? []) {
+    for (const region of findManagedRegions(scene)) {
+      const runtime = getRegionRuntimeFlags(region) ?? {};
+      const ownerEffectUuid = getOwnerEffectUuidFromRuntime(runtime);
+      regions.push({
+        regionId: region?.id ?? null,
+        groupId: runtime.groupId ?? null,
+        sourceRegionId: runtime.sourceRegionId ?? null,
+        ownerEffectUuid,
+        ownerEffectExists: Boolean(ownerEffectUuid && resolveOwnerEffectSync(ownerEffectUuid)),
+        concentrationRequired: Boolean(runtime.normalizedDefinition?.concentration?.required)
+      });
+    }
+  }
+  const effectRows = collectOwnerEffectSnapshotCandidates(regions, activeEffect);
+  console.warn(
+    `[${MODULE_ID}][lifecycle] PZ OWNER EFFECT OWNERSHIP SNAPSHOT | reason=${reason} | reconciledCount=${reconciledCount ?? "null"} | regionCount=${regions.length} | regions=${stringifyCompact(regions)} | effectCount=${effectRows.length} | effects=${stringifyCompact(effectRows)}`
+  );
+}
+
+function collectOwnerEffectSnapshotCandidates(regionRows = [], activeEffect = null) {
+  const effects = new Map();
+  for (const actor of game?.actors?.contents ?? []) {
+    for (const effect of actor?.effects ?? []) {
+      effects.set(effect.uuid, effect);
+    }
+  }
+  if (activeEffect?.uuid) {
+    effects.set(activeEffect.uuid, activeEffect);
+  }
+
+  return Array.from(effects.values()).map((effect) => {
+    const linkedRegions = regionRows.filter((row) => row.ownerEffectUuid === effect.uuid);
+    return {
+      effectUuid: effect.uuid ?? null,
+      origin: effect.origin ?? effect.toObject?.()?.origin ?? null,
+      linkedRegionIds: linkedRegions.map((row) => row.regionId).filter(Boolean),
+      linkedGroupIds: Array.from(new Set(linkedRegions.map((row) => row.groupId).filter(Boolean)))
+    };
+  }).filter((row) => row.linkedRegionIds.length || row.effectUuid === activeEffect?.uuid);
+}
+
+function summarizeOwnerEffect(activeEffect) {
+  const data = activeEffect?.toObject?.() ?? {};
+  const dnd5eFlags = data.flags?.dnd5e ?? activeEffect?.flags?.dnd5e ?? null;
+  const midiFlags = data.flags?.["midi-qol"] ?? activeEffect?.flags?.["midi-qol"] ?? null;
+  const regionReference = findFirstReference(data, /(?:Scene\.[^.]+\.Region\.[^.\s"',}]+|Region\.[^.\s"',}]+)/);
+  const templateReference = findFirstReference(data, /(?:Scene\.[^.]+\.MeasuredTemplate\.[^.\s"',}]+|MeasuredTemplate\.[^.\s"',}]+)/);
+  return {
+    effectId: activeEffect?.id ?? data._id ?? null,
+    effectUuid: activeEffect?.uuid ?? null,
+    effectName: activeEffect?.name ?? data.name ?? data.label ?? null,
+    actorUuid: activeEffect?.parent?.uuid ?? null,
+    origin: activeEffect?.origin ?? data.origin ?? null,
+    itemUuid: resolveActiveEffectItemUuid(activeEffect, data),
+    activityId: resolveActiveEffectActivityId(activeEffect, data),
+    workflowId: getPropertyPath(data, "flags.midi-qol.workflowId") ?? getPropertyPath(data, "flags.dnd5e.workflowId") ?? null,
+    messageId: getPropertyPath(data, "flags.midi-qol.messageId") ?? getPropertyPath(data, "flags.dnd5e.messageId") ?? null,
+    templateId: templateReference?.id ?? getPropertyPath(data, "flags.dnd5e.templateId") ?? getPropertyPath(data, "flags.midi-qol.templateId") ?? null,
+    templateUuid: templateReference?.uuid ?? getPropertyPath(data, "flags.dnd5e.templateUuid") ?? getPropertyPath(data, "flags.midi-qol.templateUuid") ?? null,
+    regionId: regionReference?.id ?? getPropertyPath(data, "flags.dnd5e.regionId") ?? getPropertyPath(data, "flags.midi-qol.regionId") ?? null,
+    regionUuid: regionReference?.uuid ?? getPropertyPath(data, "flags.dnd5e.regionUuid") ?? getPropertyPath(data, "flags.midi-qol.regionUuid") ?? null,
+    flagsDnd5eJson: stringifyCompact(dnd5eFlags),
+    flagsMidiQolJson: stringifyCompact(midiFlags),
+    dependentsJson: stringifyCompact(data.dependents ?? activeEffect?.dependents ?? null),
+    disabled: Boolean(activeEffect?.disabled ?? data.disabled),
+    durationJson: stringifyCompact(data.duration ?? activeEffect?.duration ?? null),
+    concentrationStatus: getPropertyPath(data, "statuses.concentrating") ?? getPropertyPath(data, "flags.dnd5e.concentration") ?? getPropertyPath(data, "flags.midi-qol.concentration") ?? null
+  };
+}
+
+function resolveActiveEffectCreatedAt(activeEffect, effectData = null) {
+  const data = effectData ?? activeEffect?.toObject?.() ?? {};
+  return activeEffect?._stats?.createdTime ??
+    data?._stats?.createdTime ??
+    activeEffect?.createdTime ??
+    data.createdTime ??
+    null;
+}
+
+function findFirstReference(source, pattern) {
+  const text = stringifyCompact(source);
+  const match = text.match(pattern);
+  if (!match?.[0]) {
+    return null;
+  }
+  const uuid = match[0];
+  return {
+    uuid,
+    id: uuid.split(".").pop()
+  };
 }
 
 function resolveActorSync(actorUuid) {
@@ -4756,6 +6163,14 @@ function getPropertyPath(source, path) {
     return null;
   }
   return String(path).split(".").reduce((value, key) => value?.[key], source);
+}
+
+function stringifyCompact(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch (_caughtError) {
+    return "\"[unserializable]\"";
+  }
 }
 
 function buildRegionCreateData({

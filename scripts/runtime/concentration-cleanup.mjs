@@ -580,8 +580,13 @@ async function onDeleteActiveEffect(activeEffect, options = {}) {
   }
 
   try {
+    logOwnerEffectEvent("deleteActiveEffect", activeEffect);
     const ownerEffectUuid = activeEffect?.uuid ?? null;
     const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
+    logOwnerEffectDeletePlan(activeEffect, matchingRegions);
+    if (isPersistentZonesDedicatedOwnerEffect(activeEffect)) {
+      logDedicatedOwnerDeletePlan(activeEffect, matchingRegions);
+    }
     console.info("[persistent-zones][lifecycle] OWNER EFFECT DELETED", {
       ownerEffectUuid,
       effectId: activeEffect?.id ?? null,
@@ -623,6 +628,7 @@ async function onUpdateActiveEffect(activeEffect, changed = {}, options = {}) {
   }
 
   try {
+    logOwnerEffectEvent("updateActiveEffect", activeEffect);
     const changedKeys = Object.keys(changed ?? {});
     const disabledChanged = changedKeys.includes("disabled") || changedKeys.some((key) => key.endsWith(".disabled"));
     if (!disabledChanged) {
@@ -690,6 +696,7 @@ function groupRegionsByScene(regions = []) {
 
 function getOwnerEffectUuidFromRuntime(runtime = {}) {
   return (
+    runtime.ownerEffectUuid ??
     runtime.activeEffectUuid ??
     runtime.concentrationEffectUuid ??
     runtime.normalizedDefinition?.concentration?.effectUuid ??
@@ -1145,4 +1152,135 @@ function summarizeRingDefinitionForRebuild(zoneDefinition) {
     partGeometryTypes,
     partCountExpected: partGeometryTypes.length || (normalizedGeometryType ? 1 : 0)
   };
+}
+
+function logOwnerEffectEvent(hookName, activeEffect) {
+  const summary = summarizeOwnerEffect(activeEffect);
+  console.warn(
+    `[persistent-zones][lifecycle] PZ OWNER EFFECT EVENT | hookName=${hookName} | timestamp=${Date.now()} | effectId=${summary.effectId ?? "null"} | effectUuid=${summary.effectUuid ?? "null"} | effectName=${summary.effectName ?? "null"} | actorUuid=${summary.actorUuid ?? "null"} | origin=${summary.origin ?? "null"} | itemUuid=${summary.itemUuid ?? "null"} | activityId=${summary.activityId ?? "null"} | workflowId=${summary.workflowId ?? "null"} | messageId=${summary.messageId ?? "null"} | templateId=${summary.templateId ?? "null"} | templateUuid=${summary.templateUuid ?? "null"} | regionId=${summary.regionId ?? "null"} | regionUuid=${summary.regionUuid ?? "null"} | flagsDnd5e=${summary.flagsDnd5eJson} | flagsMidiQol=${summary.flagsMidiQolJson} | dependents=${summary.dependentsJson} | disabled=${summary.disabled} | duration=${summary.durationJson} | concentrationStatus=${summary.concentrationStatus ?? "null"}`
+  );
+}
+
+function logOwnerEffectDeletePlan(activeEffect, matchingRegions = []) {
+  const regionRows = Array.from(matchingRegions ?? []).map((region) => {
+    const runtime = getRegionRuntimeFlags(region) ?? {};
+    return {
+      regionId: region?.id ?? null,
+      groupId: runtime.groupId ?? null,
+      runtimeOwnerEffectUuid: getOwnerEffectUuidFromRuntime(runtime)
+    };
+  });
+  console.warn(
+    `[persistent-zones][lifecycle] PZ OWNER EFFECT DELETE PLAN | deletedEffectUuid=${activeEffect?.uuid ?? "null"} | matchingRegionIds=${stringifyCompact(regionRows.map((row) => row.regionId).filter(Boolean))} | matchingRegionGroupIds=${stringifyCompact(regionRows.map((row) => row.groupId).filter(Boolean))} | runtimeOwnerEffectUuids=${stringifyCompact(regionRows.map((row) => row.runtimeOwnerEffectUuid ?? null))} | deletionIds=${stringifyCompact(regionRows.map((row) => row.regionId).filter(Boolean))}`
+  );
+}
+
+function logDedicatedOwnerDeletePlan(activeEffect, matchingRegions = []) {
+  const effectData = activeEffect?.toObject?.() ?? {};
+  const targetRegionId = getPropertyPath(effectData, `flags.${MODULE_ID}.regionId`) ?? null;
+  const targetGroupId = getPropertyPath(effectData, `flags.${MODULE_ID}.groupId`) ?? null;
+  const matchingRegionIds = Array.from(matchingRegions ?? []).map((region) => region?.id ?? null).filter(Boolean);
+  console.warn(
+    `[persistent-zones][lifecycle] PZ DEDICATED OWNER DELETE PLAN | deletedEffectUuid=${activeEffect?.uuid ?? "null"} | targetRegionId=${targetRegionId ?? "null"} | targetGroupId=${targetGroupId ?? "null"} | matchingRegionIds=${stringifyCompact(matchingRegionIds)} | deletionIds=${stringifyCompact(matchingRegionIds)} | deletionReason=dedicated-owner-effect-deleted`
+  );
+}
+
+function summarizeOwnerEffect(activeEffect) {
+  const data = activeEffect?.toObject?.() ?? {};
+  const dnd5eFlags = data.flags?.dnd5e ?? activeEffect?.flags?.dnd5e ?? null;
+  const midiFlags = data.flags?.["midi-qol"] ?? activeEffect?.flags?.["midi-qol"] ?? null;
+  const regionReference = findFirstReference(data, /(?:Scene\.[^.]+\.Region\.[^.\s"',}]+|Region\.[^.\s"',}]+)/);
+  const templateReference = findFirstReference(data, /(?:Scene\.[^.]+\.MeasuredTemplate\.[^.\s"',}]+|MeasuredTemplate\.[^.\s"',}]+)/);
+  return {
+    effectId: activeEffect?.id ?? data._id ?? null,
+    effectUuid: activeEffect?.uuid ?? null,
+    effectName: activeEffect?.name ?? data.name ?? data.label ?? null,
+    actorUuid: activeEffect?.parent?.uuid ?? null,
+    origin: activeEffect?.origin ?? data.origin ?? null,
+    itemUuid: resolveActiveEffectItemUuid(activeEffect, data),
+    activityId: resolveActiveEffectActivityId(data),
+    workflowId: getPropertyPath(data, "flags.midi-qol.workflowId") ?? getPropertyPath(data, "flags.dnd5e.workflowId") ?? null,
+    messageId: getPropertyPath(data, "flags.midi-qol.messageId") ?? getPropertyPath(data, "flags.dnd5e.messageId") ?? null,
+    templateId: templateReference?.id ?? getPropertyPath(data, "flags.dnd5e.templateId") ?? getPropertyPath(data, "flags.midi-qol.templateId") ?? null,
+    templateUuid: templateReference?.uuid ?? getPropertyPath(data, "flags.dnd5e.templateUuid") ?? getPropertyPath(data, "flags.midi-qol.templateUuid") ?? null,
+    regionId: regionReference?.id ?? getPropertyPath(data, "flags.dnd5e.regionId") ?? getPropertyPath(data, "flags.midi-qol.regionId") ?? null,
+    regionUuid: regionReference?.uuid ?? getPropertyPath(data, "flags.dnd5e.regionUuid") ?? getPropertyPath(data, "flags.midi-qol.regionUuid") ?? null,
+    flagsDnd5eJson: stringifyCompact(dnd5eFlags),
+    flagsMidiQolJson: stringifyCompact(midiFlags),
+    dependentsJson: stringifyCompact(data.dependents ?? activeEffect?.dependents ?? null),
+    disabled: Boolean(activeEffect?.disabled ?? data.disabled),
+    durationJson: stringifyCompact(data.duration ?? activeEffect?.duration ?? null),
+    concentrationStatus: getPropertyPath(data, "statuses.concentrating") ?? getPropertyPath(data, "flags.dnd5e.concentration") ?? getPropertyPath(data, "flags.midi-qol.concentration") ?? null
+  };
+}
+
+function isPersistentZonesDedicatedOwnerEffect(activeEffect) {
+  const data = activeEffect?.toObject?.() ?? {};
+  return Boolean(
+    activeEffect?.flags?.[MODULE_ID]?.managedOwnerEffect === true ||
+      data.flags?.[MODULE_ID]?.managedOwnerEffect === true
+  );
+}
+
+function resolveActiveEffectItemUuid(activeEffect, effectData = null) {
+  const data = effectData ?? activeEffect?.toObject?.() ?? {};
+  const candidates = [
+    activeEffect?.origin,
+    data.origin,
+    getPropertyPath(data, "flags.dnd5e.itemUuid"),
+    getPropertyPath(data, "flags.dnd5e.item.uuid"),
+    getPropertyPath(data, "flags.dnd5e.activity.item.uuid"),
+    getPropertyPath(data, "flags.dnd5e.activity.itemUuid"),
+    getPropertyPath(data, "flags.midi-qol.itemUuid"),
+    getPropertyPath(data, "flags.midi-qol.item.uuid")
+  ];
+  return candidates.map(extractItemUuidFromValue).find(Boolean) ?? null;
+}
+
+function resolveActiveEffectActivityId(effectData = null) {
+  const data = effectData ?? {};
+  return [
+    getPropertyPath(data, "flags.dnd5e.activityId"),
+    getPropertyPath(data, "flags.dnd5e.activity.id"),
+    getPropertyPath(data, "flags.dnd5e.activity.uuid"),
+    getPropertyPath(data, "flags.midi-qol.activityId"),
+    getPropertyPath(data, "flags.midi-qol.activityUuid")
+  ].map((value) => String(value ?? "").split(".").pop()).find(Boolean) ?? null;
+}
+
+function extractItemUuidFromValue(value) {
+  const text = String(value ?? "");
+  if (!text) {
+    return null;
+  }
+  const match = text.match(/Actor\.[^.]+\.Item\.[^.]+/);
+  return match?.[0] ?? null;
+}
+
+function findFirstReference(source, pattern) {
+  const text = stringifyCompact(source);
+  const match = text.match(pattern);
+  if (!match?.[0]) {
+    return null;
+  }
+  const uuid = match[0];
+  return {
+    uuid,
+    id: uuid.split(".").pop()
+  };
+}
+
+function getPropertyPath(source, path) {
+  if (!source || !path) {
+    return null;
+  }
+  return String(path).split(".").reduce((value, key) => value?.[key], source);
+}
+
+function stringifyCompact(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch (_caughtError) {
+    return "\"[unserializable]\"";
+  }
 }

@@ -100,6 +100,8 @@ export async function cleanupLinkedDocumentsForRegion(regionDocument, {
 
   const wallIds = wallDocuments.map((document) => document.id);
   const lightIds = lightDocuments.map((document) => document.id);
+  const linkedWallIdsBefore = Array.from(runtime.linkedDocuments?.wallIds ?? []);
+  const linkedLightIdsBefore = Array.from(runtime.linkedDocuments?.lightIds ?? []);
 
   if (wallIds.length) {
     await scene.deleteEmbeddedDocuments("Wall", wallIds).catch(() => []);
@@ -126,6 +128,21 @@ export async function cleanupLinkedDocumentsForRegion(regionDocument, {
   if (!skipRuntimeUpdate && scene?.regions?.get?.(regionDocument.id)) {
     await updateRegionLinkedDocuments(regionDocument, { wallIds: [], lightIds: [] });
   }
+
+  const remainingWallIds = linkedWallIdsBefore.filter((wallId) => Boolean(scene?.walls?.get?.(wallId)));
+  const remainingLightIds = linkedLightIdsBefore.filter((lightId) => Boolean(scene?.lights?.get?.(lightId)));
+  console.warn(`[${MODULE_ID}][lifecycle] PZ LINKED DOCUMENT CLEANUP RESULT`, {
+    regionId: regionDocument?.id ?? null,
+    groupId: runtime.groupId ?? null,
+    ownerEffectUuid: runtime.ownerEffectUuid ?? runtime.activeEffectUuid ?? runtime.concentrationEffectUuid ?? null,
+    linkedWallIdsBefore,
+    linkedLightIdsBefore,
+    deletedWallIds: wallIds,
+    deletedLightIds: lightIds,
+    remainingWallIds,
+    remainingLightIds,
+    cleanupReason: reason
+  });
 
   return { wallIds, lightIds };
 }
