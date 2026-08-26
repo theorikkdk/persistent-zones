@@ -3,6 +3,7 @@ import {
   ACTIVITY_DEFINITION_SCHEMA_VERSION,
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
+import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
 
 export function isPersistentZoneActivity(activity) {
   return String(
@@ -269,13 +270,15 @@ function buildTriggerConfig(triggerSource = {}, { damage = {}, save = {}, moveme
       statuses: {
         enabled: mode === "simple" && Boolean(perTriggerStatuses?.enabled),
         statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
-        persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId)
+        persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
+        recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery)
       }
     },
     statuses: {
       enabled: mode === "simple" && Boolean(perTriggerStatuses?.enabled),
       statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
-      persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId)
+      persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
+      recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery)
     },
     activity: {
       id: mode === "activity" ? String(linkedActivity?.id ?? linkedActivity?.activityId ?? "").trim() || null : null,

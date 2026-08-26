@@ -339,6 +339,38 @@ function createStatusesSchema(fields, exitTrigger) {
       required: false,
       initial: exitTrigger ? "persistent" : "persistent",
       choices: exitTrigger ? ["persistent"] : ["persistent", "while-inside-region"]
+    }),
+    recovery: new fields.SchemaField({
+      mode: new fields.StringField({
+        required: false,
+        initial: "none",
+        choices: ["none", "save-start-turn", "save-end-turn"]
+      }),
+      ability: new fields.StringField({
+        required: false,
+        nullable: true,
+        initial: null
+      }),
+      dcMode: new fields.StringField({
+        required: false,
+        initial: "inherit",
+        choices: ["inherit", "custom"]
+      }),
+      customDC: new fields.NumberField({
+        required: false,
+        nullable: true,
+        initial: null,
+        min: 1
+      }),
+      removeOnSuccess: new fields.BooleanField({
+        required: false,
+        initial: true
+      }),
+      provider: new fields.StringField({
+        required: false,
+        initial: "auto",
+        choices: ["auto", "midi", "native"]
+      })
     })
   });
 }

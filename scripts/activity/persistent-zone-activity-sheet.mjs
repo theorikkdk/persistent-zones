@@ -1,4 +1,5 @@
 import { ACTIVITY_DEFINITION_FIELD_KEY, MODULE_ID } from "../constants.mjs";
+import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
 
 export class PersistentZoneActivitySheet extends dnd5e.applications.activity.ActivitySheet {
   static DEFAULT_OPTIONS = {
@@ -178,7 +179,8 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
         statusId: String(statuses.statusId ?? ""),
         persistenceMode: triggerId === "exit"
           ? "persistent"
-          : String(statuses.persistenceMode ?? "persistent")
+          : String(statuses.persistenceMode ?? "persistent"),
+        recovery: normalizeStatusRecovery(statuses.recovery)
       }
     },
     linkedActivity: {

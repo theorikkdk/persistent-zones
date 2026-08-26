@@ -11,6 +11,10 @@ import {
 import { createPersistentZonesDebugApi } from "./runtime/debug-tools.mjs";
 import { createRegionFromTemplate } from "./runtime/region-factory.mjs";
 import {
+  getStatusRecoveryCapabilities,
+  resolveStatusRecoveryProvider
+} from "./runtime/status-recovery.mjs";
+import {
   getZoneDefinitionFromItem as readZoneDefinitionFromItem,
   normalizeZoneDefinition as normalizePersistentZoneDefinition,
   resolveItemTemplateTypeDetection
@@ -33,6 +37,14 @@ export function createPersistentZonesApi() {
 
     normalizeZoneDefinition(rawDefinition, options = {}) {
       return normalizePersistentZoneDefinition(rawDefinition, options);
+    },
+
+    getStatusRecoveryCapabilities() {
+      return getStatusRecoveryCapabilities();
+    },
+
+    resolveStatusRecoveryProvider(recovery, context = {}) {
+      return resolveStatusRecoveryProvider(recovery, context);
     },
 
     async getZoneDefinitionFromItem(itemOrUuid) {

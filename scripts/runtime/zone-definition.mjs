@@ -21,6 +21,7 @@ import {
   resolveLinkedLightConfig,
   resolveLinkedWallConfig
 } from "./linked-presets.mjs";
+import { normalizeStatusRecovery } from "./status-recovery.mjs";
 
 export function getZoneDefinitionFromItem(item) {
   if (!item) {
@@ -1740,7 +1741,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       statuses: {
         enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
         statusId: String(statusesDefinition.statusId ?? "").trim() || null,
-        persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode)
+        persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
+        recovery: normalizeStatusRecovery(statusesDefinition.recovery)
       }
     },
     damage: {
@@ -1776,7 +1778,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     statuses: {
       enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
       statusId: String(statusesDefinition.statusId ?? "").trim() || null,
-      persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode)
+      persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
+      recovery: normalizeStatusRecovery(statusesDefinition.recovery)
     },
     activity
   };
