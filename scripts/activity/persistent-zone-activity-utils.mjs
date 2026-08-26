@@ -161,7 +161,8 @@ function buildGeometryDefinition(geometryType, geometry) {
   }
 
   return {
-    type: "template"
+    type: "circle",
+    radius: numberOrNull(geometry.radius)
   };
 }
 

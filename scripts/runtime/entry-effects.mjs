@@ -387,6 +387,7 @@ export async function applyConfiguredTriggerEffect({
       tokenDocument,
       triggerConfig: resolvedTrigger,
       timing: normalizedTiming,
+      saveResult,
       baseDiagnostic
     });
     const healingResult = await applySimpleRecoveryEffect({
@@ -923,6 +924,7 @@ async function applyTriggeredStatuses({
   tokenDocument,
   triggerConfig,
   timing,
+  saveResult = null,
   baseDiagnostic = {}
 } = {}) {
   const actor = tokenDocument?.actor ?? null;
@@ -934,6 +936,12 @@ async function applyTriggeredStatuses({
   const tokenUuid = tokenDocument?.uuid ?? null;
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const triggerId = normalizeStatusTriggerId(timing);
+  const saveEnabled = Boolean(triggerConfig?.save?.enabled);
+  const requiresFailedSave = triggerId === "enter" && saveEnabled;
+  const saveSuccess = requiresFailedSave ? saveResult?.success === true : false;
+  const saveFailed = requiresFailedSave ? saveResult?.success === false : false;
+  const statusesConfigured = Boolean(actor && statusConfig?.enabled && statusId);
+  const shouldApplyStatuses = statusesConfigured && (!requiresFailedSave || saveFailed);
   const identity = {
     managedTriggeredEffect: true,
     persistenceMode,
@@ -946,7 +954,16 @@ async function applyTriggeredStatuses({
     castInstanceId: runtime.castInstanceId ?? runtime.ringOperationId ?? null
   };
 
-  if (!actor || !statusConfig?.enabled || !statusId) {
+  if (triggerId === "enter") {
+    console.log(
+      `[persistent-zones] PZ ENTER STATUS DECISION | regionId=${regionId} | tokenUuid=${tokenUuid} | ` +
+      `triggerId=${triggerId} | saveEnabled=${saveEnabled} | saveSuccess=${saveSuccess} | saveFailed=${saveFailed} | ` +
+      `statusesConfigured=${statusesConfigured} | statusIds=${statusId || null} | ` +
+      `statusPersistence=${persistenceMode} | shouldApplyStatuses=${shouldApplyStatuses}`
+    );
+  }
+
+  if (!shouldApplyStatuses) {
     logTriggeredStatusDecision({
       ...baseDiagnostic,
       sceneId,
@@ -957,9 +974,21 @@ async function applyTriggeredStatuses({
       persistenceMode,
       existingExactEffectFound: false,
       applicationAllowed: false,
-      decisionReason: !actor ? "token-has-no-actor" : !statusConfig?.enabled ? "statuses-disabled" : "missing-status-id"
+      decisionReason: !actor
+        ? "token-has-no-actor"
+        : !statusConfig?.enabled
+          ? "statuses-disabled"
+          : !statusId
+            ? "missing-status-id"
+            : saveSuccess
+              ? "save-succeeded"
+              : "save-result-unavailable"
     });
-    return { applied: false, skipped: true, reason: "status-not-configured" };
+    return {
+      applied: false,
+      skipped: true,
+      reason: statusesConfigured ? "status-save-condition-not-met" : "status-not-configured"
+    };
   }
 
   const existing = findExactTriggeredStatusEffect(actor, identity);
@@ -980,6 +1009,10 @@ async function applyTriggeredStatuses({
   }
 
   const statusData = resolveStatusEffectData(statusId);
+  console.log(
+    `[persistent-zones] PZ STATUS APPLY REQUEST | regionId=${regionId} | tokenUuid=${tokenUuid} | ` +
+    `statusId=${statusId} | persistenceMode=${persistenceMode} | castInstanceId=${identity.castInstanceId}`
+  );
   const created = await actor.createEmbeddedDocuments("ActiveEffect", [{
     name: statusData.name,
     img: statusData.img,
@@ -992,6 +1025,11 @@ async function applyTriggeredStatuses({
       [MODULE_ID]: identity
     }
   }], { persistentZonesTriggeredStatus: true });
+  const createdEffect = Array.from(created ?? [])[0] ?? null;
+  console.log(
+    `[persistent-zones] PZ STATUS APPLY RESULT | regionId=${regionId} | tokenUuid=${tokenUuid} | ` +
+    `statusId=${statusId} | effectCreated=${Boolean(createdEffect)} | effectId=${createdEffect?.id ?? null}`
+  );
 
   logTriggeredStatusDecision({
     ...baseDiagnostic,

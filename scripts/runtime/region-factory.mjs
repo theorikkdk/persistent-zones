@@ -34,6 +34,10 @@ import {
   resolvePersistentZoneConfiguration
 } from "./configuration-resolver.mjs";
 import {
+  consumePersistentZonePlacementContext,
+  findPersistentZonePlacementContext
+} from "./persistent-zone-placement-context.mjs";
+import {
   REGION_ARCHITECTURE_PATHS,
   buildManagedRegionRuntimeContract,
   readManagedRegionContract
@@ -525,7 +529,7 @@ async function onCreateRegion(regionDocument, options = {}, userId = null) {
     return;
   }
 
-  const fallback = await buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument);
+  const fallback = await buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, { userId });
   if (!fallback?.runtimeFlags) {
     logRingCastDiagnostic("ringCastSkipReason", {
       hook: "createRegion",
@@ -926,7 +930,8 @@ export async function createManagedRegionFromRegion(regionDocument, {
   }
 
   const resolved = await buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
-    architecturePath: REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE
+    architecturePath: REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE,
+    userId
   });
   logCastAuditLine("PROFILE RESOLVED", {
     operationId,
@@ -1057,6 +1062,14 @@ export async function createManagedRegionFromRegion(regionDocument, {
     partId: runtimeFlags.partId,
     geometryType: runtimeFlags.geometryType,
     regionSourceStrategy: runtimeFlags.regionSourceStrategy
+  });
+
+  await syncLinkedDocumentsSafely({
+    templateDocument: resolved.templateDocument,
+    regionDocument,
+    normalizedDefinition: (ensuredRuntimeFlags ?? runtimeFlags).normalizedDefinition,
+    shapes: null,
+    stage: "v14-native-region-adoption"
   });
 
   return {
@@ -7558,7 +7571,8 @@ async function ensureManagedRegionRuntimeFlags(regionDocument, runtimeFlagsPaylo
 }
 
 async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
-  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE
+  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
+  userId = null
 } = {}) {
   const scene = regionDocument?.parent ?? canvas?.scene ?? null;
   if (!scene) {
@@ -7591,11 +7605,29 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
 
   for (const templateDocument of templates) {
     const resolvedContext = await resolveTemplateSourceContext(templateDocument, { emitDebug: false });
+    const nativeActivity = resolvedContext.activity ?? findPersistentZoneActivityOnItem(resolvedContext.item, {
+      activityId: sourceHints.activityId,
+      activityUuid: sourceHints.activityUuid,
+      fallbackToSinglePersistentZoneActivity: false
+    });
+    const placementContext = nativeActivity ? null : findPersistentZonePlacementContext({
+      userId: userId ?? userIdForRegionCreation(regionDocument),
+      sceneId: scene.id,
+      itemUuid: resolvedContext.item?.uuid ?? null,
+      regionShapeType: sourceShapeKind
+    });
+    const placementActivity = placementContext
+      ? findPersistentZoneActivityOnItem(resolvedContext.item, {
+        activityId: placementContext.activityId,
+        activityUuid: placementContext.activityUuid,
+        fallbackToSinglePersistentZoneActivity: false
+      })
+      : null;
     const sourceContext = {
       item: resolvedContext.item ?? null,
       actor: resolvedContext.actor ?? null,
       caster: resolvedContext.caster ?? resolvedContext.actor ?? null,
-      activity: resolvedContext.activity ?? null
+      activity: nativeActivity ?? placementActivity ?? null
     };
     const configuration = resolvePersistentZoneConfiguration({
       actor: sourceContext.actor,
@@ -7634,6 +7666,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
         templateDocument,
         sourceContext,
         normalizedDefinition,
+        identityHandoff: buildActivityIdentityHandoff({ nativeActivity, placementContext, placementActivity }),
         score: -1,
         sourceRejected: true,
         summary: rejectedSummary
@@ -7652,6 +7685,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
         templateDocument,
         sourceContext,
         normalizedDefinition,
+        identityHandoff: buildActivityIdentityHandoff({ nativeActivity, placementContext, placementActivity }),
         score: -1,
         sourceRejected: true,
         summary: rejectedSummary
@@ -7680,6 +7714,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
         templateDocument,
         sourceContext,
         normalizedDefinition,
+        identityHandoff: buildActivityIdentityHandoff({ nativeActivity, placementContext, placementActivity }),
         score: -1,
         multipartSkipped: true,
         summary: skippedSummary
@@ -7697,6 +7732,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       templateDocument,
       sourceContext,
       normalizedDefinition,
+      identityHandoff: buildActivityIdentityHandoff({ nativeActivity, placementContext, placementActivity }),
       score,
       summary: {
         ...candidateSummary,
@@ -7759,6 +7795,15 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       candidates: candidates.map((candidate) => candidate.summary)
     };
   }
+  const consumedPlacementContext = selected.identityHandoff?.selectionSource === "persistent-zone-placement-context"
+    ? consumePersistentZonePlacementContext(selected.identityHandoff.placementContext)
+    : null;
+  logActivityIdentityHandoff({
+    ...selected.identityHandoff,
+    contextConsumed: Boolean(consumedPlacementContext),
+    regionDocument,
+    regionShapeType: sourceShapeKind
+  });
   logV14RegionDiagnostic("v14SourceCandidateSelected", {
     ...selected.summary,
     v14SourceCandidateSelected: true,
@@ -8037,11 +8082,66 @@ function readV14SourceResolutionHints(regionDocument) {
     itemUuid: runtime.itemUuid ?? source.itemUuid ?? objectData?.itemUuid ?? null,
     actorUuid: runtime.actorUuid ?? source.actorUuid ?? objectData?.actorUuid ?? null,
     activityId: source.activityId ?? runtime.activityId ?? null,
+    activityUuid: source.activityUuid ?? runtime.activityUuid ?? null,
     workflowId: source.workflowId ?? runtime.workflowId ?? null,
     ownerEffectUuid: runtime.ownerEffectUuid ?? runtime.activeEffectUuid ?? runtime.concentrationEffectUuid ?? source.ownerEffectUuid ?? source.activeEffectUuid ?? source.concentrationEffectUuid ?? source.effectUuid ?? null,
     activeEffectUuid: runtime.activeEffectUuid ?? runtime.ownerEffectUuid ?? source.activeEffectUuid ?? source.ownerEffectUuid ?? source.effectUuid ?? null,
     concentrationEffectUuid: runtime.concentrationEffectUuid ?? source.concentrationEffectUuid ?? source.ownerEffectUuid ?? source.effectUuid ?? null
   };
+}
+
+function userIdForRegionCreation(regionDocument) {
+  return regionDocument?._stats?.createdBy ?? game.user?.id ?? null;
+}
+
+function buildActivityIdentityHandoff({ nativeActivity = null, placementContext = null, placementActivity = null } = {}) {
+  const selectedActivity = nativeActivity ?? placementActivity ?? null;
+  return {
+    itemUuid: selectedActivity?.item?.uuid ?? selectedActivity?.parent?.uuid ?? placementContext?.itemUuid ?? null,
+    nativeActivityId: nativeActivity?.id ?? null,
+    nativeActivityUuid: nativeActivity?.uuid ?? null,
+    placementContextFound: Boolean(placementContext),
+    placementContextActivityId: placementContext?.activityId ?? null,
+    placementContextActivityUuid: placementContext?.activityUuid ?? null,
+    selectedActivityId: selectedActivity?.id ?? null,
+    selectedActivityUuid: selectedActivity?.uuid ?? null,
+    selectionSource: nativeActivity
+      ? "native-dnd5e"
+      : placementActivity
+        ? "persistent-zone-placement-context"
+        : "none",
+    placementContext
+  };
+}
+
+function logActivityIdentityHandoff({
+  itemUuid = null,
+  nativeActivityId = null,
+  nativeActivityUuid = null,
+  placementContextFound = false,
+  placementContextActivityId = null,
+  placementContextActivityUuid = null,
+  selectedActivityId = null,
+  selectedActivityUuid = null,
+  selectionSource = "none",
+  contextConsumed = false,
+  regionDocument = null,
+  regionShapeType = null
+} = {}) {
+  console.warn(`[${MODULE_ID}] PZ ACTIVITY IDENTITY HANDOFF`, {
+    itemUuid,
+    nativeActivityId,
+    nativeActivityUuid,
+    placementContextFound,
+    placementContextActivityId,
+    placementContextActivityUuid,
+    selectedActivityId,
+    selectedActivityUuid,
+    selectionSource,
+    contextConsumed,
+    regionId: regionDocument?.id ?? null,
+    regionShapeType
+  });
 }
 
 function classifyV14SourceRegionShapeKind(regionDocument) {

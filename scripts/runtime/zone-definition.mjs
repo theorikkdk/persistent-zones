@@ -318,7 +318,7 @@ export function normalizeZoneDefinition(
       item,
       scene: templateDocument?.parent ?? canvas?.scene ?? null
     }),
-    geometry: normalizeGeometryDefinition(null, {
+    geometry: normalizeGeometryDefinition(definition.geometry, {
       templateDocument,
       templateDefinition,
       definition
@@ -1423,6 +1423,21 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
     });
   }
 
+  if (geometryType === "circle") {
+    return {
+      type: "circle",
+      radius: coerceNumber(
+        pickFirstDefined(
+          geometryDefinition.radius,
+          templateDefinition.distance,
+          definition.distance,
+          templateDocument?.distance
+        ),
+        null
+      )
+    };
+  }
+
   if (geometryType === "side-of-line" || geometryType === "sideofline") {
     const templateDistance = coerceNumber(
       pickFirstDefined(
@@ -1598,6 +1613,11 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     : isPlainObject(definition.effect)
       ? definition.effect
       : {};
+  const statusesDefinition = isPlainObject(simpleEffectDefinition.statuses)
+    ? simpleEffectDefinition.statuses
+    : isPlainObject(definition.statuses)
+      ? definition.statuses
+      : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
   const activityDefinition = isPlainObject(definition.activity) ? definition.activity : {};
@@ -1716,7 +1736,12 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       enabled: Boolean(simpleEffectFormula),
       type: simpleEffectType,
       formula: simpleEffectFormula,
-      damageType: simpleEffectDamageType
+      damageType: simpleEffectDamageType,
+      statuses: {
+        enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
+        statusId: String(statusesDefinition.statusId ?? "").trim() || null,
+        persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode)
+      }
     },
     damage: {
       enabled: coerceBoolean(
@@ -1747,6 +1772,11 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
         : null,
       dc: coerceNumber(pickFirstDefined(saveDefinition.dc, dc), null),
       onSuccess: String(pickFirstDefined(saveDefinition.onSuccess, "half")).toLowerCase()
+    },
+    statuses: {
+      enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
+      statusId: String(statusesDefinition.statusId ?? "").trim() || null,
+      persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode)
     },
     activity
   };
@@ -1901,7 +1931,7 @@ function validateZonePartConfig(part, index, reasons, {
   validateTargetingConfig(partLabel, part?.targeting ?? {}, reasons);
 
   const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
-  if (!["template", "ring", "side-of-line", "side-of-ring"].includes(geometryType)) {
+  if (!["template", "circle", "ring", "side-of-line", "side-of-ring"].includes(geometryType)) {
     reasons.push(`Part "${part?.id ?? index + 1}" uses unsupported geometry "${geometryType}".`);
     return;
   }
@@ -2143,6 +2173,12 @@ function normalizeSimpleEffectType(value) {
   }
 
   return "damage";
+}
+
+function normalizeStatusPersistenceMode(value) {
+  return String(value ?? "persistent").trim().toLowerCase() === "while-inside-region"
+    ? "while-inside-region"
+    : "persistent";
 }
 
 function inferTriggerEffectMode(definition, {
