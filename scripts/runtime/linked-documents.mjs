@@ -1648,6 +1648,81 @@ function buildLinkedLightLayout({
     gridSize
   );
 
+  if (shape?.type === "line") {
+    const anchor = resolveLinkedLightAnchor(shapes, templateDocument, regionDocument);
+    safeLinkedDiagnosticLog("PZ LINKED LIGHT ANCHOR DECISION", anchor.logData);
+    const plan = buildAdaptiveLineLightPlan({
+      shape,
+      grid: scene === globalThis.canvas?.scene ? globalThis.canvas?.grid : null,
+      gridSize,
+      effectiveCoverageRadius,
+      linkedLight
+    });
+    if (!plan) {
+      return { layoutType: "line-path", positions: [], logData: { regionId: regionDocument?.id ?? null, shapeType: "line", everyLightInsideRegion: false } };
+    }
+    const sceneBounds = resolveScenePlaceableBounds(scene);
+    const sceneMargin = Math.max(1, Math.min(gridSize * 0.02, 8));
+    const theoreticalPositions = plan.tracks.flatMap((track) => {
+      const positions = [];
+      for (let index = 0; index < track.finalCount; index += 1) {
+        const t = (index + 0.5) / track.finalCount;
+        positions.push({
+          x: plan.axis.a.x + (plan.axis.dx * t) + (plan.normal.x * track.offset),
+          y: plan.axis.a.y + (plan.axis.dy * t) + (plan.normal.y * track.offset),
+          angle: null,
+          track: track.name,
+          trackIndex: track.index,
+          trackRadius: Math.abs(track.offset),
+          slot: `${track.name}:${index}`
+        });
+      }
+      return positions;
+    });
+    const positions = theoreticalPositions.filter((position) => isPointInsideSceneBounds(position, sceneBounds, sceneMargin));
+    const rejectedOutsideSceneSlots = theoreticalPositions
+      .filter((position) => !isPointInsideSceneBounds(position, sceneBounds, sceneMargin))
+      .map((position) => position.slot);
+    const result = {
+      layoutType: "line-path",
+      positions,
+      logData: {
+        regionId: regionDocument?.id ?? null,
+        lineLength: plan.sourceLength,
+        lineWidth: plan.sourceWidth,
+        rotation: plan.rotation,
+        startX: plan.axis.a.x,
+        startY: plan.axis.a.y,
+        endX: plan.axis.b.x,
+        endY: plan.axis.b.y,
+        effectiveCoverageRadius,
+        overlapTarget: plan.overlapTarget,
+        selectedTrackCount: plan.tracks.length,
+        requestedLightCount: plan.totalTheoreticalLightCount,
+        theoreticalLightCount: plan.totalTheoreticalLightCount,
+        finalLightCount: positions.length,
+        maxCount: plan.safetyCap,
+        safetyCapApplied: plan.safetyCapApplied,
+        spacing: plan.tracks.map((track) => roundForLog(plan.axisLength / Math.max(track.finalCount, 1))),
+        trackOffsets: plan.tracks.map((track) => roundForLog(track.offset)),
+        lightPositions: positions.map((position) => ({
+          slot: position.slot,
+          x: roundForLog(position.x),
+          y: roundForLog(position.y),
+          track: position.track
+        })),
+        rejectedOutsideSceneSlots,
+        reason: plan.layoutReason
+      }
+    };
+    safeLinkedDiagnosticLog("PZ LINKED LIGHT LINE LAYOUT PLAN", result.logData);
+    Object.defineProperties(result.positions, {
+      _pzTheoreticalSlots: { value: theoreticalPositions.map((position) => position.slot), enumerable: false },
+      _pzRejectedOutsideSceneSlots: { value: rejectedOutsideSceneSlots, enumerable: false }
+    });
+    return result;
+  }
+
   if (ring && ring.innerRadius > 0 && ring.outerRadius > ring.innerRadius) {
     const sceneBounds = resolveScenePlaceableBounds(scene);
     safeLinkedDiagnosticLog("PZ LINKED SCENE BOUNDS RESOLVED", {
@@ -1935,6 +2010,98 @@ function roundForLog(value) {
   return Math.round(value * 100) / 100;
 }
 
+function buildAdaptiveLineLightPlan({
+  shape,
+  grid = null,
+  gridSize,
+  effectiveCoverageRadius,
+  linkedLight = {}
+} = {}) {
+  const x = coerceNumber(shape?.x, null);
+  const y = coerceNumber(shape?.y, null);
+  const sourceLength = coerceNumber(shape?.length, 0);
+  const sourceWidth = Math.max(0, coerceNumber(shape?.width, 0));
+  const rotation = coerceNumber(shape?.rotation, 0);
+  if (x === null || y === null || sourceLength <= 0) {
+    return null;
+  }
+
+  const axis = buildNativeLineRay({ x, y, length: sourceLength, rotation, gridBased: shape?.gridBased }, grid);
+  const transverse = sourceWidth > 0
+    ? buildNativeLineRay({
+      x,
+      y,
+      length: sourceWidth,
+      rotation: rotation + 90,
+      gridBased: shape?.gridBased,
+      alignment: 0.5
+    }, grid)
+    : null;
+  const axisLength = Math.hypot(axis.dx, axis.dy);
+  const actualWidth = transverse ? Math.hypot(transverse.dx, transverse.dy) : 0;
+  if (axisLength <= 0) {
+    return null;
+  }
+
+  const overlapTarget = clampNumber(coerceNumber(linkedLight?.overlap, DEFAULT_RING_LIGHT_OVERLAP_TARGET), 0.2, 0.35);
+  const margin = Math.max(1, Math.min(gridSize * 0.05, actualWidth * 0.08));
+  const requiredRadialReach = (actualWidth / 2) + margin;
+  const visuallyThickBand = actualWidth >= gridSize * 1.5;
+  const radialCoverageWeak = effectiveCoverageRadius < requiredRadialReach * 1.25;
+  const requestedTrackCount = radialCoverageWeak || visuallyThickBand ? 2 : 1;
+  const requestedMaxCount = Math.max(1, Math.min(64, Math.round(coerceNumber(linkedLight?.maxCount, DEFAULT_RING_LIGHT_MAX_COUNT))));
+  const selectedTrackCount = requestedTrackCount === 2 && requestedMaxCount >= 2 ? 2 : 1;
+  const safetyCap = requestedMaxCount;
+  const targetSpacing = Math.max(gridSize, effectiveCoverageRadius * (1 - overlapTarget));
+  const theoreticalCountPerTrack = Math.max(1, Math.ceil(axisLength / targetSpacing));
+  const totalTheoreticalLightCount = theoreticalCountPerTrack * selectedTrackCount;
+  const safetyCapApplied = totalTheoreticalLightCount > safetyCap;
+  const usableHalfWidth = Math.max(0, (actualWidth / 2) - margin);
+  const offset = Math.min(actualWidth * 0.2, usableHalfWidth);
+  const tracks = selectedTrackCount === 1
+    ? [{ name: "middle", index: 0, offset: 0, theoreticalCount: theoreticalCountPerTrack, finalCount: theoreticalCountPerTrack }]
+    : [
+      { name: "left", index: 0, offset: -offset, theoreticalCount: theoreticalCountPerTrack, finalCount: theoreticalCountPerTrack },
+      { name: "right", index: 1, offset, theoreticalCount: theoreticalCountPerTrack, finalCount: theoreticalCountPerTrack }
+    ];
+  if (safetyCapApplied) {
+    distributeLineLightCapAcrossTracks(tracks, safetyCap);
+  }
+  const normalLength = transverse ? Math.hypot(transverse.dx, transverse.dy) : 0;
+  const normal = normalLength > 0
+    ? { x: transverse.dx / normalLength, y: transverse.dy / normalLength }
+    : { x: -axis.dy / axisLength, y: axis.dx / axisLength };
+
+  return {
+    axis,
+    axisLength,
+    normal,
+    sourceLength,
+    sourceWidth,
+    rotation,
+    overlapTarget,
+    requiredRadialReach,
+    safetyCap,
+    safetyCapApplied,
+    totalTheoreticalLightCount,
+    tracks,
+    layoutReason: selectedTrackCount === 1
+      ? requestedTrackCount === 2 ? "single-track-max-count-too-low" : "single-track-radial-coverage-sufficient"
+      : radialCoverageWeak ? "two-tracks-effective-coverage-below-line-half-width" : "two-tracks-visually-thick-line"
+  };
+}
+
+function distributeLineLightCapAcrossTracks(tracks, safetyCap) {
+  const baseCount = Math.floor(safetyCap / tracks.length);
+  let remainder = safetyCap % tracks.length;
+  for (const track of tracks) {
+    track.finalCount = Math.max(1, Math.min(track.theoreticalCount, baseCount + (remainder > 0 ? 1 : 0)));
+    if (remainder > 0) {
+      remainder -= 1;
+    }
+  }
+}
+
 function logLinkedWallDecision({
   regionDocument = null,
   shapes = [],
@@ -1958,7 +2125,7 @@ function logLinkedLightDocumentPayload(payload, desiredLights = []) {
   const config = payload?.config ?? {};
   console.log(
     `[${MODULE_ID}][linked] PZ LINKED LIGHT DOCUMENT PAYLOAD | ` +
-    `x=${payload?.x ?? null} | y=${payload?.y ?? null} | ` +
+    `slot=${getLinkedLightSlotKey(payload)} | x=${payload?.x ?? null} | y=${payload?.y ?? null} | ` +
     `bright=${config.bright ?? null} | dim=${config.dim ?? null} | ` +
     `brightSource=${desiredLights?._pzBrightSource ?? "runtime-fallback"} | ` +
     `dimSource=${desiredLights?._pzDimSource ?? "runtime-fallback"} | ` +
