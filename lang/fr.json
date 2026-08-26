@@ -54,6 +54,7 @@
         "DifficultTerrain": "Terrain de la zone",
         "TerrainMultiplier": "Multiplicateur de terrain",
         "CreateWalls": "Créer des murs liés",
+        "LinkedWallGeometry": "Géométrie des murs liés",
         "WallHeight": "Hauteur du mur",
         "CreateLights": "Créer des lumières liées",
         "LightColor": "Couleur de lumière",
@@ -77,6 +78,10 @@
         "OuterEdge": "Bord extérieur",
         "Centerline": "Ligne centrale",
         "InnerEdge": "Bord intérieur"
+      },
+      "LinkedWallGeometry": {
+        "Centerline": "Axe central",
+        "Perimeter": "Périmètre"
       },
       "Triggers": {
         "enter": "À l'entrée",

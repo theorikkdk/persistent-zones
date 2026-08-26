@@ -84,20 +84,20 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     if (root) {
       this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
     }
-    const submitData = super._prepareSubmitData(event, formData);
-    const pz = submitData[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
-    const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(pz, this.activity);
-
-    foundry.utils.setProperty(submitData, "target.override", true);
-    foundry.utils.setProperty(submitData, "target.prompt", true);
-    foundry.utils.setProperty(submitData, "target.template", targetTemplate);
-    return submitData;
+    return super._prepareSubmitData(event, formData);
   }
 
   async _processSubmitData(event, submitData) {
-    submitData[ACTIVITY_DEFINITION_FIELD_KEY] = normalizePersistentZoneActivitySubmitData(
+    const persistentZone = normalizePersistentZoneActivitySubmitData(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
     );
+    submitData[ACTIVITY_DEFINITION_FIELD_KEY] = persistentZone;
+
+    const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(persistentZone, this.activity);
+    foundry.utils.setProperty(submitData, "target.override", true);
+    foundry.utils.setProperty(submitData, "target.prompt", true);
+    foundry.utils.setProperty(submitData, "target.template", targetTemplate);
+
     return super._processSubmitData(event, submitData);
   }
 }
@@ -118,6 +118,7 @@ function normalizePersistentZoneActivitySubmitData(value) {
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = config.terrain.multiplier ?? 2;
   config.linkedWalls ??= {};
+  config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
   config.linkedLights ??= {};
   config.linkedLights.color ||= "#ffd88a";
   config.lifecycle ??= {};
@@ -207,7 +208,7 @@ function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
   if (geometryType === "wall") {
     return {
       ...existingTemplate,
-      type: "ray",
+      type: "wall",
       size: String(coercePositiveNumber(geometry.wallLength, 30)),
       width: String(coercePositiveNumber(geometry.wallThickness, 5)),
       units
@@ -264,6 +265,10 @@ function buildActivityChoices() {
       { value: "outer-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.OuterEdge" },
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.Centerline" },
       { value: "inner-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.InnerEdge" }
+    ],
+    linkedWallGeometries: [
+      { value: "centerline", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Centerline" },
+      { value: "perimeter", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Perimeter" }
     ],
     persistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" },

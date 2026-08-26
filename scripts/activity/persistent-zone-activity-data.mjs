@@ -147,6 +147,11 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             required: false,
             initial: "solid"
           }),
+          geometry: new fields.StringField({
+            required: false,
+            initial: "centerline",
+            choices: ["centerline", "perimeter"]
+          }),
           height: new fields.NumberField({
             required: false,
             nullable: true,

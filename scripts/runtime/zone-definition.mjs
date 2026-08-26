@@ -1898,7 +1898,7 @@ function collectCurrentLimits(definition) {
   }
 
   if (safeGet(definition, ["linkedWalls"]) !== undefined) {
-    limits.push("Linked walls are limited to compatible circle, rectangle, and polygon region shapes in this release.");
+    limits.push("Linked walls are limited to compatible circle, ellipse, line, ring, rectangle, and polygon region shapes in this release.");
   }
 
   if (

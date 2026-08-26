@@ -148,6 +148,7 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
       pickFirstDefined(definition.enabled, definition.active, false),
       false
     ),
+    geometry: normalizeLinkedWallGeometry(definition.geometry),
     preset: requestedPreset,
     resolvedPreset: presetConfig ? requestedPreset : null,
     mode: normalizeLinkedWallMode(
@@ -198,6 +199,12 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
   }
 
   return finalConfig;
+}
+
+function normalizeLinkedWallGeometry(value) {
+  return String(value ?? "centerline").trim().toLowerCase() === "perimeter"
+    ? "perimeter"
+    : "centerline";
 }
 
 export function resolveLinkedLightConfig(linkedLightDefinition, {

@@ -54,6 +54,7 @@
         "DifficultTerrain": "Zone terrain",
         "TerrainMultiplier": "Terrain multiplier",
         "CreateWalls": "Create linked walls",
+        "LinkedWallGeometry": "Linked wall geometry",
         "WallHeight": "Wall height",
         "CreateLights": "Create linked lights",
         "LightColor": "Light color",
@@ -77,6 +78,10 @@
         "OuterEdge": "Outer edge",
         "Centerline": "Centerline",
         "InnerEdge": "Inner edge"
+      },
+      "LinkedWallGeometry": {
+        "Centerline": "Centerline",
+        "Perimeter": "Perimeter"
       },
       "Triggers": {
         "enter": "On enter",

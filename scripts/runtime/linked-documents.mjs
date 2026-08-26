@@ -363,6 +363,15 @@ async function syncLinkedWalls({
   const usableExistingWalls = wallDuplicateReconciliation.keptDocuments;
 
   if (!linkedWalls?.enabled) {
+    logLinkedWallDecision({
+      regionDocument,
+      shapes,
+      linkedWalls,
+      segmentCount: 0,
+      payloadCount: 0,
+      existingWallCount: usableExistingWalls.length,
+      creationRequested: false
+    });
     return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, usableExistingWalls, "disabled");
   }
 
@@ -375,6 +384,15 @@ async function syncLinkedWalls({
   });
 
   if (!desiredWalls.length) {
+    logLinkedWallDecision({
+      regionDocument,
+      shapes,
+      linkedWalls,
+      segmentCount: 0,
+      payloadCount: 0,
+      existingWallCount: usableExistingWalls.length,
+      creationRequested: false
+    });
     return deleteLinkedWallDocuments(scene, regionDocument, templateDocument, usableExistingWalls, "unsupported-shape");
   }
 
@@ -382,6 +400,17 @@ async function syncLinkedWalls({
   const desiredUsesWallHeight = desiredWalls.some((wallData) => wallData?.flags?.["wall-height"] !== undefined);
   const wallHeightModeChanged = existingUsesWallHeight !== desiredUsesWallHeight;
   const orderedExisting = orderLinkedDocumentsForDesired(usableExistingWalls, "wall");
+  const reusableCount = wallHeightModeChanged ? 0 : Math.min(orderedExisting.length, desiredWalls.length);
+  const payloadCount = desiredWalls.length - reusableCount;
+  logLinkedWallDecision({
+    regionDocument,
+    shapes,
+    linkedWalls,
+    segmentCount: desiredWalls.length,
+    payloadCount,
+    existingWallCount: usableExistingWalls.length,
+    creationRequested: payloadCount > 0
+  });
 
   if (orderedExisting.length === desiredWalls.length && orderedExisting.length && !wallHeightModeChanged) {
     const updates = orderedExisting.map((wallDocument, index) => ({
@@ -412,7 +441,6 @@ async function syncLinkedWalls({
     };
   }
 
-  const reusableCount = wallHeightModeChanged ? 0 : Math.min(orderedExisting.length, desiredWalls.length);
   const updatedIds = [];
   if (reusableCount) {
     const updates = orderedExisting.slice(0, reusableCount).map((wallDocument, index) => ({
@@ -649,8 +677,24 @@ function buildLinkedWallData({
   shapes,
   itemUuid = null
 }) {
+  const geometryDecision = resolveLinkedWallGeometryDecision(shapes, linkedWalls?.geometry);
   const segments = buildWallSegmentsFromShapes(shapes, {
-    circleSegments: normalizeLinkedWallSegments(linkedWalls?.segments)
+    circleSegments: normalizeLinkedWallSegments(linkedWalls?.segments),
+    grid: regionDocument?.parent === globalThis.canvas?.scene ? globalThis.canvas?.grid : null,
+    wallGeometry: geometryDecision.selectedWallGeometry
+  });
+  safeLinkedDiagnosticLog("PZ LINKED WALL GEOMETRY DECISION", {
+    regionId: regionDocument?.id ?? null,
+    sourceShapeType: geometryDecision.sourceShapeType,
+    requestedWallGeometry: geometryDecision.requestedWallGeometry,
+    selectedWallGeometry: geometryDecision.selectedWallGeometry,
+    wallPreset: linkedWalls?.preset ?? linkedWalls?.resolvedPreset ?? null,
+    generatedSegmentCount: segments.length,
+    segments: segments.map((segment, index) => ({
+      boundary: segment.boundary ?? "outer",
+      segmentIndex: segment.segmentIndex ?? index
+    })),
+    reason: geometryDecision.reason
   });
   if (!segments.length) {
     return [];
@@ -925,7 +969,9 @@ function buildLinkedDocumentFlags({
 }
 
 function buildWallSegmentsFromShapes(shapes, {
-  circleSegments = DEFAULT_LINKED_WALL_SEGMENTS
+  circleSegments = DEFAULT_LINKED_WALL_SEGMENTS,
+  grid = null,
+  wallGeometry = "centerline"
 } = {}) {
   const segments = [];
 
@@ -943,6 +989,9 @@ function buildWallSegmentsFromShapes(shapes, {
       case "ellipse":
         segments.push(...buildEllipseWallSegments(shape, circleSegments));
         break;
+      case "line":
+        segments.push(...buildLineWallSegments(shape, grid, wallGeometry));
+        break;
       case "rectangle":
         segments.push(...buildRectangleWallSegments(shape));
         break;
@@ -955,6 +1004,106 @@ function buildWallSegmentsFromShapes(shapes, {
   }
 
   return segments;
+}
+
+function buildLineWallSegments(shape, grid = null, wallGeometry = "centerline") {
+  const x = coerceNumber(shape?.x, null);
+  const y = coerceNumber(shape?.y, null);
+  const length = coerceNumber(shape?.length, 0);
+  const width = coerceNumber(shape?.width, 0);
+  const rotation = coerceNumber(shape?.rotation, 0);
+  if (x === null || y === null || length <= 0) {
+    return [];
+  }
+
+  const axisX = buildNativeLineRay({ x, y, length, rotation, gridBased: shape?.gridBased }, grid);
+  if (wallGeometry !== "perimeter" || width <= 0) {
+    return [{
+      c: [axisX.a.x, axisX.a.y, axisX.b.x, axisX.b.y],
+      boundary: "centerline",
+      segmentIndex: 0
+    }];
+  }
+
+  const axisY = buildNativeLineRay({
+    x,
+    y,
+    length: width,
+    rotation: rotation + 90,
+    gridBased: shape?.gridBased,
+    alignment: 0.5
+  }, grid);
+  const points = [
+    axisY.a,
+    axisY.b,
+    { x: axisY.b.x + axisX.dx, y: axisY.b.y + axisX.dy },
+    { x: axisY.a.x + axisX.dx, y: axisY.a.y + axisX.dy }
+  ];
+  return points.map((fromPoint, index) => {
+    const toPoint = points[(index + 1) % points.length];
+    return {
+      c: [fromPoint.x, fromPoint.y, toPoint.x, toPoint.y],
+      boundary: "perimeter",
+      segmentIndex: index
+    };
+  });
+}
+
+function buildNativeLineRay({ x, y, length, rotation, gridBased = false, alignment = 0 } = {}, grid = null) {
+  const from = { x, y };
+  let to;
+  if (gridBased && grid && !grid.isGridless && typeof grid.getTranslatedPoint === "function") {
+    const distancePixels = coerceNumber(grid.size, 0) / coerceNumber(grid.distance, 1);
+    to = grid.getTranslatedPoint(from, rotation, length / distancePixels);
+  } else {
+    const radians = (rotation * Math.PI) / 180;
+    to = {
+      x: x + (Math.cos(radians) * length),
+      y: y + (Math.sin(radians) * length)
+    };
+  }
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return {
+    a: { x: from.x - (dx * alignment), y: from.y - (dy * alignment) },
+    b: { x: to.x - (dx * alignment), y: to.y - (dy * alignment) },
+    dx,
+    dy
+  };
+}
+
+function resolveLinkedWallGeometryDecision(shapes, requestedGeometry) {
+  const sourceShape = Array.from(shapes ?? [])[0] ?? null;
+  const sourceShapeType = sourceShape?.type ?? null;
+  const requestedWallGeometry = normalizeLinkedWallGeometry(requestedGeometry);
+  if (sourceShapeType === "line") {
+    if (requestedWallGeometry === "perimeter" && coerceNumber(sourceShape?.width, 0) <= 0) {
+      return {
+        sourceShapeType,
+        requestedWallGeometry,
+        selectedWallGeometry: "centerline",
+        reason: "line-perimeter-requires-positive-width"
+      };
+    }
+    return {
+      sourceShapeType,
+      requestedWallGeometry,
+      selectedWallGeometry: requestedWallGeometry,
+      reason: requestedWallGeometry === "perimeter" ? "native-line-rectangle-perimeter" : "native-line-centerline"
+    };
+  }
+  return {
+    sourceShapeType,
+    requestedWallGeometry,
+    selectedWallGeometry: "perimeter",
+    reason: "native-shape-boundary"
+  };
+}
+
+function normalizeLinkedWallGeometry(value) {
+  return String(value ?? "centerline").trim().toLowerCase() === "perimeter"
+    ? "perimeter"
+    : "centerline";
 }
 
 function buildCircleWallSegments(shape, count, boundary = "outer") {
@@ -1191,7 +1340,13 @@ function summarizeWallGeometryPlan({
     innerWallPointCount: innerSegments.length,
     closedOuterLoop: outerSegments.length > 2,
     closedInnerLoop: innerSegments.length > 2,
-    wallPresetId: linkedWalls?.presetId ?? linkedWalls?.id ?? null,
+    wallPresetId: linkedWalls?.preset ?? linkedWalls?.presetId ?? linkedWalls?.id ?? null,
+    requestedWallGeometry: normalizeLinkedWallGeometry(linkedWalls?.geometry),
+    segments: segments.map((segment, index) => ({
+      boundary: segment.boundary ?? "outer",
+      segmentIndex: segment.segmentIndex ?? index,
+      coordinates: Array.from(segment.c ?? segment)
+    })),
     wallConfig: duplicateData(linkedWalls ?? {})
   };
 }
@@ -1728,6 +1883,25 @@ function roundForLog(value) {
     return value ?? null;
   }
   return Math.round(value * 100) / 100;
+}
+
+function logLinkedWallDecision({
+  regionDocument = null,
+  shapes = [],
+  linkedWalls = {},
+  segmentCount = 0,
+  payloadCount = 0,
+  existingWallCount = 0,
+  creationRequested = false
+} = {}) {
+  const shapeType = Array.from(shapes ?? [])[0]?.type ?? null;
+  const wallPreset = linkedWalls?.presetId ?? linkedWalls?.id ?? linkedWalls?.preset ?? null;
+  console.log(
+    `[${MODULE_ID}][linked] PZ LINKED WALL DECISION | regionId=${regionDocument?.id ?? null} | ` +
+    `shapeType=${shapeType} | wallsEnabled=${linkedWalls?.enabled === true} | wallPreset=${wallPreset} | ` +
+    `segmentCount=${segmentCount} | payloadCount=${payloadCount} | existingWallCount=${existingWallCount} | ` +
+    `creationRequested=${creationRequested}`
+  );
 }
 
 function safeLinkedDiagnosticLog(label, data = {}) {

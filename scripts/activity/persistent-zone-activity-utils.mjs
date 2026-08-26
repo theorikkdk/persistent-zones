@@ -80,6 +80,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     linkedWalls: {
       enabled: Boolean(linkedWalls.enabled),
       preset: linkedWalls.preset ?? "solid",
+      geometry: normalizeLinkedWallGeometry(linkedWalls.geometry),
       height: linkedWalls.height ?? null
     },
     linkedLight: {
@@ -336,6 +337,12 @@ function logTriggerEffectConfigurationDecision(data = {}) {
 function normalizeGeometryType(value) {
   const normalized = String(value ?? "circle").trim().toLowerCase();
   return ["circle", "ring", "wall"].includes(normalized) ? normalized : "circle";
+}
+
+function normalizeLinkedWallGeometry(value) {
+  return String(value ?? "centerline").trim().toLowerCase() === "perimeter"
+    ? "perimeter"
+    : "centerline";
 }
 
 function numberOrNull(value) {

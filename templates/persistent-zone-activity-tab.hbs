@@ -246,6 +246,12 @@
         </select>
       </div>
       <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallGeometry"}}</label>
+        <select name="persistentZone.linkedWalls.geometry">
+          {{selectOptions persistentZoneChoices.linkedWallGeometries selected=persistentZone.linkedWalls.geometry localize=true}}
+        </select>
+      </div>
+      <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallHeight"}}</label>
         <input type="number" name="persistentZone.linkedWalls.height" value="{{persistentZone.linkedWalls.height}}" min="0" step="any">
       </div>
