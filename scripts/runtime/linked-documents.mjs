@@ -573,6 +573,9 @@ async function syncLinkedLight({
     updatedSlots.push(slot);
   }
 
+  if (updates.length) {
+    updates.forEach((payload) => logLinkedLightDocumentPayload(payload, desiredLights));
+  }
   const updated = updates.length
     ? await scene.updateEmbeddedDocuments("AmbientLight", updates, { persistentZonesLinkedSync: true })
     : [];
@@ -591,6 +594,9 @@ async function syncLinkedLight({
   const lightsToCreate = Array.from(desiredBySlot.entries())
     .filter(([slot]) => !existingBySlot.has(slot))
     .map(([, desiredLight]) => desiredLight);
+  if (lightsToCreate.length) {
+    lightsToCreate.forEach((payload) => logLinkedLightDocumentPayload(payload, desiredLights));
+  }
   const created = lightsToCreate.length
     ? await scene.createEmbeddedDocuments("AmbientLight", lightsToCreate, { persistentZonesLinkedSync: true })
     : [];
@@ -851,7 +857,9 @@ function buildLinkedLightData({
   }));
   Object.defineProperties(lightDocuments, {
     _pzTheoreticalSlots: { value: layout.positions._pzTheoreticalSlots ?? layout.positions.map((position) => position.slot).filter(Boolean), enumerable: false },
-    _pzRejectedOutsideSceneSlots: { value: layout.positions._pzRejectedOutsideSceneSlots ?? [], enumerable: false }
+    _pzRejectedOutsideSceneSlots: { value: layout.positions._pzRejectedOutsideSceneSlots ?? [], enumerable: false },
+    _pzBrightSource: { value: linkedLight?.resolutionSources?.bright ?? "runtime-fallback", enumerable: false },
+    _pzDimSource: { value: linkedLight?.resolutionSources?.dim ?? "runtime-fallback", enumerable: false }
   });
   return lightDocuments;
 }
@@ -1557,27 +1565,67 @@ function logLinkedLightSceneClipResult({
   });
 }
 
-function findLinkedLightCenter(shapes, templateDocument) {
+function resolveLinkedLightAnchor(shapes, templateDocument, regionDocument) {
   const shapeList = Array.from(shapes ?? []);
+  const shape = shapeList[0] ?? null;
+  const scene = regionDocument?.parent ?? templateDocument?.parent ?? canvas?.scene ?? null;
+  const grid = scene === globalThis.canvas?.scene ? globalThis.canvas?.grid : null;
+  let point = null;
+  let selectedAnchorSource = null;
+  let reason = null;
+
   if (!shapeList.length) {
-    return findTemplateCenter(templateDocument);
-  }
-
-  if (shapeList.length === 1) {
-    return findShapeCenter(shapeList[0]) ?? findTemplateCenter(templateDocument);
-  }
-
-  const shapeCenters = shapeList
-    .map((shape) => findShapeCenter(shape))
-    .filter(Boolean);
-
-  if (!shapeCenters.length) {
-    return findTemplateCenter(templateDocument);
+    point = findTemplateCenter(templateDocument);
+    selectedAnchorSource = "template-fallback";
+    reason = "final-region-has-no-shapes";
+  } else if (shapeList.length === 1) {
+    point = findShapeCenter(shape, { grid });
+    if (point) {
+      selectedAnchorSource = "final-region-shape";
+      reason = shape?.type === "line" ? "native-line-geometric-center" : "native-shape-geometric-center";
+    } else {
+      point = findTemplateCenter(templateDocument);
+      selectedAnchorSource = "template-fallback";
+      reason = "final-region-shape-center-unsupported";
+    }
+  } else {
+    const shapeCenters = shapeList
+      .map((entry) => findShapeCenter(entry, { grid }))
+      .filter(Boolean);
+    if (shapeCenters.length) {
+      point = {
+        x: shapeCenters.reduce((sum, entry) => sum + entry.x, 0) / shapeCenters.length,
+        y: shapeCenters.reduce((sum, entry) => sum + entry.y, 0) / shapeCenters.length
+      };
+      selectedAnchorSource = "final-region-shapes-average";
+      reason = "multiple-native-shape-centers";
+    } else {
+      point = findTemplateCenter(templateDocument);
+      selectedAnchorSource = "template-fallback";
+      reason = "final-region-shape-centers-unsupported";
+    }
   }
 
   return {
-    x: shapeCenters.reduce((sum, point) => sum + point.x, 0) / shapeCenters.length,
-    y: shapeCenters.reduce((sum, point) => sum + point.y, 0) / shapeCenters.length
+    point,
+    logData: {
+      regionId: regionDocument?.id ?? null,
+      shapeType: shape?.type ?? null,
+      regionX: coerceNumber(shape?.x, null),
+      regionY: coerceNumber(shape?.y, null),
+      lineLength: shape?.type === "line" ? coerceNumber(shape?.length, null) : null,
+      lineWidth: shape?.type === "line" ? coerceNumber(shape?.width, null) : null,
+      lineRotation: shape?.type === "line" ? coerceNumber(shape?.rotation, null) : null,
+      gridBased: shape?.type === "line" ? Boolean(shape?.gridBased) : null,
+      templateX: coerceNumber(templateDocument?.x, null),
+      templateY: coerceNumber(templateDocument?.y, null),
+      templateDistance: coerceNumber(templateDocument?.distance, null),
+      templateDirection: coerceNumber(templateDocument?.direction, null),
+      selectedAnchorSource,
+      calculatedCenterX: point?.x ?? null,
+      calculatedCenterY: point?.y ?? null,
+      reason
+    }
   };
 }
 
@@ -1714,7 +1762,9 @@ function buildLinkedLightLayout({
     return result;
   }
 
-  const center = findLinkedLightCenter(shapes, templateDocument);
+  const anchor = resolveLinkedLightAnchor(shapes, templateDocument, regionDocument);
+  safeLinkedDiagnosticLog("PZ LINKED LIGHT ANCHOR DECISION", anchor.logData);
+  const center = anchor.point;
   if (!center) {
     return { layoutType: "center", positions: [], logData: { regionId: regionDocument?.id ?? null, groupId: getRegionRuntimeFlags(regionDocument)?.groupId ?? null, shapeType: shape?.type ?? null, everyLightInsideRegion: false } };
   }
@@ -1904,6 +1954,20 @@ function logLinkedWallDecision({
   );
 }
 
+function logLinkedLightDocumentPayload(payload, desiredLights = []) {
+  const config = payload?.config ?? {};
+  console.log(
+    `[${MODULE_ID}][linked] PZ LINKED LIGHT DOCUMENT PAYLOAD | ` +
+    `x=${payload?.x ?? null} | y=${payload?.y ?? null} | ` +
+    `bright=${config.bright ?? null} | dim=${config.dim ?? null} | ` +
+    `brightSource=${desiredLights?._pzBrightSource ?? "runtime-fallback"} | ` +
+    `dimSource=${desiredLights?._pzDimSource ?? "runtime-fallback"} | ` +
+    `color=${config.color ?? null} | alpha=${config.alpha ?? null} | ` +
+    `luminosity=${config.luminosity ?? null} | hidden=${payload?.hidden ?? null} | ` +
+    `walls=${payload?.walls ?? null} | animation.type=${config.animation?.type ?? null}`
+  );
+}
+
 function safeLinkedDiagnosticLog(label, data = {}) {
   try {
     console.warn(`[${MODULE_ID}][linked] ${label}`, duplicateData(data ?? {}));
@@ -1922,7 +1986,7 @@ function resolveLinkedLightElevation(regionDocument, linkedLight = {}) {
   return coerceNumber(regionDocument?.elevation ?? regionDocument?.document?.elevation, null);
 }
 
-function findShapeCenter(shape) {
+function findShapeCenter(shape, { grid = null } = {}) {
   switch (shape?.type) {
     case "circle":
       return {
@@ -1933,6 +1997,8 @@ function findShapeCenter(shape) {
       return findEmanationCenter(shape);
     case "ellipse":
       return findEllipseCenter(shape);
+    case "line":
+      return findLineCenter(shape, grid);
     case "rectangle":
       return findRectangleCenter(shape);
     case "polygon":
@@ -1940,6 +2006,27 @@ function findShapeCenter(shape) {
     default:
       return null;
   }
+}
+
+function findLineCenter(shape, grid = null) {
+  const x = coerceNumber(shape?.x, null);
+  const y = coerceNumber(shape?.y, null);
+  const length = coerceNumber(shape?.length, 0);
+  if (x === null || y === null || length <= 0) {
+    return null;
+  }
+
+  const axis = buildNativeLineRay({
+    x,
+    y,
+    length,
+    rotation: coerceNumber(shape?.rotation, 0),
+    gridBased: shape?.gridBased
+  }, grid);
+  return {
+    x: (axis.a.x + axis.b.x) / 2,
+    y: (axis.a.y + axis.b.y) / 2
+  };
 }
 
 function findEmanationCenter(shape) {

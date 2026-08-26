@@ -216,6 +216,8 @@ export function resolveLinkedLightConfig(linkedLightDefinition, {
   const presetAnimation = normalizeAnimationDefinition(presetConfig?.animation);
   const explicitAnimation = normalizeAnimationDefinition(definition.animation);
   const presetRadius = buildPresetRadius(presetConfig, templateDistance);
+  const explicitBright = coerceNumber(definition.bright, null);
+  const explicitDim = coerceNumber(definition.dim, null);
 
   const finalConfig = {
     enabled: coerceBoolean(
@@ -284,6 +286,14 @@ export function resolveLinkedLightConfig(linkedLightDefinition, {
         pickFirstDefined(definition.animationReverse, explicitAnimation.reverse, presetAnimation.reverse, false),
         false
       ) ?? false
+    },
+    resolutionSources: {
+      bright: explicitBright !== null
+        ? "definition-override"
+        : presetConfig?.bright !== undefined ? `preset:${requestedPreset}` : "runtime-fallback",
+      dim: explicitDim !== null
+        ? "definition-override"
+        : presetConfig?.dim !== undefined ? `preset:${requestedPreset}` : "runtime-fallback"
     }
   };
 
