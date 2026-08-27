@@ -152,6 +152,10 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             initial: "centerline",
             choices: ["centerline", "perimeter"]
           }),
+          move: new fields.StringField({required: false, initial: "normal", choices: ["none", "normal"]}),
+          sight: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
+          light: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
+          sound: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
           height: new fields.NumberField({
             required: false,
             nullable: true,

@@ -280,6 +280,32 @@
           {{selectOptions persistentZoneChoices.linkedWallGeometries selected=persistentZone.linkedWalls.geometry localize=true}}
         </select>
       </div>
+      <div data-pz-linked-wall-custom>
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallMovement"}}</label>
+          <select name="persistentZone.linkedWalls.move">
+            {{selectOptions persistentZoneChoices.linkedWallMovementTypes selected=persistentZone.linkedWalls.move localize=true}}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallSight"}}</label>
+          <select name="persistentZone.linkedWalls.sight">
+            {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.sight localize=true}}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallLight"}}</label>
+          <select name="persistentZone.linkedWalls.light">
+            {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.light localize=true}}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallSound"}}</label>
+          <select name="persistentZone.linkedWalls.sound">
+            {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.sound localize=true}}
+          </select>
+        </div>
+      </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallHeight"}}</label>
         <input type="number" name="persistentZone.linkedWalls.height" value="{{persistentZone.linkedWalls.height}}" min="0" step="any">

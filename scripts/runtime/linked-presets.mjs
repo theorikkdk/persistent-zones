@@ -44,6 +44,14 @@ const LINKED_WALL_PRESETS = Object.freeze({
     light: "normal",
     sound: "none",
     segments: DEFAULT_LINKED_WALL_SEGMENTS
+  }),
+  custom: Object.freeze({
+    mode: "both",
+    move: "normal",
+    sight: "normal",
+    light: "normal",
+    sound: "normal",
+    segments: DEFAULT_LINKED_WALL_SEGMENTS
   })
 });
 

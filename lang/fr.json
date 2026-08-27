@@ -60,6 +60,10 @@
         "TerrainMultiplier": "Multiplicateur de terrain",
         "CreateWalls": "Créer des murs liés",
         "LinkedWallGeometry": "Géométrie des murs liés",
+        "LinkedWallMovement": "Mouvement",
+        "LinkedWallSight": "Vision",
+        "LinkedWallLight": "Lumière",
+        "LinkedWallSound": "Son",
         "WallHeight": "Hauteur du mur",
         "CreateLights": "Créer des lumières liées",
         "LightColor": "Couleur de lumière",
@@ -124,7 +128,17 @@
         "solid": "Solide",
         "terrain": "Mur de terrain",
         "invisible": "Mur invisible",
-        "ethereal": "Éthéré"
+        "ethereal": "Éthéré",
+        "custom": "Personnalisé"
+      },
+      "LinkedWallMovement": {
+        "Allowed": "Autorisé",
+        "Blocked": "Bloqué"
+      },
+      "LinkedWallSense": {
+        "None": "Aucun",
+        "Limited": "Limité",
+        "Normal": "Normal"
       },
       "LinkedLightPresets": {
         "glow": "Lueur",

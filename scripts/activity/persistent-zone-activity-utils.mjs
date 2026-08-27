@@ -50,6 +50,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const linkedWalls = source.linkedWalls ?? {};
   const linkedLights = source.linkedLights ?? source.linkedLight ?? {};
   const geometryType = normalizeGeometryType(geometry.type);
+  const linkedWallPreset = String(linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   const activityId = getActivityId(activity);
   const activityUuid = getActivityUuid(activity);
   const itemUuid = getActivityItem(activity)?.uuid ?? null;
@@ -80,9 +81,15 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     }),
     linkedWalls: {
       enabled: Boolean(linkedWalls.enabled),
-      preset: linkedWalls.preset ?? "solid",
+      preset: linkedWallPreset,
       geometry: normalizeLinkedWallGeometry(linkedWalls.geometry),
-      height: linkedWalls.height ?? null
+      height: linkedWalls.height ?? null,
+      ...(linkedWallPreset === "custom" ? {
+        move: normalizeLinkedWallMovement(linkedWalls.move),
+        sight: normalizeLinkedWallSense(linkedWalls.sight),
+        light: normalizeLinkedWallSense(linkedWalls.light),
+        sound: normalizeLinkedWallSense(linkedWalls.sound)
+      } : {})
     },
     linkedLight: {
       enabled: Boolean(linkedLights.enabled),
@@ -346,6 +353,15 @@ function normalizeLinkedWallGeometry(value) {
   return String(value ?? "centerline").trim().toLowerCase() === "perimeter"
     ? "perimeter"
     : "centerline";
+}
+
+function normalizeLinkedWallMovement(value) {
+  return String(value ?? "normal").trim().toLowerCase() === "none" ? "none" : "normal";
+}
+
+function normalizeLinkedWallSense(value) {
+  const normalized = String(value ?? "normal").trim().toLowerCase();
+  return ["none", "limited", "normal"].includes(normalized) ? normalized : "normal";
 }
 
 function numberOrNull(value) {

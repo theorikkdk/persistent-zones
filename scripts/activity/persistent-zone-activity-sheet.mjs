@@ -145,7 +145,12 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = config.terrain.multiplier ?? 2;
   config.linkedWalls ??= {};
+  config.linkedWalls.preset = String(config.linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
+  config.linkedWalls.move = normalizeChoice(config.linkedWalls.move, ["none", "normal"], "normal");
+  config.linkedWalls.sight = normalizeChoice(config.linkedWalls.sight, ["none", "limited", "normal"], "normal");
+  config.linkedWalls.light = normalizeChoice(config.linkedWalls.light, ["none", "limited", "normal"], "normal");
+  config.linkedWalls.sound = normalizeChoice(config.linkedWalls.sound, ["none", "limited", "normal"], "normal");
   config.linkedLights ??= {};
   config.linkedLights.color ||= "#ffd88a";
   config.lifecycle ??= {};
@@ -225,6 +230,11 @@ function normalizeUiTriggerMode(value, fallback = "none") {
     return "linked-activity";
   }
   return "none";
+}
+
+function normalizeChoice(value, choices, fallback) {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  return choices.includes(normalized) ? normalized : fallback;
 }
 
 function normalizeUiStatusRecovery(value) {
@@ -323,6 +333,15 @@ function buildActivityChoices() {
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Centerline" },
       { value: "perimeter", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Perimeter" }
     ],
+    linkedWallMovementTypes: [
+      { value: "none", label: "PERSISTENT_ZONES.Activity.LinkedWallMovement.Allowed" },
+      { value: "normal", label: "PERSISTENT_ZONES.Activity.LinkedWallMovement.Blocked" }
+    ],
+    linkedWallSenseTypes: [
+      { value: "none", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.None" },
+      { value: "limited", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Limited" },
+      { value: "normal", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Normal" }
+    ],
     persistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" },
       { value: "while-inside-region", label: "PERSISTENT_ZONES.Activity.PersistenceModes.WhileInsideRegion" }
@@ -399,7 +418,7 @@ function buildLinkedActivityOptions(activity, selectedId = null) {
 }
 
 function buildLinkedWallPresetOptions(selectedPreset) {
-  return ["solid", "terrain", "invisible", "ethereal"].map((preset) => ({
+  return ["solid", "terrain", "invisible", "ethereal", "custom"].map((preset) => ({
     value: preset,
     label: `PERSISTENT_ZONES.Activity.LinkedWallPresets.${preset}`,
     selected: preset === selectedPreset
@@ -432,6 +451,10 @@ function updateConditionalVisibility(root) {
   });
   root.querySelectorAll("[data-pz-linked-wall-geometry]").forEach((element) => {
     element.hidden = geometry !== "wall";
+  });
+  const linkedWallPreset = root.querySelector("[name='persistentZone.linkedWalls.preset']")?.value ?? "solid";
+  root.querySelectorAll("[data-pz-linked-wall-custom]").forEach((element) => {
+    element.hidden = linkedWallPreset !== "custom";
   });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
