@@ -12,6 +12,8 @@ import {
   registerConcentrationCleanupHooks
 } from "./runtime/concentration-cleanup.mjs";
 import { registerEntryRuntimeHooks } from "./runtime/entry-runtime.mjs";
+import { registerStatusStateHooks } from "./runtime/status-state.mjs";
+import { registerStatusRecoveryArbitrationHooks } from "./runtime/status-recovery-arbitration.mjs";
 import { registerRegionFactoryHooks } from "./runtime/region-factory.mjs";
 import {
   primeTurnRuntimeState,
@@ -56,6 +58,8 @@ function onInit() {
   registerRegionFactoryHooks();
   registerConcentrationCleanupHooks();
   registerEntryRuntimeHooks();
+  registerStatusStateHooks();
+  registerStatusRecoveryArbitrationHooks();
   registerTurnRuntimeHooks();
   registerPersistentZonesItemConfigUi();
   console.warn(`[${MODULE_ID}] itemSheetHookRegistered`);

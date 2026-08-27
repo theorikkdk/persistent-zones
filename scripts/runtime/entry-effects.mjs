@@ -12,6 +12,13 @@ import {
   resolveZoneTriggeredActivityCompatibility
 } from "./activity-compatibility.mjs";
 import { resolveTriggerActionConfiguration } from "./trigger-action-config.mjs";
+import { buildStatusRecoveryPatch } from "./status-recovery.mjs";
+import { ensureAggregateStatus } from "./status-state.mjs";
+import {
+  buildRecoveryGroupKey,
+  buildRecoverySourceIdentity,
+  reconcileRecoveryArbitration
+} from "./status-recovery-arbitration.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -1009,23 +1016,76 @@ async function applyTriggeredStatuses({
   }
 
   const statusData = resolveStatusEffectData(statusId);
+  const recoveryPatchResult = buildStatusRecoveryPatch(statusConfig?.recovery, {
+    effectStatusId: statusId,
+    persistenceMode,
+    resolvedDC: saveResult?.dc ?? null,
+    itemUuid: runtime.itemUuid ?? null,
+    activityId: runtime.activityId ?? null,
+    triggerId,
+    tokenUuid
+  });
+  const statusRecoveryPatch = recoveryPatchResult.patch;
+  const recoveryConfig = statusRecoveryPatch?.flags?.[MODULE_ID]?.statusRecovery ?? null;
+  const recoverySourceIdentity = recoveryConfig
+    ? buildRecoverySourceIdentity({
+        item: await resolveRuntimeItem(runtime),
+        activityId: runtime.activityId,
+        runtime,
+        recovery: recoveryConfig,
+        regionDocument
+      })
+    : null;
+  const recoveryGroupKey = recoverySourceIdentity
+    ? buildRecoveryGroupKey({
+        ...identity,
+        ...recoverySourceIdentity,
+        statusRecovery: recoveryConfig
+      })
+    : null;
   console.log(
     `[persistent-zones] PZ STATUS APPLY REQUEST | regionId=${regionId} | tokenUuid=${tokenUuid} | ` +
     `statusId=${statusId} | persistenceMode=${persistenceMode} | castInstanceId=${identity.castInstanceId}`
   );
   const created = await actor.createEmbeddedDocuments("ActiveEffect", [{
-    name: statusData.name,
+    name: `${statusData.name} — Persistent Zones source`,
     img: statusData.img,
     icon: statusData.img,
-    statuses: [statusId],
+    statuses: [],
+    showIcon: globalThis.CONST?.ACTIVE_EFFECT_SHOW_ICON?.NEVER ?? 0,
     origin: regionDocument?.uuid ?? null,
     duration: {},
-    changes: [],
+    system: {
+      changes: []
+    },
     flags: {
-      [MODULE_ID]: identity
+      [MODULE_ID]: {
+        ...identity,
+        ...(recoveryConfig
+          ? {
+              ...recoverySourceIdentity,
+              recoveryGroupKey,
+              statusRecovery: recoveryConfig
+            }
+          : {})
+      }
     }
   }], { persistentZonesTriggeredStatus: true });
   const createdEffect = Array.from(created ?? [])[0] ?? null;
+  if (createdEffect) {
+    console.warn(
+      `[persistent-zones] PZ STATUS SOURCE CREATED | ` +
+      `actorUuid=${actor?.uuid ?? "null"} | effectId=${createdEffect.id ?? "null"} | ` +
+      `statusId=${statusId} | regionId=${regionId ?? "null"} | ` +
+      `recoveryMode=${statusRecoveryPatch?.flags?.[MODULE_ID]?.statusRecovery?.mode ?? "none"}`
+    );
+    await ensureAggregateStatus(actor, statusId, { missingAction: "create" });
+    if (recoveryGroupKey) {
+      await reconcileRecoveryArbitration(actor, recoveryGroupKey, {
+        reason: "source-created"
+      });
+    }
+  }
   console.log(
     `[persistent-zones] PZ STATUS APPLY RESULT | regionId=${regionId} | tokenUuid=${tokenUuid} | ` +
     `statusId=${statusId} | effectCreated=${Boolean(createdEffect)} | effectId=${createdEffect?.id ?? null}`

@@ -370,6 +370,27 @@ function createStatusesSchema(fields, exitTrigger) {
         required: false,
         initial: "auto",
         choices: ["auto", "midi", "native"]
+      }),
+      effectFamilyId: new fields.StringField({
+        required: false,
+        nullable: true,
+        initial: null
+      }),
+      potency: new fields.SchemaField({
+        comparatorId: new fields.StringField({
+          required: false,
+          nullable: true,
+          initial: null
+        }),
+        value: new fields.NumberField({
+          required: false,
+          nullable: true,
+          initial: null
+        }),
+        comparable: new fields.BooleanField({
+          required: false,
+          initial: false
+        })
       })
     })
   });

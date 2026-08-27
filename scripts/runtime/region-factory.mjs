@@ -4533,7 +4533,22 @@ function onPreDeleteActiveEffect(activeEffect, options = {}, userId = null) {
   return undefined;
 }
 
-function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect) {
+function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect, options = {}) {
+  const persistentZoneFlags = activeEffect?.flags?.[MODULE_ID] ?? {};
+  const statusRecovery = persistentZoneFlags.statusRecovery ?? null;
+  if (persistentZoneFlags.managedTriggeredEffect && statusRecovery?.mode) {
+    const removalSource =
+      options?.["expiry-reason"] ??
+      options?.expiryReason ??
+      (options?.persistentZonesTriggeredStatusCleanup ? "persistent-zones-cleanup" : "undetermined");
+    console.warn(
+      `[persistent-zones] PZ STATUS RECOVERY EFFECT REMOVED | ` +
+      `effectId=${activeEffect?.id ?? "null"} | actorUuid=${activeEffect?.parent?.uuid ?? "null"} | ` +
+      `statusId=${persistentZoneFlags.statusId ?? "null"} | removalSource=${removalSource} | ` +
+      `recoveryMode=${statusRecovery.mode}`
+    );
+  }
+
   const context = activeEffect?.uuid ? activeGenericOwnerDeleteContexts.get(activeEffect.uuid) : null;
   if (context) {
     context.effectDeletedAt = Date.now();
@@ -4711,6 +4726,9 @@ function evaluateGenericCleanupEffectSuppression(activeEffect, data = {}, option
   const changes = Array.from(effectData.changes ?? activeEffect?.changes ?? []);
   const statuses = extractEffectStatuses(activeEffect, effectData);
   const isDedicatedPzEffect = Boolean(getPropertyPath(effectData, `flags.${MODULE_ID}.managedOwnerEffect`) === true);
+  const isManagedTriggeredStatusSource = Boolean(
+    getPropertyPath(effectData, `flags.${MODULE_ID}.managedTriggeredEffect`) === true
+  );
   const concentrationLike = isEffectDataConcentrationLike(activeEffect, effectData);
   const detectedCleanupSignals = detectGenericCleanupEffectSignals(effectData, {
     effectName,
@@ -4735,6 +4753,7 @@ function evaluateGenericCleanupEffectSuppression(activeEffect, data = {}, option
   if (changes.length) unresolvedSignals.push("effect-has-changes");
   if (statuses.length) unresolvedSignals.push("effect-has-statuses");
   if (isDedicatedPzEffect) unresolvedSignals.push("persistent-zones-dedicated-owner-effect");
+  if (isManagedTriggeredStatusSource) unresolvedSignals.push("persistent-zones-triggered-status-source");
   if (concentrationLike) unresolvedSignals.push("effect-is-concentration-like");
   if (!detectedCleanupSignals.includes("empty-non-mechanical-template-cleanup-signature")) {
     unresolvedSignals.push("missing-template-cleanup-signature");
@@ -4748,6 +4767,7 @@ function evaluateGenericCleanupEffectSuppression(activeEffect, data = {}, option
     selectedCast.concentrationRequired === false &&
     originMatchesSelectedCast &&
     !isDedicatedPzEffect &&
+    !isManagedTriggeredStatusSource &&
     !concentrationLike &&
     changes.length === 0 &&
     statuses.length === 0 &&
