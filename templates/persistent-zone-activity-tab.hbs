@@ -182,6 +182,35 @@
                     {{/if}}
                   </select>
                 </div>
+                <fieldset data-pz-status-recovery>
+                  <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.StatusRecovery"}}</legend>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryMode"}}</label>
+                    <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.mode" data-pz-status-recovery-mode>
+                      {{selectOptions ../persistentZoneChoices.statusRecoveryModes selected=triggerRow.state.simpleEffect.statuses.recovery.mode localize=true}}
+                    </select>
+                  </div>
+                  <div data-pz-status-recovery-options>
+                    <div class="form-group">
+                      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryAbility"}}</label>
+                      <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.ability">
+                        {{#each ../persistentZoneAbilities as |option|}}
+                          <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.statuses.recovery.ability)}}selected{{/if}}>{{option.label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryDcMode"}}</label>
+                      <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.dcMode" data-pz-status-recovery-dc-mode>
+                        {{selectOptions ../persistentZoneChoices.statusRecoveryDcModes selected=triggerRow.state.simpleEffect.statuses.recovery.dcMode localize=true}}
+                      </select>
+                    </div>
+                    <div class="form-group" data-pz-status-recovery-custom-dc>
+                      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryCustomDC"}}</label>
+                      <input type="number" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.customDC" value="{{triggerRow.state.simpleEffect.statuses.recovery.customDC}}" min="1" step="1">
+                    </div>
+                  </div>
+                </fieldset>
               </div>
             </fieldset>
           </div>

@@ -20,6 +20,7 @@
         "Healing": "Soin",
         "TemporaryHitPoints": "PV temporaires",
         "Statuses": "États",
+        "StatusRecovery": "Récupération de l'état",
         "Effects": "Effets",
         "Movement": "Mouvement",
         "MovementAndTerrain": "Mouvement et terrain",
@@ -49,6 +50,10 @@
         "StatusesEnabled": "Appliquer des états",
         "StatusId": "État ou effet",
         "PersistenceMode": "Mode de persistance",
+        "StatusRecoveryMode": "Récupération",
+        "StatusRecoveryAbility": "Caractéristique du jet de sauvegarde",
+        "StatusRecoveryDcMode": "DD du jet de sauvegarde",
+        "StatusRecoveryCustomDC": "DD personnalisé",
         "LinkedActivity": "Activité à exécuter",
         "StopMovement": "Arrêter le mouvement",
         "DifficultTerrain": "Terrain de la zone",
@@ -104,6 +109,16 @@
       },
       "Statuses": {
         "None": "Aucun"
+      },
+      "StatusRecovery": {
+        "Modes": {
+          "None": "Aucune",
+          "SaveEndTurn": "Jet de sauvegarde à la fin du tour"
+        },
+        "DcModes": {
+          "Inherit": "Utiliser le DD initial",
+          "Custom": "DD personnalisé"
+        }
       },
       "LinkedWallPresets": {
         "solid": "Solide",

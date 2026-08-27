@@ -89,6 +89,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   }
 
   async _processSubmitData(event, submitData) {
+    mergeExistingRecoveryConfiguration(
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+    );
     const persistentZone = normalizePersistentZoneActivitySubmitData(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
     );
@@ -103,7 +107,29 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   }
 }
 
-function normalizePersistentZoneActivitySubmitData(value) {
+export function mergeExistingRecoveryConfiguration(submittedDefinition, existingDefinition) {
+  if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
+  const triggerIds = ["enter", "move", "exit", "turnStart", "turnEnd"];
+  for (const triggerId of triggerIds) {
+    const submittedStatuses = submittedDefinition?.triggers?.[triggerId]?.simpleEffect?.statuses;
+    if (!submittedStatuses || typeof submittedStatuses !== "object") continue;
+    const existingRecovery = existingDefinition?.triggers?.[triggerId]?.simpleEffect?.statuses?.recovery ??
+      existingDefinition?.triggers?.[triggerId]?.statuses?.recovery ??
+      {};
+    const submittedRecovery = submittedStatuses.recovery ?? {};
+    submittedStatuses.recovery = {
+      ...foundry.utils.deepClone(existingRecovery),
+      ...submittedRecovery,
+      potency: {
+        ...foundry.utils.deepClone(existingRecovery?.potency ?? {}),
+        ...(submittedRecovery?.potency ?? {})
+      }
+    };
+  }
+  return submittedDefinition;
+}
+
+export function normalizePersistentZoneActivitySubmitData(value) {
   const config = foundry.utils.deepClone(value ?? {});
   config.schemaVersion = Number(config.schemaVersion || 1);
   config.enabled = Boolean(config.enabled);
@@ -180,7 +206,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
         persistenceMode: triggerId === "exit"
           ? "persistent"
           : String(statuses.persistenceMode ?? "persistent"),
-        recovery: normalizeStatusRecovery(statuses.recovery)
+        recovery: normalizeUiStatusRecovery(statuses.recovery)
       }
     },
     linkedActivity: {
@@ -199,6 +225,23 @@ function normalizeUiTriggerMode(value, fallback = "none") {
     return "linked-activity";
   }
   return "none";
+}
+
+function normalizeUiStatusRecovery(value) {
+  const source = foundry.utils.deepClone(value ?? {});
+  const normalized = normalizeStatusRecovery(source);
+  return {
+    ...source,
+    ...normalized,
+    removeOnSuccess: normalized.mode === "save-end-turn"
+      ? true
+      : normalized.removeOnSuccess,
+    provider: normalized.provider ?? "auto",
+    potency: {
+      ...(source.potency ?? {}),
+      ...(normalized.potency ?? {})
+    }
+  };
 }
 
 function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
@@ -267,6 +310,14 @@ function buildActivityChoices() {
       { value: "outer-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.OuterEdge" },
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.Centerline" },
       { value: "inner-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.InnerEdge" }
+    ],
+    statusRecoveryModes: [
+      { value: "none", label: "PERSISTENT_ZONES.Activity.StatusRecovery.Modes.None" },
+      { value: "save-end-turn", label: "PERSISTENT_ZONES.Activity.StatusRecovery.Modes.SaveEndTurn" }
+    ],
+    statusRecoveryDcModes: [
+      { value: "inherit", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Inherit" },
+      { value: "custom", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Custom" }
     ],
     linkedWallGeometries: [
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Centerline" },
@@ -405,6 +456,17 @@ function updateConditionalVisibility(root) {
     if (hiddenUuid) {
       hiddenUuid.value = selectedOption?.dataset?.uuid ?? "";
     }
+  });
+
+  root.querySelectorAll("[data-pz-status-recovery]").forEach((section) => {
+    const mode = section.querySelector("[data-pz-status-recovery-mode]")?.value ?? "none";
+    const dcMode = section.querySelector("[data-pz-status-recovery-dc-mode]")?.value ?? "inherit";
+    section.querySelectorAll("[data-pz-status-recovery-options]").forEach((options) => {
+      options.hidden = mode !== "save-end-turn";
+    });
+    section.querySelectorAll("[data-pz-status-recovery-custom-dc]").forEach((customDC) => {
+      customDC.hidden = mode !== "save-end-turn" || dcMode !== "custom";
+    });
   });
 }
 

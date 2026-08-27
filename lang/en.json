@@ -20,6 +20,7 @@
         "Healing": "Healing",
         "TemporaryHitPoints": "Temporary HP",
         "Statuses": "Statuses",
+        "StatusRecovery": "Status Recovery",
         "Effects": "Effects",
         "Movement": "Movement",
         "MovementAndTerrain": "Movement and Terrain",
@@ -49,6 +50,10 @@
         "StatusesEnabled": "Apply statuses",
         "StatusId": "Status or effect",
         "PersistenceMode": "Persistence mode",
+        "StatusRecoveryMode": "Recovery",
+        "StatusRecoveryAbility": "Saving Throw Ability",
+        "StatusRecoveryDcMode": "Save DC",
+        "StatusRecoveryCustomDC": "Custom DC",
         "LinkedActivity": "Activity to execute",
         "StopMovement": "Stop movement",
         "DifficultTerrain": "Zone terrain",
@@ -104,6 +109,16 @@
       },
       "Statuses": {
         "None": "None"
+      },
+      "StatusRecovery": {
+        "Modes": {
+          "None": "None",
+          "SaveEndTurn": "Saving throw at end of turn"
+        },
+        "DcModes": {
+          "Inherit": "Use initial save DC",
+          "Custom": "Custom DC"
+        }
       },
       "LinkedWallPresets": {
         "solid": "Solid",
