@@ -2323,16 +2323,16 @@ function resolveWallSenseValue(value, modeFallback = "none") {
 
   switch (normalized) {
     case "limited":
-      return CONST?.WALL_SENSE_TYPES?.LIMITED ?? 10;
+      return CONST?.EDGE_SENSE_TYPES?.LIMITED ?? 10;
     case "proximity":
-      return CONST?.WALL_SENSE_TYPES?.PROXIMITY ?? CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+      return CONST?.EDGE_SENSE_TYPES?.PROXIMITY ?? CONST?.EDGE_SENSE_TYPES?.NORMAL ?? 20;
     case "distance":
-      return CONST?.WALL_SENSE_TYPES?.DISTANCE ?? CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+      return CONST?.EDGE_SENSE_TYPES?.DISTANCE ?? CONST?.EDGE_SENSE_TYPES?.NORMAL ?? 20;
     case "normal":
-      return CONST?.WALL_SENSE_TYPES?.NORMAL ?? 20;
+      return CONST?.EDGE_SENSE_TYPES?.NORMAL ?? 20;
     case "none":
     default:
-      return CONST?.WALL_SENSE_TYPES?.NONE ?? 0;
+      return CONST?.EDGE_SENSE_TYPES?.NONE ?? 0;
   }
 }
 

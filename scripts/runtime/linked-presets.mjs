@@ -42,7 +42,7 @@ const LINKED_WALL_PRESETS = Object.freeze({
     move: "none",
     sight: "normal",
     light: "normal",
-    sound: "normal",
+    sound: "none",
     segments: DEFAULT_LINKED_WALL_SEGMENTS
   })
 });

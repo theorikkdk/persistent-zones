@@ -216,7 +216,7 @@
         "TargetFilter": "Targets",
         "DifficultTerrain": "Difficult Terrain",
         "LinkedWalls": "Linked Walls",
-        "LinkedWallsPreset": "Linked Wall Style",
+        "LinkedWallsPreset": "Wall Type",
         "LinkedWallHeight": "Linked Wall Height",
         "LinkedLight": "Linked Light",
         "LinkedLightPreset": "Linked Light Style",
