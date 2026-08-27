@@ -7782,12 +7782,12 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       });
     }
 
-    const isTemplateOnlyMultipart = isTemplateOnlyMultipartDefinition(normalizedDefinition);
+    const isSupportedSourceMultipart = isSupportedV14SourceMultipartDefinition(normalizedDefinition);
     if (
       Array.isArray(normalizedDefinition.parts) &&
       normalizedDefinition.parts.length > 1 &&
       !nativeRingClassification.isNativeRing &&
-      !isTemplateOnlyMultipart
+      !isSupportedSourceMultipart
     ) {
       const skippedSummary = {
         ...candidateSummary,
@@ -7896,7 +7896,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       : "scene-template-candidates-with-shape-compatibility"
   });
 
-  if (isTemplateOnlyMultipartDefinition(selected.normalizedDefinition)) {
+  if (isSupportedV14SourceMultipartDefinition(selected.normalizedDefinition)) {
     const multipartGroupPlan = await buildManagedRegionGroupPlan({
       templateDocument: selected.templateDocument,
       normalizedDefinition: selected.normalizedDefinition,
@@ -8195,11 +8195,25 @@ function readV14SourceResolutionHints(regionDocument) {
   };
 }
 
-function isTemplateOnlyMultipartDefinition(normalizedDefinition) {
+function isSupportedV14SourceMultipartDefinition(normalizedDefinition) {
   const parts = Array.from(normalizedDefinition?.parts ?? []);
-  return parts.length > 1 && parts.every((part) => {
-    return String(part?.geometry?.type ?? "template").toLowerCase() === "template";
-  });
+  if (parts.length < 2) return false;
+
+  const resolvedPartTypes = new Map();
+  let templatePartCount = 0;
+  for (const part of parts) {
+    const partId = String(part?.id ?? "").trim();
+    const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
+    if (!partId || !["template", "side-of-line"].includes(geometryType)) return false;
+    if (geometryType === "template") {
+      templatePartCount += 1;
+    } else {
+      const referencePartId = String(part?.geometry?.referencePartId ?? "").trim();
+      if (!referencePartId || resolvedPartTypes.get(referencePartId) !== "template") return false;
+    }
+    resolvedPartTypes.set(partId, geometryType);
+  }
+  return templatePartCount > 0;
 }
 
 function userIdForRegionCreation(regionDocument) {
@@ -8543,13 +8557,19 @@ async function buildManagedRegionGroupPlan({
   }
 
   const preparedParts = [];
+  const resolvedShapesByPartId = new Map();
 
   for (const [index, zonePart] of sourceParts.entries()) {
     const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
+    const referencePartId = String(zonePart?.geometry?.referencePartId ?? "").trim() || null;
+    const referenceShapes = referencePartId
+      ? resolvedShapesByPartId.get(referencePartId) ?? null
+      : null;
     const shapes = geometryType === "template" && sourceRegionDocument
       ? summarizeRegionDocumentRawShapes(sourceRegionDocument)
       : await buildRegionShapesForZonePart(templateDocument, zonePart, {
-        allParts: sourceParts
+        allParts: sourceParts,
+        referenceShapes
       });
     if (!Array.isArray(shapes) || !shapes.length) {
       if (String(zonePart?.geometry?.type ?? "").toLowerCase().includes("ring")) {
@@ -8572,6 +8592,10 @@ async function buildManagedRegionGroupPlan({
         geometryType: zonePart?.geometry?.type ?? "template"
       });
       continue;
+    }
+
+    if (zonePart?.id) {
+      resolvedShapesByPartId.set(zonePart.id, duplicateData(shapes));
     }
 
     const isV14FirstSimpleRing = isFoundryV14OrNewer() &&
@@ -8821,7 +8845,8 @@ function resolveExistingRuntimeForPart(existingRegions, partId) {
 }
 
 async function buildRegionShapesForZonePart(templateDocument, zonePart, {
-  allParts = []
+  allParts = [],
+  referenceShapes = null
 } = {}) {
   const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
 
@@ -8844,7 +8869,9 @@ async function buildRegionShapesForZonePart(templateDocument, zonePart, {
         allParts
       });
     case "side-of-line":
-      return await buildSideOfLineShapesFromGeometry(templateDocument, zonePart?.geometry ?? {});
+      return await buildSideOfLineShapesFromGeometry(templateDocument, zonePart?.geometry ?? {}, {
+        referenceShapes
+      });
     case "ring":
       if (isFoundryV14OrNewer()) {
         return buildNativeRingShapeFromGeometry(templateDocument, zonePart?.geometry ?? {});
@@ -9194,10 +9221,13 @@ function buildSideOfRingShapesFromGeometry(templateDocument, geometry, {
   });
 }
 
-async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
+async function buildSideOfLineShapesFromGeometry(templateDocument, geometry, {
+  referenceShapes = null
+} = {}) {
   const templateType = getTemplateType(templateDocument);
-  const direction = coerceNumber(templateDocument?.direction, 0);
-  const axisLength = distanceToPixels(
+  const referenceAxis = resolveSideOfLineReferenceAxis(referenceShapes);
+  const direction = referenceAxis?.direction ?? coerceNumber(templateDocument?.direction, 0);
+  const axisLength = referenceAxis?.axisLength ?? distanceToPixels(
     geometry?.axisLength ?? templateDocument?.distance ?? 0,
     templateDocument?.parent ?? null
   );
@@ -9209,8 +9239,8 @@ async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
     geometry?.offsetEnd ?? geometry?.sideDistance ?? 0,
     templateDocument?.parent ?? null
   );
-  const startX = coerceNumber(templateDocument?.x, 0);
-  const startY = coerceNumber(templateDocument?.y, 0);
+  const startX = referenceAxis?.startX ?? coerceNumber(templateDocument?.x, 0);
+  const startY = referenceAxis?.startY ?? coerceNumber(templateDocument?.y, 0);
   const radians = degreesToRadians(direction);
   const unitX = Math.cos(radians);
   const unitY = Math.sin(radians);
@@ -9224,12 +9254,12 @@ async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
   const endX = startX + unitX * axisLength;
   const endY = startY + unitY * axisLength;
   const bodyEdge = offsetReference === "body-edge"
-    ? await measureTemplateBodyEdgeDistance(templateDocument, {
-      originX: startX,
-      originY: startY,
-      normalX,
-      normalY
-    })
+    ? referenceAxis?.bodyHalfWidth ?? await measureTemplateBodyEdgeDistance(templateDocument, {
+        originX: startX,
+        originY: startY,
+        normalX,
+        normalY
+      })
     : 0;
   const bandStart = bodyEdge + offsetStart;
   const bandEnd = bodyEdge + offsetEnd;
@@ -9238,7 +9268,7 @@ async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
   const endOffsetX = normalX * bandEnd;
   const endOffsetY = normalY * bandEnd;
 
-  if (!["ray", "rect"].includes(templateType) || axisLength <= 0 || offsetStart < 0 || offsetEnd <= offsetStart) {
+  if ((!referenceAxis && !["ray", "rect"].includes(templateType)) || axisLength <= 0 || offsetStart < 0 || offsetEnd <= offsetStart) {
     debug("Rejected Region shape build for unsupported side-of-line geometry.", {
       templateId: templateDocument?.id ?? null,
       templateType,
@@ -9252,7 +9282,8 @@ async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
         offsetStart,
         offsetEnd,
         bandStart,
-        bandEnd
+        bandEnd,
+        referenceGeometryResolved: Boolean(referenceAxis)
       }
     });
     return [];
@@ -9292,11 +9323,34 @@ async function buildSideOfLineShapesFromGeometry(templateDocument, geometry) {
         bandStart,
         bandEnd
       },
-      axisMode: geometry?.axisMode ?? "template"
+      axisMode: geometry?.axisMode ?? "template",
+      referenceGeometryResolved: Boolean(referenceAxis)
     }
   });
 
   return [finalShape];
+}
+
+function resolveSideOfLineReferenceAxis(referenceShapes) {
+  const lineShape = Array.from(referenceShapes ?? []).find((shape) => {
+    return String(shape?.type ?? "").toLowerCase() === "line";
+  });
+  if (!lineShape) return null;
+
+  const startX = coerceNumber(lineShape.x, null);
+  const startY = coerceNumber(lineShape.y, null);
+  const axisLength = coerceNumber(lineShape.length, 0);
+  const bodyWidth = Math.max(0, coerceNumber(lineShape.width, 0));
+  if (startX === null || startY === null || axisLength <= 0) return null;
+
+  return {
+    startX,
+    startY,
+    axisLength,
+    direction: coerceNumber(lineShape.rotation, 0),
+    bodyHalfWidth: bodyWidth / 2,
+    gridBased: Boolean(lineShape.gridBased)
+  };
 }
 
 async function measureTemplateBodyEdgeDistance(templateDocument, {

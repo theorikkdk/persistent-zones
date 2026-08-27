@@ -1472,6 +1472,11 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
     return {
       type: "side-of-line",
       axisMode: "template",
+      referencePartId: pickFirstDefined(
+        geometryDefinition.referencePartId,
+        geometryDefinition.referenceId,
+        null
+      ),
       offsetReference: normalizeOffsetReferenceMode(
         pickFirstDefined(
           geometryDefinition.offsetReference,
