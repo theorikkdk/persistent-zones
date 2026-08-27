@@ -181,6 +181,7 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
       pickFirstDefined(definition.sound, presetConfig?.sound, modeFallback.sound),
       modeFallback.sound
     ),
+    dir: requestedPreset === "custom" ? normalizeLinkedWallDirection(definition.dir) : "both",
     threshold: {
       sight: normalizeWallThreshold(definition.threshold?.sight),
       light: normalizeWallThreshold(definition.threshold?.light),
@@ -225,6 +226,11 @@ function normalizeLinkedWallGeometry(value) {
   return String(value ?? "centerline").trim().toLowerCase() === "perimeter"
     ? "perimeter"
     : "centerline";
+}
+
+function normalizeLinkedWallDirection(value) {
+  const normalized = String(value ?? "both").trim().toLowerCase();
+  return ["both", "left", "right"].includes(normalized) ? normalized : "both";
 }
 
 export function resolveLinkedLightConfig(linkedLightDefinition, {

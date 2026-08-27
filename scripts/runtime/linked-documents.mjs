@@ -710,6 +710,11 @@ function buildLinkedWallData({
   const sight = resolveWallSenseValue(linkedWalls?.sight, linkedWalls?.mode ?? linkedWalls?.wallMode);
   const light = resolveWallSenseValue(linkedWalls?.light, linkedWalls?.mode ?? linkedWalls?.wallMode);
   const sound = resolveWallSenseValue(linkedWalls?.sound, "none");
+  const directionEligible = geometryDecision.sourceShapeType === "line"
+    && geometryDecision.selectedWallGeometry === "centerline";
+  const direction = resolveWallDirectionValue(
+    linkedWalls?.preset === "custom" && directionEligible ? linkedWalls?.dir : "both"
+  );
   const wallHeightSupported = isWallHeightSupported();
   const wallHeightTop = coerceNumber(linkedWalls?.height, null);
   const wallHeightBottom = coerceNumber(linkedWalls?.bottom, 0);
@@ -759,7 +764,7 @@ function buildLinkedWallData({
       sight,
       light,
       sound,
-      dir: 0,
+      dir: direction,
       door: 0,
       ds: 0,
       ...(linkedWalls?.preset === "custom" ? {
@@ -2341,6 +2346,18 @@ function resolveWallSenseValue(value, modeFallback = "none") {
     case "none":
     default:
       return CONST?.EDGE_SENSE_TYPES?.NONE ?? 0;
+  }
+}
+
+function resolveWallDirectionValue(value) {
+  switch (String(value ?? "both").trim().toLowerCase()) {
+    case "left":
+      return CONST.EDGE_DIRECTIONS.LEFT;
+    case "right":
+      return CONST.EDGE_DIRECTIONS.RIGHT;
+    case "both":
+    default:
+      return CONST.EDGE_DIRECTIONS.BOTH;
   }
 }
 

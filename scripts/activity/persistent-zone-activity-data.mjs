@@ -156,6 +156,7 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           sight: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
           light: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
           sound: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
+          dir: new fields.StringField({required: false, initial: "both", choices: ["both", "left", "right"]}),
           threshold: new fields.SchemaField({
             sight: new fields.NumberField({required: false, nullable: true, initial: null, positive: true}),
             light: new fields.NumberField({required: false, nullable: true, initial: null, positive: true}),

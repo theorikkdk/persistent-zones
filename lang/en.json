@@ -64,6 +64,7 @@
         "LinkedWallSight": "Sight",
         "LinkedWallLight": "Light",
         "LinkedWallSound": "Sound",
+        "LinkedWallDirection": "Restriction Direction",
         "LinkedWallThreshold": "Distance",
         "WallHeight": "Wall height",
         "CreateLights": "Create linked lights",
@@ -142,6 +143,11 @@
         "Normal": "Normal",
         "Proximity": "Proximity",
         "ReverseProximity": "Reverse Proximity"
+      },
+      "LinkedWallDirection": {
+        "Both": "Both Directions",
+        "Left": "Left",
+        "Right": "Right"
       },
       "LinkedLightPresets": {
         "glow": "Glow",

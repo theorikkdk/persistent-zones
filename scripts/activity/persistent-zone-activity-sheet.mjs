@@ -152,6 +152,7 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.linkedWalls.sight = normalizeChoice(config.linkedWalls.sight, linkedWallSenseChoices, "normal");
   config.linkedWalls.light = normalizeChoice(config.linkedWalls.light, linkedWallSenseChoices, "normal");
   config.linkedWalls.sound = normalizeChoice(config.linkedWalls.sound, linkedWallSenseChoices, "normal");
+  config.linkedWalls.dir = normalizeChoice(config.linkedWalls.dir, ["both", "left", "right"], "both");
   config.linkedWalls.threshold ??= {};
   config.linkedWalls.threshold.sight = normalizePositiveNumberOrNull(config.linkedWalls.threshold.sight);
   config.linkedWalls.threshold.light = normalizePositiveNumberOrNull(config.linkedWalls.threshold.light);
@@ -356,6 +357,11 @@ function buildActivityChoices() {
       { value: "proximity", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Proximity" },
       { value: "distance", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.ReverseProximity" }
     ],
+    linkedWallDirections: [
+      { value: "both", label: "PERSISTENT_ZONES.Activity.LinkedWallDirection.Both" },
+      { value: "left", label: "PERSISTENT_ZONES.Activity.LinkedWallDirection.Left" },
+      { value: "right", label: "PERSISTENT_ZONES.Activity.LinkedWallDirection.Right" }
+    ],
     persistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" },
       { value: "while-inside-region", label: "PERSISTENT_ZONES.Activity.PersistenceModes.WhileInsideRegion" }
@@ -467,6 +473,7 @@ function updateConditionalVisibility(root) {
     element.hidden = geometry !== "wall";
   });
   const linkedWallPreset = root.querySelector("[name='persistentZone.linkedWalls.preset']")?.value ?? "solid";
+  const linkedWallGeometry = root.querySelector("[name='persistentZone.linkedWalls.geometry']")?.value ?? "centerline";
   root.querySelectorAll("[data-pz-linked-wall-custom]").forEach((element) => {
     element.hidden = linkedWallPreset !== "custom";
   });
@@ -474,6 +481,9 @@ function updateConditionalVisibility(root) {
     const sense = element.dataset.pzLinkedWallThreshold;
     const senseType = root.querySelector(`[name='persistentZone.linkedWalls.${sense}']`)?.value ?? "normal";
     element.hidden = linkedWallPreset !== "custom" || !["proximity", "distance"].includes(senseType);
+  });
+  root.querySelectorAll("[data-pz-linked-wall-direction]").forEach((element) => {
+    element.hidden = linkedWallPreset !== "custom" || geometry !== "wall" || linkedWallGeometry !== "centerline";
   });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
