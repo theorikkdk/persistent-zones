@@ -762,6 +762,14 @@ function buildLinkedWallData({
       dir: 0,
       door: 0,
       ds: 0,
+      ...(linkedWalls?.preset === "custom" ? {
+        threshold: {
+          sight: coerceNumber(linkedWalls?.threshold?.sight, null),
+          light: coerceNumber(linkedWalls?.threshold?.light, null),
+          sound: coerceNumber(linkedWalls?.threshold?.sound, null),
+          attenuation: false
+        }
+      } : {}),
       flags
     };
   });

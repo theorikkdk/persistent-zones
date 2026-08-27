@@ -148,9 +148,15 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.linkedWalls.preset = String(config.linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
   config.linkedWalls.move = normalizeChoice(config.linkedWalls.move, ["none", "normal"], "normal");
-  config.linkedWalls.sight = normalizeChoice(config.linkedWalls.sight, ["none", "limited", "normal"], "normal");
-  config.linkedWalls.light = normalizeChoice(config.linkedWalls.light, ["none", "limited", "normal"], "normal");
-  config.linkedWalls.sound = normalizeChoice(config.linkedWalls.sound, ["none", "limited", "normal"], "normal");
+  const linkedWallSenseChoices = ["none", "limited", "normal", "proximity", "distance"];
+  config.linkedWalls.sight = normalizeChoice(config.linkedWalls.sight, linkedWallSenseChoices, "normal");
+  config.linkedWalls.light = normalizeChoice(config.linkedWalls.light, linkedWallSenseChoices, "normal");
+  config.linkedWalls.sound = normalizeChoice(config.linkedWalls.sound, linkedWallSenseChoices, "normal");
+  config.linkedWalls.threshold ??= {};
+  config.linkedWalls.threshold.sight = normalizePositiveNumberOrNull(config.linkedWalls.threshold.sight);
+  config.linkedWalls.threshold.light = normalizePositiveNumberOrNull(config.linkedWalls.threshold.light);
+  config.linkedWalls.threshold.sound = normalizePositiveNumberOrNull(config.linkedWalls.threshold.sound);
+  config.linkedWalls.threshold.attenuation = false;
   config.linkedLights ??= {};
   config.linkedLights.color ||= "#ffd88a";
   config.lifecycle ??= {};
@@ -235,6 +241,12 @@ function normalizeUiTriggerMode(value, fallback = "none") {
 function normalizeChoice(value, choices, fallback) {
   const normalized = String(value ?? fallback).trim().toLowerCase();
   return choices.includes(normalized) ? normalized : fallback;
+}
+
+function normalizePositiveNumberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 function normalizeUiStatusRecovery(value) {
@@ -340,7 +352,9 @@ function buildActivityChoices() {
     linkedWallSenseTypes: [
       { value: "none", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.None" },
       { value: "limited", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Limited" },
-      { value: "normal", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Normal" }
+      { value: "normal", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Normal" },
+      { value: "proximity", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.Proximity" },
+      { value: "distance", label: "PERSISTENT_ZONES.Activity.LinkedWallSense.ReverseProximity" }
     ],
     persistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" },
@@ -455,6 +469,11 @@ function updateConditionalVisibility(root) {
   const linkedWallPreset = root.querySelector("[name='persistentZone.linkedWalls.preset']")?.value ?? "solid";
   root.querySelectorAll("[data-pz-linked-wall-custom]").forEach((element) => {
     element.hidden = linkedWallPreset !== "custom";
+  });
+  root.querySelectorAll("[data-pz-linked-wall-threshold]").forEach((element) => {
+    const sense = element.dataset.pzLinkedWallThreshold;
+    const senseType = root.querySelector(`[name='persistentZone.linkedWalls.${sense}']`)?.value ?? "normal";
+    element.hidden = linkedWallPreset !== "custom" || !["proximity", "distance"].includes(senseType);
   });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {

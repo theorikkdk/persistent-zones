@@ -293,17 +293,29 @@
             {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.sight localize=true}}
           </select>
         </div>
+        <div class="form-group" data-pz-linked-wall-threshold="sight">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallThreshold"}}</label>
+          <input type="number" name="persistentZone.linkedWalls.threshold.sight" value="{{persistentZone.linkedWalls.threshold.sight}}" min="0" step="any">
+        </div>
         <div class="form-group">
           <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallLight"}}</label>
           <select name="persistentZone.linkedWalls.light">
             {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.light localize=true}}
           </select>
         </div>
+        <div class="form-group" data-pz-linked-wall-threshold="light">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallThreshold"}}</label>
+          <input type="number" name="persistentZone.linkedWalls.threshold.light" value="{{persistentZone.linkedWalls.threshold.light}}" min="0" step="any">
+        </div>
         <div class="form-group">
           <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallSound"}}</label>
           <select name="persistentZone.linkedWalls.sound">
             {{selectOptions persistentZoneChoices.linkedWallSenseTypes selected=persistentZone.linkedWalls.sound localize=true}}
           </select>
+        </div>
+        <div class="form-group" data-pz-linked-wall-threshold="sound">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallThreshold"}}</label>
+          <input type="number" name="persistentZone.linkedWalls.threshold.sound" value="{{persistentZone.linkedWalls.threshold.sound}}" min="0" step="any">
         </div>
       </div>
       <div class="form-group">

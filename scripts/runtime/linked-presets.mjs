@@ -181,6 +181,12 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
       pickFirstDefined(definition.sound, presetConfig?.sound, modeFallback.sound),
       modeFallback.sound
     ),
+    threshold: {
+      sight: normalizeWallThreshold(definition.threshold?.sight),
+      light: normalizeWallThreshold(definition.threshold?.light),
+      sound: normalizeWallThreshold(definition.threshold?.sound),
+      attenuation: coerceBoolean(definition.threshold?.attenuation, false) ?? false
+    },
     height: coerceNumber(
       pickFirstDefined(
         definition.height,
@@ -197,6 +203,12 @@ export function resolveLinkedWallConfig(linkedWallsDefinition) {
       0
     )
   };
+
+  for (const sense of ["sight", "light", "sound"]) {
+    if (!["proximity", "distance"].includes(finalConfig[sense])) {
+      finalConfig.threshold[sense] = null;
+    }
+  }
 
   if (requestedPreset) {
     debug(presetConfig ? "Resolved linked wall preset." : "Linked wall preset was not recognized; using explicit overrides only.", {
@@ -416,4 +428,9 @@ function normalizeSenseChannel(value, fallback = "none") {
   return ["none", "normal", "limited", "proximity", "distance"].includes(normalized)
     ? normalized
     : fallback;
+}
+
+function normalizeWallThreshold(value) {
+  const threshold = coerceNumber(value, null);
+  return threshold !== null && threshold > 0 ? threshold : null;
 }

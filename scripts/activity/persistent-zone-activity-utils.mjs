@@ -88,7 +88,13 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
         move: normalizeLinkedWallMovement(linkedWalls.move),
         sight: normalizeLinkedWallSense(linkedWalls.sight),
         light: normalizeLinkedWallSense(linkedWalls.light),
-        sound: normalizeLinkedWallSense(linkedWalls.sound)
+        sound: normalizeLinkedWallSense(linkedWalls.sound),
+        threshold: {
+          sight: numberOrNull(linkedWalls.threshold?.sight),
+          light: numberOrNull(linkedWalls.threshold?.light),
+          sound: numberOrNull(linkedWalls.threshold?.sound),
+          attenuation: false
+        }
       } : {})
     },
     linkedLight: {
@@ -361,7 +367,7 @@ function normalizeLinkedWallMovement(value) {
 
 function normalizeLinkedWallSense(value) {
   const normalized = String(value ?? "normal").trim().toLowerCase();
-  return ["none", "limited", "normal"].includes(normalized) ? normalized : "normal";
+  return ["none", "limited", "normal", "proximity", "distance"].includes(normalized) ? normalized : "normal";
 }
 
 function numberOrNull(value) {

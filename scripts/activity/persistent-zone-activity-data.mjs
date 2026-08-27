@@ -153,9 +153,15 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             choices: ["centerline", "perimeter"]
           }),
           move: new fields.StringField({required: false, initial: "normal", choices: ["none", "normal"]}),
-          sight: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
-          light: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
-          sound: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal"]}),
+          sight: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
+          light: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
+          sound: new fields.StringField({required: false, initial: "normal", choices: ["none", "limited", "normal", "proximity", "distance"]}),
+          threshold: new fields.SchemaField({
+            sight: new fields.NumberField({required: false, nullable: true, initial: null, positive: true}),
+            light: new fields.NumberField({required: false, nullable: true, initial: null, positive: true}),
+            sound: new fields.NumberField({required: false, nullable: true, initial: null, positive: true}),
+            attenuation: new fields.BooleanField({required: false, initial: false})
+          }),
           height: new fields.NumberField({
             required: false,
             nullable: true,

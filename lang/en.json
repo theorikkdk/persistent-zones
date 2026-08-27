@@ -64,6 +64,7 @@
         "LinkedWallSight": "Sight",
         "LinkedWallLight": "Light",
         "LinkedWallSound": "Sound",
+        "LinkedWallThreshold": "Distance",
         "WallHeight": "Wall height",
         "CreateLights": "Create linked lights",
         "LightColor": "Light color",
@@ -138,7 +139,9 @@
       "LinkedWallSense": {
         "None": "None",
         "Limited": "Limited",
-        "Normal": "Normal"
+        "Normal": "Normal",
+        "Proximity": "Proximity",
+        "ReverseProximity": "Reverse Proximity"
       },
       "LinkedLightPresets": {
         "glow": "Glow",
