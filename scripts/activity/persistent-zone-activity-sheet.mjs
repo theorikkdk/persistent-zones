@@ -430,6 +430,9 @@ function updateConditionalVisibility(root) {
   root.querySelectorAll("[data-pz-geometry]").forEach((element) => {
     element.hidden = element.dataset.pzGeometry !== geometry;
   });
+  root.querySelectorAll("[data-pz-linked-wall-geometry]").forEach((element) => {
+    element.hidden = geometry !== "wall";
+  });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
     const triggerId = element.dataset.pzTrigger;

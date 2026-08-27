@@ -274,7 +274,7 @@
           {{/each}}
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group" data-pz-linked-wall-geometry>
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedWallGeometry"}}</label>
         <select name="persistentZone.linkedWalls.geometry">
           {{selectOptions persistentZoneChoices.linkedWallGeometries selected=persistentZone.linkedWalls.geometry localize=true}}
