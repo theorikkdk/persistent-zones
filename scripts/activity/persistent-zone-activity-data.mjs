@@ -72,6 +72,9 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             choices: ["outer-edge", "centerline", "inner-edge"]
           })
         }),
+        parts: new fields.ArrayField(new fields.ObjectField(), {
+          required: false
+        }),
         triggers: new fields.SchemaField({
           enter: createTriggerSchema(fields, true, false),
           move: createTriggerSchema(fields, false, false),

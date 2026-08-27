@@ -89,6 +89,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   }
 
   async _processSubmitData(event, submitData) {
+    preserveExistingMultipartParts(
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+    );
     mergeExistingRecoveryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
@@ -129,6 +133,14 @@ export function mergeExistingRecoveryConfiguration(submittedDefinition, existing
   return submittedDefinition;
 }
 
+export function preserveExistingMultipartParts(submittedDefinition, existingDefinition) {
+  if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
+  if (submittedDefinition.parts !== undefined) return submittedDefinition;
+  if (!Array.isArray(existingDefinition?.parts)) return submittedDefinition;
+  submittedDefinition.parts = foundry.utils.deepClone(existingDefinition.parts);
+  return submittedDefinition;
+}
+
 export function normalizePersistentZoneActivitySubmitData(value) {
   const config = foundry.utils.deepClone(value ?? {});
   config.schemaVersion = Number(config.schemaVersion || 1);
@@ -161,7 +173,121 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.linkedLights ??= {};
   config.linkedLights.color ||= "#ffd88a";
   config.lifecycle ??= {};
+  if (Array.isArray(config.parts)) {
+    config.parts = normalizeActivityParts(config.parts);
+  }
   return config;
+}
+
+function normalizeActivityParts(parts) {
+  const usedIds = new Set();
+  return parts
+    .filter((part) => part && typeof part === "object" && !Array.isArray(part))
+    .map((part, index) => {
+      const normalized = foundry.utils.deepClone(part);
+      normalized.id = buildUniquePartId(normalized.id, index, usedIds);
+      normalized.label = String(normalized.label ?? normalized.id).trim() || normalized.id;
+      normalized.role = normalizeChoice(normalized.role, ["primary", "secondary"], index === 0 ? "primary" : "secondary");
+      normalized.geometry = normalizeActivityPartGeometry(normalized.geometry);
+      normalized.targeting = normalizeActivityPartObject(normalized.targeting);
+      normalized.terrain = normalizeActivityPartTerrain(normalized.terrain);
+      normalized.linkedWalls = normalizeActivityPartLinkedWalls(normalized.linkedWalls);
+      normalized.linkedLight = normalizeActivityPartLinkedLight(normalized.linkedLight ?? normalized.linkedLights);
+      normalized.triggers = normalizeActivityPartTriggers(normalized.triggers, normalized);
+      return normalized;
+    });
+}
+
+function buildUniquePartId(value, index, usedIds) {
+  const baseId = String(value ?? "").trim() || `part-${index + 1}`;
+  let candidate = baseId;
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function normalizeActivityPartGeometry(value) {
+  const geometry = normalizeActivityPartObject(value);
+  const type = String(geometry.type ?? "template").trim().toLowerCase();
+  geometry.type = ["template", "ring", "side-of-line", "side-of-ring"].includes(type) ? type : "template";
+  if (geometry.referencePartId !== undefined) {
+    geometry.referencePartId = String(geometry.referencePartId ?? "").trim() || null;
+  }
+  if (geometry.side !== undefined) {
+    geometry.side = String(geometry.side ?? "").trim().toLowerCase() || null;
+  }
+  if (geometry.offsetReference !== undefined) {
+    geometry.offsetReference = String(geometry.offsetReference ?? "").trim().toLowerCase() || null;
+  }
+  for (const key of ["offsetStart", "offsetEnd"]) {
+    if (geometry[key] !== undefined && geometry[key] !== null && geometry[key] !== "") {
+      const numeric = Number(geometry[key]);
+      if (Number.isFinite(numeric)) geometry[key] = numeric;
+    }
+  }
+  return geometry;
+}
+
+function normalizeActivityPartTerrain(value) {
+  const terrain = normalizeActivityPartObject(value);
+  if (terrain.enabled !== undefined) terrain.enabled = Boolean(terrain.enabled);
+  if (terrain.multiplier !== undefined && terrain.multiplier !== null && terrain.multiplier !== "") {
+    const numeric = Number(terrain.multiplier);
+    if (Number.isFinite(numeric)) terrain.multiplier = numeric;
+  }
+  return terrain;
+}
+
+function normalizeActivityPartLinkedWalls(value) {
+  const linkedWalls = normalizeActivityPartObject(value);
+  if (linkedWalls.enabled !== undefined) linkedWalls.enabled = Boolean(linkedWalls.enabled);
+  if (linkedWalls.preset !== undefined) {
+    linkedWalls.preset = String(linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
+  }
+  if (linkedWalls.geometry !== undefined) {
+    linkedWalls.geometry = normalizeChoice(linkedWalls.geometry, ["centerline", "perimeter"], "centerline");
+  }
+  if (linkedWalls.move !== undefined) {
+    linkedWalls.move = normalizeChoice(linkedWalls.move, ["none", "normal"], "normal");
+  }
+  const senseChoices = ["none", "limited", "normal", "proximity", "distance"];
+  for (const sense of ["sight", "light", "sound"]) {
+    if (linkedWalls[sense] !== undefined) {
+      linkedWalls[sense] = normalizeChoice(linkedWalls[sense], senseChoices, "normal");
+    }
+  }
+  if (linkedWalls.dir !== undefined) {
+    linkedWalls.dir = normalizeChoice(linkedWalls.dir, ["both", "left", "right"], "both");
+  }
+  return linkedWalls;
+}
+
+function normalizeActivityPartLinkedLight(value) {
+  const linkedLight = normalizeActivityPartObject(value);
+  if (linkedLight.enabled !== undefined) linkedLight.enabled = Boolean(linkedLight.enabled);
+  if (linkedLight.preset !== undefined) {
+    linkedLight.preset = String(linkedLight.preset ?? "glow").trim().toLowerCase() || "glow";
+  }
+  return linkedLight;
+}
+
+function normalizeActivityPartTriggers(value, part) {
+  const triggers = normalizeActivityPartObject(value);
+  const normalized = normalizeActivityTriggers(triggers, {
+    globalDamage: normalizeActivityPartObject(part.damage),
+    globalSave: normalizeActivityPartObject(part.save)
+  });
+  return foundry.utils.mergeObject(triggers, normalized, { inplace: false });
+}
+
+function normalizeActivityPartObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? foundry.utils.deepClone(value)
+    : {};
 }
 
 function normalizeActivityTriggers(triggers = {}, { globalDamage = {}, globalSave = {} } = {}) {
