@@ -971,6 +971,12 @@ export async function createManagedRegionFromRegion(regionDocument, {
     };
   }
 
+  if (resolved.multipartGroupPlan?.parts?.length > 1) {
+    return createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
+      source
+    });
+  }
+
   const nativeRegionResult = await createV14NativeRegionFromResolved(regionDocument, resolved, {
     options,
     userId,
@@ -1078,6 +1084,58 @@ export async function createManagedRegionFromRegion(regionDocument, {
     runtimeFlags: ensuredRuntimeFlags ?? runtimeFlags,
     templateDocument: resolved.templateDocument,
     sourceContext: resolved.sourceContext
+  };
+}
+
+async function createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
+  source = "api"
+} = {}) {
+  const scene = regionDocument?.parent ?? null;
+  const groupPlan = resolved?.multipartGroupPlan ?? null;
+  if (!scene || !groupPlan?.parts?.length) {
+    return { handled: true, reason: "missing-multipart-region-plan" };
+  }
+
+  const templateDocument = resolved.templateDocument;
+  const templateDiagnostics = buildTemplateDiagnostics(templateDocument);
+  const createdRegions = await createManagedRegionDocuments({
+    scene,
+    templateDocument,
+    groupPlan,
+    regionCreateData: groupPlan.parts.map((partPlan) => partPlan.regionData),
+    templateDiagnostics,
+    operation: "create"
+  });
+
+  if (createdRegions.length !== groupPlan.parts.length) {
+    return { handled: true, reason: "multipart-region-group-incomplete" };
+  }
+
+  for (const [index, createdRegion] of createdRegions.entries()) {
+    const partPlan = groupPlan.parts[index];
+    await syncLinkedDocumentsSafely({
+      templateDocument,
+      regionDocument: createdRegion,
+      normalizedDefinition: partPlan.runtimeDefinition,
+      shapes: partPlan.shapes,
+      stage: "v14-native-multipart-region-create"
+    });
+  }
+
+  await removeNativeV14SourceRegion(regionDocument, {
+    scene,
+    groupId: groupPlan.groupId,
+    partId: groupPlan.parts[0]?.partId ?? null,
+    source
+  });
+
+  return {
+    handled: true,
+    reason: "v14-multipart-region-group-created",
+    runtimeFlags: getRegionRuntimeFlags(createdRegions[0]),
+    templateDocument,
+    sourceContext: resolved.sourceContext,
+    regions: createdRegions
   };
 }
 
@@ -7724,7 +7782,13 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       });
     }
 
-    if (Array.isArray(normalizedDefinition.parts) && normalizedDefinition.parts.length > 1 && !nativeRingClassification.isNativeRing) {
+    const isTemplateOnlyMultipart = isTemplateOnlyMultipartDefinition(normalizedDefinition);
+    if (
+      Array.isArray(normalizedDefinition.parts) &&
+      normalizedDefinition.parts.length > 1 &&
+      !nativeRingClassification.isNativeRing &&
+      !isTemplateOnlyMultipart
+    ) {
       const skippedSummary = {
         ...candidateSummary,
         multipartSkipped: true,
@@ -7831,6 +7895,27 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       ? "region-flags-item-uuid"
       : "scene-template-candidates-with-shape-compatibility"
   });
+
+  if (isTemplateOnlyMultipartDefinition(selected.normalizedDefinition)) {
+    const multipartGroupPlan = await buildManagedRegionGroupPlan({
+      templateDocument: selected.templateDocument,
+      normalizedDefinition: selected.normalizedDefinition,
+      sourceContext: selected.sourceContext,
+      sourceRegionDocument: regionDocument
+    });
+    const primaryRuntimeFlags = multipartGroupPlan.parts?.[0]?.regionData?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY] ?? null;
+    return {
+      runtimeFlags: primaryRuntimeFlags,
+      templateDocument: selected.templateDocument,
+      sourceContext: selected.sourceContext,
+      profileGeometryType: "template",
+      multipartGroupPlan,
+      candidateCount: candidates.length,
+      selectedCandidate: selected.summary,
+      candidates: candidates.map((candidate) => candidate.summary)
+    };
+  }
+
   logV14PipelineStep("03", "Profile resolved", {
     entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion",
     hook: "createRegion",
@@ -8108,6 +8193,13 @@ function readV14SourceResolutionHints(regionDocument) {
     activeEffectUuid: runtime.activeEffectUuid ?? runtime.ownerEffectUuid ?? source.activeEffectUuid ?? source.ownerEffectUuid ?? source.effectUuid ?? null,
     concentrationEffectUuid: runtime.concentrationEffectUuid ?? source.concentrationEffectUuid ?? source.ownerEffectUuid ?? source.effectUuid ?? null
   };
+}
+
+function isTemplateOnlyMultipartDefinition(normalizedDefinition) {
+  const parts = Array.from(normalizedDefinition?.parts ?? []);
+  return parts.length > 1 && parts.every((part) => {
+    return String(part?.geometry?.type ?? "template").toLowerCase() === "template";
+  });
 }
 
 function userIdForRegionCreation(regionDocument) {
@@ -8399,7 +8491,8 @@ async function buildManagedRegionGroupPlan({
   templateDocument,
   normalizedDefinition,
   sourceContext,
-  existingRegions = []
+  existingRegions = [],
+  sourceRegionDocument = null
 }) {
   const groupId = buildManagedRegionGroupId(templateDocument, existingRegions);
   const sourceParts = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length
@@ -8452,9 +8545,12 @@ async function buildManagedRegionGroupPlan({
   const preparedParts = [];
 
   for (const [index, zonePart] of sourceParts.entries()) {
-    const shapes = await buildRegionShapesForZonePart(templateDocument, zonePart, {
-      allParts: sourceParts
-    });
+    const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
+    const shapes = geometryType === "template" && sourceRegionDocument
+      ? summarizeRegionDocumentRawShapes(sourceRegionDocument)
+      : await buildRegionShapesForZonePart(templateDocument, zonePart, {
+        allParts: sourceParts
+      });
     if (!Array.isArray(shapes) || !shapes.length) {
       if (String(zonePart?.geometry?.type ?? "").toLowerCase().includes("ring")) {
         logV14RegionDiagnostic("ringCreationSkipped", {
@@ -8478,7 +8574,6 @@ async function buildManagedRegionGroupPlan({
       continue;
     }
 
-    const geometryType = String(zonePart?.geometry?.type ?? "template").toLowerCase();
     const isV14FirstSimpleRing = isFoundryV14OrNewer() &&
       sourceParts.length === 1 &&
       geometryType === "ring";

@@ -1185,6 +1185,7 @@ function normalizeZonePart(partLikeDefinition, index, {
   const effectiveTargeting = normalizeTargeting(mergedTargetingDefinition);
 
   return {
+    ...duplicateData(partDefinition),
     id: pickFirstDefined(partDefinition.id, partDefinition.key, `part-${index + 1}`),
     label: pickFirstDefined(partDefinition.label, partDefinition.name, normalizedDefinition.label),
     geometry: normalizeGeometryDefinition(partDefinition.geometry, {

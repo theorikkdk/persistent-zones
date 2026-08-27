@@ -121,7 +121,63 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     definition.templateType = "ray";
   }
 
+  if (Array.isArray(source.parts) && source.parts.length > 0) {
+    definition.parts = buildRuntimePartDefinitions(source.parts, {
+      damage,
+      save,
+      movement,
+      itemUuid,
+      activityId
+    });
+  }
+
   return definition;
+}
+
+function buildRuntimePartDefinitions(parts, {
+  damage = {},
+  save = {},
+  movement = {},
+  itemUuid = null,
+  activityId = null
+} = {}) {
+  return parts.map((part) => {
+    const runtimePart = duplicate(part);
+    if (part?.triggers && typeof part.triggers === "object") {
+      runtimePart.triggers = buildRuntimePartTriggerDefinitions(part.triggers, {
+        damage: part.damage ?? damage,
+        save: part.save ?? save,
+        movement: part.movement ?? movement,
+        itemUuid,
+        activityId
+      });
+    }
+    return runtimePart;
+  });
+}
+
+function buildRuntimePartTriggerDefinitions(triggers, context) {
+  const runtimeTriggers = duplicate(triggers);
+  const triggerMappings = [
+    ["enter", "onEnter"],
+    ["exit", "onExit"],
+    ["move", "onMove"],
+    ["turnStart", "onStartTurn"],
+    ["turnEnd", "onEndTurn"]
+  ];
+
+  for (const [canonicalKey, runtimeKey] of triggerMappings) {
+    if (triggers?.[canonicalKey] === undefined && triggers?.[runtimeKey] === undefined) continue;
+    runtimeTriggers[runtimeKey] = buildTriggerConfig(
+      resolveActivityTriggerSource(triggers, canonicalKey, runtimeKey),
+      {
+        ...context,
+        triggerId: canonicalKey
+      }
+    );
+  }
+
+  return runtimeTriggers;
 }
 
 function buildTemplateDefinition(activity, geometryType, geometry) {
