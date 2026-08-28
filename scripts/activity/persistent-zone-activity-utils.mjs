@@ -169,15 +169,30 @@ function buildRuntimePartTriggerDefinitions(triggers, context) {
   for (const [canonicalKey, runtimeKey] of triggerMappings) {
     if (triggers?.[canonicalKey] === undefined && triggers?.[runtimeKey] === undefined) continue;
     runtimeTriggers[runtimeKey] = buildTriggerConfig(
-      resolveActivityTriggerSource(triggers, canonicalKey, runtimeKey),
+      resolveExplicitPartTriggerSource(triggers, canonicalKey, runtimeKey),
       {
         ...context,
-        triggerId: canonicalKey
+        triggerId: canonicalKey,
+        inheritGlobalActions: false
       }
     );
   }
 
   return runtimeTriggers;
+}
+
+function resolveExplicitPartTriggerSource(triggers, canonicalKey, legacyKey) {
+  const canonical = triggers?.[canonicalKey];
+  const legacy = triggers?.[legacyKey];
+  return {
+    source: canonical && typeof canonical === "object"
+      ? canonical
+      : legacy && typeof legacy === "object"
+        ? legacy
+        : {},
+    perTriggerConfigFound: true,
+    legacyFallback: canonical === undefined
+  };
 }
 
 function buildTemplateDefinition(activity, geometryType, geometry) {
@@ -268,7 +283,15 @@ function resolveActivityTriggerSource(triggers, canonicalKey, legacyKey) {
   };
 }
 
-function buildTriggerConfig(triggerSource = {}, { damage = {}, save = {}, movement = {}, triggerId = null, itemUuid = null, activityId = null } = {}) {
+function buildTriggerConfig(triggerSource = {}, {
+  damage = {},
+  save = {},
+  movement = {},
+  triggerId = null,
+  itemUuid = null,
+  activityId = null,
+  inheritGlobalActions = true
+} = {}) {
   const trigger = triggerSource.source ?? {};
   const perTriggerConfigFound = Boolean(triggerSource.perTriggerConfigFound);
   const simpleEffect = trigger.simpleEffect ?? {};
@@ -278,8 +301,8 @@ function buildTriggerConfig(triggerSource = {}, { damage = {}, save = {}, moveme
   const perTriggerSave = simpleEffect.save ?? trigger.save ?? null;
   const perTriggerStatuses = simpleEffect.statuses ?? trigger.statuses ?? null;
   const linkedActivity = trigger.linkedActivity ?? trigger.activity ?? {};
-  const damageConfig = perTriggerDamage ?? damage;
-  const saveConfig = perTriggerSave ?? save;
+  const damageConfig = perTriggerDamage ?? (inheritGlobalActions ? damage : {});
+  const saveConfig = perTriggerSave ?? (inheritGlobalActions ? save : {});
   const enabled = Boolean(trigger.enabled);
   const rawMode = normalizeTriggerMode(trigger.mode);
   const mode = enabled ? rawMode : "none";
@@ -292,7 +315,7 @@ function buildTriggerConfig(triggerSource = {}, { damage = {}, save = {}, moveme
     perTriggerConfigFound,
     oldGlobalConfigFound: hasOldGlobalActionConfig({ damage, save }),
     selectedSource,
-    migrationFallbackUsed: !perTriggerConfigFound && hasOldGlobalActionConfig({ damage, save }),
+    migrationFallbackUsed: inheritGlobalActions && !perTriggerConfigFound && hasOldGlobalActionConfig({ damage, save }),
     damageEnabled: Boolean(damageConfig?.enabled),
     saveEnabled: Boolean(saveConfig?.enabled),
     statusesEnabled: Boolean(perTriggerStatuses?.enabled),

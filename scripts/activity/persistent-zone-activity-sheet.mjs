@@ -193,7 +193,9 @@ function normalizeActivityParts(parts) {
       normalized.terrain = normalizeActivityPartTerrain(normalized.terrain);
       normalized.linkedWalls = normalizeActivityPartLinkedWalls(normalized.linkedWalls);
       normalized.linkedLight = normalizeActivityPartLinkedLight(normalized.linkedLight ?? normalized.linkedLights);
-      normalized.triggers = normalizeActivityPartTriggers(normalized.triggers, normalized);
+      if (normalized.triggers !== undefined) {
+        normalized.triggers = normalizeActivityPartTriggers(normalized.triggers, normalized);
+      }
       return normalized;
     });
 }
@@ -277,11 +279,27 @@ function normalizeActivityPartLinkedLight(value) {
 
 function normalizeActivityPartTriggers(value, part) {
   const triggers = normalizeActivityPartObject(value);
-  const normalized = normalizeActivityTriggers(triggers, {
-    globalDamage: normalizeActivityPartObject(part.damage),
-    globalSave: normalizeActivityPartObject(part.save)
-  });
-  return foundry.utils.mergeObject(triggers, normalized, { inplace: false });
+  const globalDamage = normalizeActivityPartObject(part.damage);
+  const globalSave = normalizeActivityPartObject(part.save);
+  const normalized = {};
+  const mappings = [
+    ["enter", "onEnter"],
+    ["move", "onMove"],
+    ["exit", "onExit"],
+    ["turnStart", "onStartTurn"],
+    ["turnEnd", "onEndTurn"]
+  ];
+
+  for (const [canonicalKey, legacyKey] of mappings) {
+    if (triggers[canonicalKey] === undefined && triggers[legacyKey] === undefined) continue;
+    normalized[canonicalKey] = normalizeActivityTrigger(
+      triggers[canonicalKey] ?? triggers[legacyKey],
+      canonicalKey,
+      { globalDamage, globalSave }
+    );
+  }
+
+  return normalized;
 }
 
 function normalizeActivityPartObject(value) {
