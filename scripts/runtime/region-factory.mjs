@@ -7897,12 +7897,33 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
   });
 
   if (isSupportedV14SourceMultipartDefinition(selected.normalizedDefinition)) {
+    const sourceShapes = summarizeRegionDocumentRawShapes(regionDocument);
+    const rootGeometryType = String(selected.normalizedDefinition?.geometry?.type ?? "").toLowerCase();
+    const multipartSourceShapes = sourceShapes.some((shape) => String(shape?.type ?? "").toLowerCase() === "ring")
+      ? sourceShapes
+      : ["ring", "annulus"].includes(rootGeometryType)
+        ? buildV14NativeRingShapesFromResolved({
+          templateDocument: selected.templateDocument,
+          runtimeFlags: { normalizedDefinition: selected.normalizedDefinition },
+          profilePart: { geometry: selected.normalizedDefinition.geometry }
+        }, regionDocument)
+        : sourceShapes;
     const multipartGroupPlan = await buildManagedRegionGroupPlan({
       templateDocument: selected.templateDocument,
       normalizedDefinition: selected.normalizedDefinition,
       sourceContext: selected.sourceContext,
-      sourceRegionDocument: regionDocument
+      sourceRegionDocument: regionDocument,
+      sourceRegionShapes: multipartSourceShapes
     });
+    if (multipartGroupPlan.parts?.length !== selected.normalizedDefinition.parts.length) {
+      return {
+        runtimeFlags: null,
+        templateDocument: selected.templateDocument,
+        sourceContext: selected.sourceContext,
+        reason: "v14-multipart-region-group-incomplete",
+        multipartGroupPlan
+      };
+    }
     const primaryRuntimeFlags = multipartGroupPlan.parts?.[0]?.regionData?.flags?.[MODULE_ID]?.[RUNTIME_FLAG_KEY] ?? null;
     return {
       runtimeFlags: primaryRuntimeFlags,
@@ -8204,7 +8225,7 @@ function isSupportedV14SourceMultipartDefinition(normalizedDefinition) {
   for (const part of parts) {
     const partId = String(part?.id ?? "").trim();
     const geometryType = String(part?.geometry?.type ?? "template").toLowerCase();
-    if (!partId || !["template", "side-of-line"].includes(geometryType)) return false;
+    if (!partId || !["template", "side-of-line", "side-of-ring"].includes(geometryType)) return false;
     if (geometryType === "template") {
       templatePartCount += 1;
     } else {
@@ -8506,7 +8527,8 @@ async function buildManagedRegionGroupPlan({
   normalizedDefinition,
   sourceContext,
   existingRegions = [],
-  sourceRegionDocument = null
+  sourceRegionDocument = null,
+  sourceRegionShapes = null
 }) {
   const groupId = buildManagedRegionGroupId(templateDocument, existingRegions);
   const sourceParts = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length
@@ -8566,7 +8588,7 @@ async function buildManagedRegionGroupPlan({
       ? resolvedShapesByPartId.get(referencePartId) ?? null
       : null;
     const shapes = geometryType === "template" && sourceRegionDocument
-      ? summarizeRegionDocumentRawShapes(sourceRegionDocument)
+      ? duplicateData(sourceRegionShapes ?? summarizeRegionDocumentRawShapes(sourceRegionDocument))
       : await buildRegionShapesForZonePart(templateDocument, zonePart, {
         allParts: sourceParts,
         referenceShapes
@@ -8866,7 +8888,8 @@ async function buildRegionShapesForZonePart(templateDocument, zonePart, {
   switch (geometryType) {
     case "side-of-ring":
       return buildSideOfRingShapesFromGeometry(templateDocument, zonePart?.geometry ?? {}, {
-        allParts
+        allParts,
+        referenceShapes
       });
     case "side-of-line":
       return await buildSideOfLineShapesFromGeometry(templateDocument, zonePart?.geometry ?? {}, {
@@ -9120,8 +9143,10 @@ function buildRingRuntimeGeometryFromShapes(templateDocument, shapes = [], {
     return null;
   }
 
-  const centerX = coerceNumber(templateDocument?.x, 0);
-  const centerY = coerceNumber(templateDocument?.y, 0);
+  const xCoordinates = points.filter((_, index) => index % 2 === 0).map((value) => coerceNumber(value, 0));
+  const yCoordinates = points.filter((_, index) => index % 2 === 1).map((value) => coerceNumber(value, 0));
+  const centerX = (Math.min(...xCoordinates) + Math.max(...xCoordinates)) / 2;
+  const centerY = (Math.min(...yCoordinates) + Math.max(...yCoordinates)) / 2;
   const radii = [];
   for (let index = 0; index < points.length; index += 2) {
     const pointX = coerceNumber(points[index], null);
@@ -9157,13 +9182,14 @@ function buildRingRuntimeGeometryFromShapes(templateDocument, shapes = [], {
 }
 
 function buildSideOfRingShapesFromGeometry(templateDocument, geometry, {
-  allParts = []
+  allParts = [],
+  referenceShapes = null
 } = {}) {
   const side = String(geometry?.side ?? "outer").toLowerCase() === "inner" ? "inner" : "outer";
   const offsetReference = String(geometry?.offsetReference ?? "body-edge").toLowerCase();
   const offsetStart = Math.max(0, coerceNumber(geometry?.offsetStart, 0));
   const offsetEnd = coerceNumber(geometry?.offsetEnd, 0);
-  const referenceRing = resolveSideOfRingReferenceBand(templateDocument, geometry, allParts);
+  const referenceRing = resolveSideOfRingReferenceBand(templateDocument, geometry, allParts, referenceShapes);
 
   if (!referenceRing || offsetReference !== "body-edge" || offsetEnd <= offsetStart) {
     debug("Rejected Region shape build for unsupported side-of-ring geometry.", {
@@ -9182,15 +9208,56 @@ function buildSideOfRingShapesFromGeometry(templateDocument, geometry, {
     return [];
   }
 
+  const usesPixelRadii = referenceRing.radiusUnit === "pixels";
+  const offsetStartResolved = usesPixelRadii
+    ? distanceToPixels(offsetStart, templateDocument?.parent ?? null)
+    : offsetStart;
+  const offsetEndResolved = usesPixelRadii
+    ? distanceToPixels(offsetEnd, templateDocument?.parent ?? null)
+    : offsetEnd;
   const bodyEdge = side === "inner"
     ? coerceNumber(referenceRing.innerRadius, 0)
     : coerceNumber(referenceRing.outerRadius, 0);
   const bandInnerRadius = side === "inner"
-    ? Math.max(0, bodyEdge - offsetEnd)
-    : bodyEdge + offsetStart;
+    ? Math.max(0, bodyEdge - offsetEndResolved)
+    : bodyEdge + offsetStartResolved;
   const bandOuterRadius = side === "inner"
-    ? Math.max(0, bodyEdge - offsetStart)
-    : bodyEdge + offsetEnd;
+    ? Math.max(0, bodyEdge - offsetStartResolved)
+    : bodyEdge + offsetEndResolved;
+
+  if (isFoundryV14OrNewer() && usesPixelRadii) {
+    const nativeRingShape = serializeNativeRingShape({
+      type: "ring",
+      x: referenceRing.centerX,
+      y: referenceRing.centerY,
+      radius: bandOuterRadius,
+      innerWidth: bandOuterRadius - bandInnerRadius,
+      outerWidth: 0,
+      hole: false,
+      gridBased: false
+    });
+    const validation = validateV14NativeRingShapes([nativeRingShape]);
+    if (validation.valid) {
+      logV14RegionDiagnostic("ringSerializedShape", {
+        entryPoint: "buildSideOfRingShapesFromGeometry",
+        templateId: templateDocument?.id ?? null,
+        geometryType: "side-of-ring",
+        ringGeometryStrategy: "native-ring-shape",
+        side,
+        offsetReference,
+        offsetStart,
+        offsetEnd,
+        referencePartId: geometry?.referencePartId ?? null,
+        referenceShapeType: "ring",
+        resolvedInnerRadius: referenceRing.innerRadius,
+        resolvedOuterRadius: referenceRing.outerRadius,
+        heatedInnerRadius: bandInnerRadius,
+        heatedOuterRadius: bandOuterRadius,
+        ringSerializedShape: summarizeFoundryRegionShapes([nativeRingShape])
+      });
+      return [nativeRingShape];
+    }
+  }
 
   return buildRingBandShapesFromRadii(templateDocument, {
     innerRadius: bandInnerRadius,
@@ -9217,7 +9284,10 @@ function buildSideOfRingShapesFromGeometry(templateDocument, geometry, {
         innerRadius: bandInnerRadius,
         outerRadius: bandOuterRadius
       }
-    }
+    },
+    centerX: referenceRing.centerX,
+    centerY: referenceRing.centerY,
+    radiiInPixels: usesPixelRadii
   });
 }
 
@@ -12404,22 +12474,23 @@ function buildRingBandShapesFromRadii(templateDocument, {
 }, {
   builder,
   rejectionMessage,
-  detailOverrides = {}
+  detailOverrides = {},
+  centerX = null,
+  centerY = null,
+  radiiInPixels = false
 } = {}) {
-  const outerRadiusPixels = distanceToPixels(
-    coerceNumber(outerRadius, 0),
-    templateDocument?.parent ?? null
-  );
-  const innerRadiusPixels = distanceToPixels(
-    coerceNumber(innerRadius, 0),
-    templateDocument?.parent ?? null
-  );
+  const outerRadiusPixels = radiiInPixels
+    ? coerceNumber(outerRadius, 0)
+    : distanceToPixels(coerceNumber(outerRadius, 0), templateDocument?.parent ?? null);
+  const innerRadiusPixels = radiiInPixels
+    ? coerceNumber(innerRadius, 0)
+    : distanceToPixels(coerceNumber(innerRadius, 0), templateDocument?.parent ?? null);
   const segmentCount = Math.min(
     Math.max(Math.round(coerceNumber(segments, DEFAULT_RING_SEGMENTS)), 8),
     64
   );
-  const centerX = coerceNumber(templateDocument?.x, 0);
-  const centerY = coerceNumber(templateDocument?.y, 0);
+  const resolvedCenterX = coerceNumber(centerX, coerceNumber(templateDocument?.x, 0));
+  const resolvedCenterY = coerceNumber(centerY, coerceNumber(templateDocument?.y, 0));
 
   if (!outerRadiusPixels || outerRadiusPixels <= 0 || innerRadiusPixels < 0 || innerRadiusPixels >= outerRadiusPixels) {
     debug(rejectionMessage ?? "Rejected Region shape build for unsupported ring band geometry.", {
@@ -12445,14 +12516,14 @@ function buildRingBandShapesFromRadii(templateDocument, {
     shapes.push({
       type: "polygon",
       points: sanitizePolygonPoints([
-        centerX + Math.cos(startAngle) * outerRadiusPixels,
-        centerY + Math.sin(startAngle) * outerRadiusPixels,
-        centerX + Math.cos(endAngle) * outerRadiusPixels,
-        centerY + Math.sin(endAngle) * outerRadiusPixels,
-        centerX + Math.cos(endAngle) * innerRadiusPixels,
-        centerY + Math.sin(endAngle) * innerRadiusPixels,
-        centerX + Math.cos(startAngle) * innerRadiusPixels,
-        centerY + Math.sin(startAngle) * innerRadiusPixels
+        resolvedCenterX + Math.cos(startAngle) * outerRadiusPixels,
+        resolvedCenterY + Math.sin(startAngle) * outerRadiusPixels,
+        resolvedCenterX + Math.cos(endAngle) * outerRadiusPixels,
+        resolvedCenterY + Math.sin(endAngle) * outerRadiusPixels,
+        resolvedCenterX + Math.cos(endAngle) * innerRadiusPixels,
+        resolvedCenterY + Math.sin(endAngle) * innerRadiusPixels,
+        resolvedCenterX + Math.cos(startAngle) * innerRadiusPixels,
+        resolvedCenterY + Math.sin(startAngle) * innerRadiusPixels
       ]),
       hole: false
     });
@@ -12465,8 +12536,8 @@ function buildRingBandShapesFromRadii(templateDocument, {
     templateId: templateDocument?.id ?? null,
     templateType: getTemplateType(templateDocument),
     builder,
-    centerX,
-    centerY,
+    centerX: resolvedCenterX,
+    centerY: resolvedCenterY,
     innerRadius,
     outerRadius,
     innerRadiusPixels,
@@ -12494,9 +12565,30 @@ function buildRingBandShapesFromRadii(templateDocument, {
   return shapes;
 }
 
-function resolveSideOfRingReferenceBand(templateDocument, geometry, allParts = []) {
+function resolveSideOfRingReferenceBand(templateDocument, geometry, allParts = [], referenceShapes = null) {
   const referencePartId = geometry?.referencePartId ?? null;
   if (referencePartId) {
+    const nativeRingShape = Array.from(referenceShapes ?? []).find((shape) =>
+      String(shape?.type ?? "").toLowerCase() === "ring"
+    );
+    if (nativeRingShape) {
+      const radius = Math.max(0, coerceNumber(nativeRingShape.radius, 0));
+      const innerWidth = Math.max(0, coerceNumber(nativeRingShape.innerWidth, 0));
+      const outerWidth = Math.max(0, coerceNumber(nativeRingShape.outerWidth, 0));
+      const innerRadius = Math.max(0, radius - innerWidth);
+      const outerRadius = radius + outerWidth;
+      if (outerRadius > innerRadius) {
+        return {
+          centerX: coerceNumber(nativeRingShape.x, coerceNumber(templateDocument?.x, 0)),
+          centerY: coerceNumber(nativeRingShape.y, coerceNumber(templateDocument?.y, 0)),
+          innerRadius,
+          outerRadius,
+          radiusUnit: "pixels",
+          referenceRadiusMode: "native-ring-shape",
+          segments: geometry?.segments ?? DEFAULT_RING_SEGMENTS
+        };
+      }
+    }
     const referencePart = allParts.find((part) => part?.id === referencePartId);
     const referenceGeometry = referencePart?.geometry ?? null;
 
