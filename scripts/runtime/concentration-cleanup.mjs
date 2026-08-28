@@ -139,7 +139,9 @@ export async function cleanupSceneRegions(scene, { reason = "manual" } = {}) {
       });
     }
 
-    return await scene.deleteEmbeddedDocuments("Region", existingRegionIds);
+    return await scene.deleteEmbeddedDocuments("Region", existingRegionIds, {
+      persistentZonesCleanup: true
+    });
   } catch (caughtError) {
     const message = String(caughtError?.message ?? "");
     if (message.toLowerCase().includes("does not exist")) {
@@ -805,6 +807,14 @@ async function validateV14NativeManagedRegionLifecycle(regionDocument, {
       deletionReason: "owner-effect-missing-confirmed"
     });
     return { isValid: false, reason: "The linked owner ActiveEffect no longer exists." };
+  }
+
+  if (requiresConcentrationValidation(runtime.normalizedDefinition ?? {})) {
+    return validateConcentrationState({
+      linkedItem: item,
+      normalizedDefinition: runtime.normalizedDefinition ?? {},
+      runtime
+    });
   }
 
   if (itemUuid && item) {

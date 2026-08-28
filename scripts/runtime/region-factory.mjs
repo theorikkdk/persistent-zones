@@ -168,13 +168,15 @@ export function registerRegionFactoryHooks() {
         stack: caughtError?.stack ?? null
       });
     });
-    Promise.resolve(cleanupExpiredDedicatedOwnerEffectsForWorld({ hookName: "ready" })).catch((caughtError) => {
-      logV14RegionDiagnostic("ownerEffectExpirationStartupCleanupFailed", {
-        hook: "ready",
-        reason: caughtError?.message ?? "unknown",
-        stack: caughtError?.stack ?? null
+    Promise.resolve(cleanupExpiredDedicatedOwnerEffectsForWorld({ hookName: "ready" }))
+      .then(() => cleanupOrphanedDedicatedOwnerEffectsForWorld({ reason: "ready" }))
+      .catch((caughtError) => {
+        logV14RegionDiagnostic("ownerEffectExpirationStartupCleanupFailed", {
+          hook: "ready",
+          reason: caughtError?.message ?? "unknown",
+          stack: caughtError?.stack ?? null
+        });
       });
-    });
   });
   hooksRegistered = true;
   logV14RegionEntry("enteredRegionFactory", {
@@ -1137,6 +1139,21 @@ async function createV14MultipartRegionGroupFromSource(regionDocument, resolved,
     sourceContext: resolved.sourceContext,
     regions: createdRegions
   };
+}
+
+function getManagedMultipartRegionGroup(scene, regionOrRuntime) {
+  const runtime = regionOrRuntime?.documentName === "Region"
+    ? getRegionRuntimeFlags(regionOrRuntime) ?? {}
+    : regionOrRuntime ?? {};
+  const groupId = String(runtime.groupId ?? "").trim();
+  const partCount = Number(runtime.partCount ?? runtime.normalizedDefinition?.group?.partCount ?? 1);
+  if (!scene || !groupId || !Number.isFinite(partCount) || partCount <= 1) {
+    return [];
+  }
+  return findManagedRegions(scene, (candidate) => {
+    const candidateRuntime = getRegionRuntimeFlags(candidate) ?? {};
+    return candidateRuntime.groupId === groupId && Number(candidateRuntime.partCount ?? 1) > 1;
+  });
 }
 
 function detectInternalV14RingSegmentHook(regionDocument, options = {}) {
@@ -5070,20 +5087,37 @@ async function onDeleteRegion(regionDocument, options = {}) {
     return;
   }
 
-  try {
-    await cleanupLinkedDocumentsForRegion(regionDocument, {
-      reason: "region-deleted",
-      skipRuntimeUpdate: true
-    });
-    await cleanupWhileInsideStatusesForRegion({
-      regionDocument,
-      cleanupReason: "region-deleted"
-    });
-  } catch (caughtError) {
-    error("Failed to cleanup linked documents or triggered statuses after Region deletion.", caughtError, {
-      regionId: regionDocument?.id ?? null,
-      templateId: runtime?.templateId ?? null
-    });
+  if (!options?.persistentZonesRegionGroupPrecleaned) {
+    try {
+      await cleanupLinkedDocumentsForRegion(regionDocument, {
+        reason: "region-deleted",
+        skipRuntimeUpdate: true
+      });
+      await cleanupWhileInsideStatusesForRegion({
+        regionDocument,
+        cleanupReason: "region-deleted"
+      });
+    } catch (caughtError) {
+      error("Failed to cleanup linked documents or triggered statuses after Region deletion.", caughtError, {
+        regionId: regionDocument?.id ?? null,
+        templateId: runtime?.templateId ?? null
+      });
+    }
+  }
+
+  if (!isPersistentZonesCleanupOption(options)) {
+    const siblingRegions = getManagedMultipartRegionGroup(regionDocument?.parent, runtime)
+      .filter((region) => region?.id !== regionDocument?.id);
+    if (siblingRegions.length) {
+      await deleteManagedRegionGroup(siblingRegions, {
+        reason: "multipart-region-manual-delete",
+        deletionOptions: {
+          persistentZonesCleanup: true,
+          persistentZonesGroupDelete: true,
+          persistentZonesRegionLifecycleCleanup: true
+        }
+      });
+    }
   }
 
   await removeOwnerEffectForDeletedRegion(regionDocument, runtime, options);
@@ -5114,6 +5148,13 @@ async function removeOwnerEffectForDeletedRegion(regionDocument, runtime, option
 
   const ownerEffect = await fromUuidSafe(ownerEffectUuid);
   if (!ownerEffect?.delete) {
+    return;
+  }
+
+  if (isPersistentZonesDedicatedOwnerEffect(ownerEffect)) {
+    await deleteDedicatedOwnerEffectIfOrphaned(ownerEffect, {
+      reason: "region-deleted"
+    });
     return;
   }
 
@@ -5515,22 +5556,33 @@ async function cleanupExpiredDedicatedOwnerRegion(activeEffect, region, {
   try {
     const scene = region?.parent ?? null;
     const runtime = getRegionRuntimeFlags(region) ?? {};
-    const linkedWallCountBefore = Array.from(runtime.linkedDocuments?.wallIds ?? []).length;
-    const linkedLightCountBefore = Array.from(runtime.linkedDocuments?.lightIds ?? []).length;
+    const multipartGroup = getManagedMultipartRegionGroup(scene, runtime);
+    const regionsToDelete = multipartGroup.length ? multipartGroup : [region];
+    const linkedWallCountBefore = regionsToDelete.reduce((count, candidate) =>
+      count + Array.from(getRegionRuntimeFlags(candidate)?.linkedDocuments?.wallIds ?? []).length, 0);
+    const linkedLightCountBefore = regionsToDelete.reduce((count, candidate) =>
+      count + Array.from(getRegionRuntimeFlags(candidate)?.linkedDocuments?.lightIds ?? []).length, 0);
     const regionFound = Boolean(scene?.regions?.get?.(region.id));
     if (regionFound) {
-      await scene.deleteEmbeddedDocuments("Region", [region.id], {
-        persistentZonesEffectLifecycleCleanup: true,
-        persistentZonesOwnerEffectExpirationCleanup: true
+      await deleteManagedRegionGroup(regionsToDelete, {
+        reason: "owner-effect-expired",
+        deletionOptions: {
+          persistentZonesEffectLifecycleCleanup: true,
+          persistentZonesOwnerEffectExpirationCleanup: true,
+          persistentZonesGroupDelete: multipartGroup.length > 1
+        }
       });
     }
+    const orphanCleanup = await deleteDedicatedOwnerEffectIfOrphaned(activeEffect, {
+      reason: "owner-effect-expired-region-cleanup"
+    });
     const result = buildOwnerEffectExpirationCleanupResult(activeEffect, region, {
       linkedWallCountBefore,
       linkedLightCountBefore,
       regionFound,
       regionDeleted: regionFound,
       linkedDocumentsDeleted: regionFound,
-      effectDeletedByPZ: false,
+      effectDeletedByPZ: orphanCleanup.deleted === true,
       alreadyCleaned: !regionFound,
       cleanupSucceeded: true,
       errors: []
@@ -6716,7 +6768,8 @@ function buildRegionCreateData({
   regionSourceStrategy = null,
   regionSegmentIndex = null,
   regionSegmentCount = null,
-  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE
+  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
+  sharedOwnerEffectUuid = null
 }) {
   const behaviors = buildNativeRegionBehaviors({
     normalizedDefinition,
@@ -6737,7 +6790,8 @@ function buildRegionCreateData({
       regionSourceStrategy,
       regionSegmentIndex,
       regionSegmentCount,
-      architecturePath
+      architecturePath,
+      sharedOwnerEffectUuid
     })
   };
   logV14RegionDiagnostic("regionManagedFlagsWritten", {
@@ -6782,7 +6836,8 @@ function buildManagedRegionRuntimeFlags({
   regionSourceStrategy = null,
   regionSegmentIndex = null,
   regionSegmentCount = null,
-  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE
+  architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
+  sharedOwnerEffectUuid = null
 }) {
   const runtimeFlags = {
     templateId: templateDocument?.id ?? null,
@@ -6793,6 +6848,13 @@ function buildManagedRegionRuntimeFlags({
     activityId: normalizedDefinition?.activityId ?? sourceContext?.activity?.id ?? null,
     activityUuid: normalizedDefinition?.activityUuid ?? sourceContext?.activity?.uuid ?? null,
     activityType: normalizedDefinition?.activityType ?? sourceContext?.activity?.type ?? null,
+    ...(sharedOwnerEffectUuid ? {
+      ownerEffectUuid: sharedOwnerEffectUuid,
+      activeEffectUuid: sharedOwnerEffectUuid,
+      concentrationEffectUuid: normalizedDefinition?.concentration?.required === true
+        ? sharedOwnerEffectUuid
+        : null
+    } : {}),
     selectedVariantId: normalizedDefinition?.selectedVariant?.id ?? null,
     defaultVariantId: normalizedDefinition?.defaultVariantId ?? null,
     variantResolutionMode: normalizedDefinition?.variantResolution?.resolutionMode ?? "none",
@@ -7908,12 +7970,43 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
           profilePart: { geometry: selected.normalizedDefinition.geometry }
         }, regionDocument)
         : sourceShapes;
+    const existingSharedOwnerEffectUuid =
+      sourceHints.ownerEffectUuid ??
+      sourceHints.activeEffectUuid ??
+      sourceHints.concentrationEffectUuid ??
+      selected.normalizedDefinition?.concentration?.effectUuid ??
+      null;
+    const concentrationOwnerResolution = existingSharedOwnerEffectUuid
+      ? {
+        selectedOwnerEffectUuid: existingSharedOwnerEffectUuid,
+        candidateEffectUuids: [existingSharedOwnerEffectUuid],
+        resolutionMode: "existing-runtime-owner-effect",
+        ambiguous: false
+      }
+      : resolveExistingConcentrationOwnerEffectForMultipart({
+        normalizedDefinition: selected.normalizedDefinition,
+        sourceContext: selected.sourceContext,
+        sourceHints
+      });
+    logV14RegionDiagnostic("multipartConcentrationOwnerResolution", {
+      entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion",
+      regionDocumentId: regionDocument?.id ?? null,
+      itemUuid: sourceHints.itemUuid ?? selected.sourceContext?.item?.uuid ?? null,
+      actorUuid: sourceHints.actorUuid ?? selected.sourceContext?.actor?.uuid ?? selected.sourceContext?.caster?.uuid ?? null,
+      activityId: sourceHints.activityId ?? selected.normalizedDefinition?.activityId ?? selected.sourceContext?.activity?.id ?? null,
+      candidateEffectUuids: concentrationOwnerResolution.candidateEffectUuids,
+      selectedOwnerEffectUuid: concentrationOwnerResolution.selectedOwnerEffectUuid,
+      resolutionMode: concentrationOwnerResolution.resolutionMode,
+      ambiguous: concentrationOwnerResolution.ambiguous
+    });
     const multipartGroupPlan = await buildManagedRegionGroupPlan({
       templateDocument: selected.templateDocument,
       normalizedDefinition: selected.normalizedDefinition,
       sourceContext: selected.sourceContext,
       sourceRegionDocument: regionDocument,
-      sourceRegionShapes: multipartSourceShapes
+      sourceRegionShapes: multipartSourceShapes,
+      adoptedV14Source: true,
+      sharedOwnerEffectUuid: concentrationOwnerResolution.selectedOwnerEffectUuid
     });
     if (multipartGroupPlan.parts?.length !== selected.normalizedDefinition.parts.length) {
       return {
@@ -8215,6 +8308,144 @@ function readV14SourceResolutionHints(regionDocument) {
     concentrationEffectUuid: runtime.concentrationEffectUuid ?? source.concentrationEffectUuid ?? source.ownerEffectUuid ?? source.effectUuid ?? null
   };
 }
+
+async function cleanupOrphanedDedicatedOwnerEffectsForWorld({ reason = "manual" } = {}) {
+  if (!isPrimaryGM()) {
+    return [];
+  }
+
+  const results = [];
+  const effects = Array.from(game?.actors?.contents ?? [])
+    .flatMap((actor) => Array.from(actor?.effects ?? []))
+    .filter((effect) => isPersistentZonesDedicatedOwnerEffect(effect));
+  for (const activeEffect of effects) {
+    results.push(await deleteDedicatedOwnerEffectIfOrphaned(activeEffect, { reason }));
+  }
+  return results;
+}
+
+async function deleteDedicatedOwnerEffectIfOrphaned(activeEffect, { reason = "manual" } = {}) {
+  if (!activeEffect?.uuid || !isPersistentZonesDedicatedOwnerEffect(activeEffect)) {
+    return { deleted: false, reason: "not-persistent-zones-dedicated-owner" };
+  }
+
+  const referencingRegions = findManagedRegionsReferencingOwnerEffect(activeEffect.uuid);
+  const explicitlyLinkedRegion = findExplicitRegionDocumentForDedicatedOwnerEffect(activeEffect);
+  if (referencingRegions.length || explicitlyLinkedRegion) {
+    return {
+      deleted: false,
+      reason: referencingRegions.length ? "managed-region-still-references-owner" : "explicit-linked-region-still-exists",
+      effectUuid: activeEffect.uuid,
+      regionIds: referencingRegions.map((region) => region?.id ?? null).filter(Boolean),
+      explicitRegionId: explicitlyLinkedRegion?.id ?? null
+    };
+  }
+
+  await activeEffect.delete({
+    persistentZonesOrphanOwnerCleanup: true
+  });
+  console.info(`[${MODULE_ID}][lifecycle] PZ ORPHANED DEDICATED OWNER EFFECT DELETED`, {
+    effectUuid: activeEffect.uuid,
+    effectName: activeEffect?.name ?? null,
+    actorUuid: activeEffect?.parent?.uuid ?? null,
+    reason
+  });
+  return {
+    deleted: true,
+    reason: "orphaned-persistent-zones-dedicated-owner",
+    effectUuid: activeEffect.uuid
+  };
+}
+
+function findExplicitRegionDocumentForDedicatedOwnerEffect(activeEffect) {
+  const effectData = activeEffect?.toObject?.() ?? {};
+  const pzFlags = effectData.flags?.[MODULE_ID] ?? activeEffect?.flags?.[MODULE_ID] ?? {};
+  const scene = pzFlags.sceneId ? game?.scenes?.get?.(pzFlags.sceneId) ?? null : null;
+  if (!scene) {
+    return null;
+  }
+  const byId = pzFlags.regionId ? scene?.regions?.get?.(pzFlags.regionId) ?? null : null;
+  if (byId && getRegionRuntimeFlags(byId)) {
+    return byId;
+  }
+  if (!pzFlags.regionUuid) {
+    return null;
+  }
+  return Array.from(scene?.regions ?? []).find((region) =>
+    region?.uuid === pzFlags.regionUuid && Boolean(getRegionRuntimeFlags(region))
+  ) ?? null;
+}
+
+
+function resolveExistingConcentrationOwnerEffectForMultipart({
+  normalizedDefinition = {},
+  sourceContext = null,
+  sourceHints = {}
+} = {}) {
+  if (normalizedDefinition?.concentration?.required !== true) {
+    return {
+      selectedOwnerEffectUuid: null,
+      candidateEffectUuids: [],
+      resolutionMode: "concentration-not-required",
+      ambiguous: false
+    };
+  }
+
+  const actorUuid = sourceHints.actorUuid ?? sourceContext?.actor?.uuid ?? sourceContext?.caster?.uuid ?? null;
+  const itemUuid = sourceHints.itemUuid ?? sourceContext?.item?.uuid ?? normalizedDefinition?.itemUuid ?? null;
+  const activityId = String(
+    sourceHints.activityId ??
+    normalizedDefinition?.activityId ??
+    sourceContext?.activity?.id ??
+    ""
+  ).trim();
+  if (!actorUuid || !itemUuid || !activityId) {
+    return {
+      selectedOwnerEffectUuid: null,
+      candidateEffectUuids: [],
+      resolutionMode: "missing-structured-concentration-identity",
+      ambiguous: false
+    };
+  }
+
+  const actor = resolveActorSync(actorUuid);
+  const matches = Array.from(actor?.effects ?? []).filter((activeEffect) => {
+    if (!activeEffect || activeEffect.disabled || activeEffect.parent?.uuid !== actorUuid) {
+      return false;
+    }
+    const effectData = activeEffect.toObject?.() ?? {};
+    if (!hasStructuredConcentrationSignal(activeEffect, effectData)) {
+      return false;
+    }
+    return resolveActiveEffectItemUuid(activeEffect, effectData) === itemUuid &&
+      resolveActiveEffectActivityId(activeEffect, effectData) === activityId;
+  });
+  const selectedOwnerEffect = matches.length === 1 ? matches[0] : null;
+  return {
+    selectedOwnerEffectUuid: selectedOwnerEffect?.uuid ?? null,
+    candidateEffectUuids: matches.map((activeEffect) => activeEffect?.uuid ?? null).filter(Boolean),
+    resolutionMode: selectedOwnerEffect
+      ? "unique-structured-concentration-owner"
+      : matches.length > 1
+        ? "ambiguous-structured-concentration-owner"
+        : "no-structured-concentration-owner",
+    ambiguous: matches.length > 1
+  };
+}
+
+function hasStructuredConcentrationSignal(activeEffect, effectData = {}) {
+  const statuses = extractEffectStatuses(activeEffect, effectData)
+    .map((status) => String(status).toLowerCase());
+  if (statuses.some((status) => status === "concentrating" || status === "concentration")) {
+    return true;
+  }
+  return Boolean(
+    getPropertyPath(effectData, "flags.dnd5e.concentration") ||
+    getPropertyPath(effectData, "flags.dnd5e.isConcentration") ||
+    getPropertyPath(effectData, "flags.midi-qol.concentration")
+  );
+}
+
 
 function isSupportedV14SourceMultipartDefinition(normalizedDefinition) {
   const parts = Array.from(normalizedDefinition?.parts ?? []);
@@ -8528,7 +8759,9 @@ async function buildManagedRegionGroupPlan({
   sourceContext,
   existingRegions = [],
   sourceRegionDocument = null,
-  sourceRegionShapes = null
+  sourceRegionShapes = null,
+  adoptedV14Source = false,
+  sharedOwnerEffectUuid = null
 }) {
   const groupId = buildManagedRegionGroupId(templateDocument, existingRegions);
   const sourceParts = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length
@@ -8629,7 +8862,9 @@ async function buildManagedRegionGroupPlan({
       runtimeGeometry,
       architecturePath: isV14FirstSimpleRing
         ? REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE
-        : REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
+        : adoptedV14Source
+          ? REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE
+          : REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
       existingRuntime: resolveExistingRuntimeForPart(existingRegions, zonePart?.id ?? null),
       geometrySide: zonePart?.geometry?.side ?? null,
       geometryReferencePartId: zonePart?.geometry?.referencePartId ?? null,
@@ -8740,7 +8975,8 @@ async function buildManagedRegionGroupPlan({
         regionSourceStrategy: preparedPart.regionSourceStrategy ?? null,
         regionSegmentIndex: preparedPart.regionSegmentIndex ?? null,
         regionSegmentCount: preparedPart.regionSegmentCount ?? null,
-        architecturePath: preparedPart.architecturePath ?? REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE
+        architecturePath: preparedPart.architecturePath ?? REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
+        sharedOwnerEffectUuid
       })
     };
   });
@@ -9538,7 +9774,8 @@ function projectPointOntoNormal({
 }
 
 async function deleteManagedRegionGroup(regionDocuments, {
-  reason = "manual-group-cleanup"
+  reason = "manual-group-cleanup",
+  deletionOptions = {}
 } = {}) {
   const documents = Array.isArray(regionDocuments)
     ? regionDocuments.filter(Boolean)
@@ -9571,10 +9808,16 @@ async function deleteManagedRegionGroup(regionDocuments, {
       reason,
       skipRuntimeUpdate: true
     });
+    await cleanupWhileInsideStatusesForRegion({
+      regionDocument,
+      cleanupReason: reason
+    });
   }
 
   await scene.deleteEmbeddedDocuments("Region", regionIds, {
-    persistentZonesCleanup: true
+    persistentZonesCleanup: true,
+    ...deletionOptions,
+    persistentZonesRegionGroupPrecleaned: true
   });
 
   debug("Cleaned managed Region group.", {
