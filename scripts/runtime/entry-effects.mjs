@@ -14,6 +14,7 @@ import {
 import { resolveTriggerActionConfiguration } from "./trigger-action-config.mjs";
 import { buildStatusRecoveryPatch } from "./status-recovery.mjs";
 import { ensureAggregateStatus } from "./status-state.mjs";
+import { buildSimpleSaveResult, rollSimpleActorSave } from "./simple-save.mjs";
 import {
   buildRecoveryGroupKey,
   buildRecoverySourceIdentity,
@@ -1597,32 +1598,20 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
     };
   }
 
-  if (typeof actor.rollAbilitySave === "function") {
-    roll = await actor.rollAbilitySave(ability, {
-      chatMessage: true,
-      fastForward: true,
-      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save`
-    });
-  } else {
-    const bonus = getManualSaveBonus(actor, ability);
-    roll = new Roll("1d20 + @bonus", { bonus });
-    await roll.evaluate();
-    await roll.toMessage({
-      speaker: ChatMessage.getSpeaker({ actor, token: tokenDocument }),
-      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save (${ability.toUpperCase()})`
-    });
-  }
-
-  const total = coerceNumber(roll?.total, null);
-  const success = total !== null && dc !== null ? total >= dc : false;
-
-  const result = {
+  roll = await rollSimpleActorSave({
+    actor,
     ability,
     dc,
-    total,
-    success,
-    onSuccess: String(saveConfig.onSuccess ?? "half").toLowerCase()
-  };
+    flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save`,
+    tokenDocument
+  });
+
+  const result = buildSimpleSaveResult({
+    ability,
+    dc,
+    roll,
+    onSuccess: saveConfig.onSuccess
+  });
 
   debug(`Calculated ${timingLabel} save.`, {
     regionId: regionDocument?.id ?? null,
@@ -1805,18 +1794,6 @@ async function applyDamageEntriesFallbackToActor(actor, {
     "system.attributes.hp.temp": nextTempHp,
     "system.attributes.hp.value": nextHpValue
   });
-}
-
-function getManualSaveBonus(actor, ability) {
-  return coerceNumber(
-    pickFirstDefined(
-      actor?.system?.abilities?.[ability]?.save,
-      actor?.system?.abilities?.[ability]?.bonuses?.save,
-      actor?.system?.abilities?.[ability]?.mod,
-      0
-    ),
-    0
-  );
 }
 
 async function resolveSaveSourceActor(dcSource, runtime) {
