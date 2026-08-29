@@ -18,6 +18,7 @@ import {
   fromUuidSafe,
   getRegionRuntimeFlags,
   getTemplateType,
+  isPlainObject,
   isPrimaryGM,
   translateFlatPoints,
   trimClosingPolygonPoint,
@@ -90,6 +91,7 @@ export function registerRegionFactoryHooks() {
   startupDeleteProtectionActive = true;
   Hooks.on("createMeasuredTemplate", onCreateMeasuredTemplate);
   Hooks.on("updateMeasuredTemplate", onUpdateMeasuredTemplate);
+  Hooks.on("preUpdateRegion", onPreUpdateRegion);
   Hooks.on("createRegion", (...args) => {
     Promise.resolve(onCreateRegion(...args)).catch((caughtError) => {
       logV14RegionDiagnostic("createRegionHookFailed", {
@@ -181,7 +183,7 @@ export function registerRegionFactoryHooks() {
   hooksRegistered = true;
   logV14RegionEntry("enteredRegionFactory", {
     selectedCompatibilityPath: "hooks-registered",
-    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "updateCombat", "updateWorldTime", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
+    registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "preUpdateRegion", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "updateCombat", "updateWorldTime", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
   });
 }
 
@@ -3782,7 +3784,33 @@ function sanitizeGroupIdComponent(value) {
   return String(value ?? "none").replace(/[^a-zA-Z0-9_.-]+/g, "_");
 }
 
-async function onUpdateRegion(regionDocument, changed = {}, options = {}) {
+function onPreUpdateRegion(regionDocument, changed = {}, options = {}, userId = null) {
+  if (options?.persistentZonesGroupTranslation || (userId && game?.user?.id !== userId)) {
+    return;
+  }
+  const translation = detectRegionShapesTranslation(
+    Array.from(regionDocument?._source?.shapes ?? []),
+    changed?.shapes
+  );
+  if (!translation) {
+    return;
+  }
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const siblings = getManagedMultipartRegionGroup(regionDocument?.parent, runtime)
+    .filter((candidate) => candidate?.id !== regionDocument?.id);
+  if (!siblings.length) {
+    return;
+  }
+  options.persistentZonesPendingGroupTranslations ??= {};
+  options.persistentZonesPendingGroupTranslations[regionDocument.id] = {
+    dx: translation.dx,
+    dy: translation.dy,
+    groupId: runtime.groupId ?? null,
+    siblingIds: siblings.map((candidate) => candidate.id)
+  };
+}
+
+async function onUpdateRegion(regionDocument, changed = {}, options = {}, userId = null) {
   logV14RegionDiagnostic("regionDocumentFlagsAfterUpdate", {
     regionDocumentId: regionDocument?.id ?? null,
     sceneId: regionDocument?.parent?.id ?? null,
@@ -3810,6 +3838,8 @@ async function onUpdateRegion(regionDocument, changed = {}, options = {}) {
       hookErrorResolved: true
     });
   }
+
+  await propagateMultipartRegionTranslation(regionDocument, options, userId);
 
   if (shouldSyncLinkedDocumentsAfterRegionUpdate(regionDocument, changed, options)) {
     const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
@@ -4597,6 +4627,155 @@ function onPreCreateActiveEffect(activeEffect, data = {}, options = {}, userId =
     suppressionReason: decision.decisionReason
   });
   return false;
+}
+
+async function propagateMultipartRegionTranslation(regionDocument, options = {}, userId = null) {
+  if (options?.persistentZonesGroupTranslation || (userId && game?.user?.id !== userId)) {
+    return [];
+  }
+  const plan = options?.persistentZonesPendingGroupTranslations?.[regionDocument?.id] ?? null;
+  if (!plan || !Number.isFinite(plan.dx) || !Number.isFinite(plan.dy)) {
+    return [];
+  }
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  if (!plan.groupId || runtime.groupId !== plan.groupId) {
+    return [];
+  }
+  const sourceRegionIds = Object.entries(options?.persistentZonesPendingGroupTranslations ?? {})
+    .filter(([, candidatePlan]) => candidatePlan?.groupId === plan.groupId)
+    .map(([regionId]) => regionId);
+  if (sourceRegionIds[0] !== regionDocument.id) {
+    return [];
+  }
+  const scene = regionDocument?.parent ?? null;
+  if (!scene || typeof scene.updateEmbeddedDocuments !== "function") {
+    return [];
+  }
+  const allowedSiblingIds = new Set(plan.siblingIds ?? []);
+  const sourceRegionIdSet = new Set(sourceRegionIds);
+  const siblings = getManagedMultipartRegionGroup(scene, runtime).filter((candidate) =>
+    candidate?.id !== regionDocument.id &&
+    !sourceRegionIdSet.has(candidate?.id) &&
+    allowedSiblingIds.has(candidate?.id)
+  );
+  const updates = siblings.map((candidate) => ({
+    _id: candidate.id,
+    shapes: Array.from(candidate?._source?.shapes ?? []).map((shape) =>
+      translateRegionShapeData(shape, plan.dx, plan.dy)
+    )
+  }));
+  if (!updates.length) {
+    return [];
+  }
+  debug("Translating managed multipart Region group.", {
+    sceneId: scene.id ?? null,
+    groupId: plan.groupId,
+    sourceRegionId: regionDocument.id ?? null,
+    siblingRegionIds: updates.map((update) => update._id),
+    dx: plan.dx,
+    dy: plan.dy
+  });
+  return scene.updateEmbeddedDocuments("Region", updates, {
+    persistentZonesGroupTranslation: true,
+    persistentZonesGroupTranslationSourceId: regionDocument.id ?? null,
+    persistentZonesGroupId: plan.groupId
+  });
+}
+
+export function detectRegionShapesTranslation(previousShapes, nextShapes) {
+  if (!Array.isArray(previousShapes) || !Array.isArray(nextShapes) ||
+      previousShapes.length !== nextShapes.length || !previousShapes.length) {
+    return null;
+  }
+  const firstDelta = getRegionShapeTranslationDelta(previousShapes[0], nextShapes[0]);
+  if (!firstDelta || (!firstDelta.dx && !firstDelta.dy)) {
+    return null;
+  }
+  for (let index = 0; index < previousShapes.length; index += 1) {
+    const translated = translateRegionShapeData(previousShapes[index], firstDelta.dx, firstDelta.dy);
+    if (!regionShapeDataEqual(translated, nextShapes[index])) {
+      return null;
+    }
+  }
+  return firstDelta;
+}
+
+function getRegionShapeTranslationDelta(previousShape, nextShape) {
+  if (!isPlainObject(previousShape) || !isPlainObject(nextShape) || previousShape.type !== nextShape.type) {
+    return null;
+  }
+  if (previousShape.type === "polygon") {
+    const previousPoints = Array.from(previousShape.points ?? []);
+    const nextPoints = Array.from(nextShape.points ?? []);
+    if (previousPoints.length < 2 || previousPoints.length !== nextPoints.length) {
+      return null;
+    }
+    return {
+      dx: Number(nextPoints[0]) - Number(previousPoints[0]),
+      dy: Number(nextPoints[1]) - Number(previousPoints[1])
+    };
+  }
+  if (!REGION_SHAPE_TYPES_WITH_POSITION.has(String(previousShape.type ?? "")) ||
+      !Number.isFinite(Number(previousShape.x)) || !Number.isFinite(Number(previousShape.y)) ||
+      !Number.isFinite(Number(nextShape.x)) || !Number.isFinite(Number(nextShape.y))) {
+    return null;
+  }
+  return {
+    dx: Number(nextShape.x) - Number(previousShape.x),
+    dy: Number(nextShape.y) - Number(previousShape.y)
+  };
+}
+
+const REGION_SHAPE_TYPES_WITH_POSITION = new Set([
+  "circle",
+  "cone",
+  "ellipse",
+  "line",
+  "rectangle",
+  "ring"
+]);
+
+export function translateRegionShapeData(shapeData, dx, dy) {
+  const translated = duplicateData(shapeData ?? {});
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+    return translated;
+  }
+  if (translated.type === "polygon") {
+    translated.points = Array.from(translated.points ?? []).map((coordinate, index) =>
+      Number(coordinate) + (index % 2 === 0 ? dx : dy)
+    );
+    if (isPlainObject(translated.origin) &&
+        Number.isFinite(Number(translated.origin.x)) && Number.isFinite(Number(translated.origin.y))) {
+      translated.origin.x = Number(translated.origin.x) + dx;
+      translated.origin.y = Number(translated.origin.y) + dy;
+    }
+    return translated;
+  }
+  if (REGION_SHAPE_TYPES_WITH_POSITION.has(String(translated.type ?? "")) &&
+      Number.isFinite(Number(translated.x)) && Number.isFinite(Number(translated.y))) {
+    translated.x = Number(translated.x) + dx;
+    translated.y = Number(translated.y) + dy;
+  }
+  return translated;
+}
+
+function regionShapeDataEqual(left, right) {
+  if (typeof left === "number" || typeof right === "number") {
+    return Number.isFinite(Number(left)) && Number.isFinite(Number(right)) &&
+      Math.abs(Number(left) - Number(right)) <= 1e-6;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+      left.every((value, index) => regionShapeDataEqual(value, right[index]));
+  }
+  if (isPlainObject(left) || isPlainObject(right)) {
+    if (!isPlainObject(left) || !isPlainObject(right)) return false;
+    const leftKeys = Object.keys(left).sort();
+    const rightKeys = Object.keys(right).sort();
+    return leftKeys.length === rightKeys.length &&
+      leftKeys.every((key, index) => key === rightKeys[index] && regionShapeDataEqual(left[key], right[key]));
+  }
+  return left === right;
 }
 
 function onPreDeleteActiveEffect(activeEffect, options = {}, userId = null) {
