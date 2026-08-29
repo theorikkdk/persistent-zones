@@ -18,6 +18,7 @@
       <input type="checkbox" name="persistentZone.multipartEnabled" data-pz-toggle-source="multipart-editor" {{#if persistentZoneMultipartEnabled}}checked{{/if}}>
     </div>
     <div data-pz-toggle-target="multipart-editor">
+      <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.Parts"}}</p>
       <div class="persistent-zone-activity__part-list">
         {{#each persistentZonePartRows as |partRow|}}
           <details class="persistent-zone-activity__part-card" data-pz-part-id="{{partRow.id}}" open>
@@ -28,6 +29,7 @@
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Label"}}</label>
                 <input type="text" name="persistentZone.parts.{{partRow.index}}.label" value="{{partRow.label}}" required data-pz-part-field="label">
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartLabel"}}</p>
               </div>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Role"}}</label>
@@ -36,6 +38,7 @@
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
                   {{/each}}
                 </select>
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartRole"}}</p>
               </div>
               <div class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--geometry">{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</div>
               <div class="form-group">
@@ -45,6 +48,7 @@
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.invalid}}disabled{{/if}}>{{localize option.label}}</option>
                   {{/each}}
                 </select>
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartGeometry"}}</p>
               </div>
               {{#if partRow.geometryCompatibilityWarning}}
                 <p class="hint notification warning persistent-zone-activity__compatibility-warning">{{localize "PERSISTENT_ZONES.Activity.Parts.IncompatibleMainGeometry"}}</p>
@@ -66,6 +70,11 @@
                       <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
                     {{/each}}
                   </select>
+                  {{#if (eq partRow.geometryType "side-of-line")}}
+                    <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.LineSide"}}</p>
+                  {{else}}
+                    <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingSide"}}</p>
+                  {{/if}}
                 </div>
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Gap"}}</label>
@@ -80,6 +89,7 @@
               </div>
               <details class="persistent-zone-activity__part-trigger-section" data-pz-part-trigger-section>
                 <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</summary>
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartTriggers"}}</p>
                 <div class="persistent-zone-activity__part-trigger-editor" data-pz-part-trigger-editor></div>
               </details>
               <div class="persistent-zone-activity__part-actions">
@@ -103,6 +113,7 @@
 
   <fieldset class="persistent-zone-activity__section persistent-zone-activity__geometry">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MainGeometry"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.Shape"}}</label>
       <select name="persistentZone.geometry.type">
@@ -113,36 +124,43 @@
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
         <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.CircleRadius"}}</p>
       </div>
     </div>
     <div data-pz-geometry="ring">
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingReferenceRadius"}}</label>
         <input type="number" name="persistentZone.geometry.ringReferenceRadius" value="{{persistentZone.geometry.ringReferenceRadius}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingReferenceRadius"}}</p>
       </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingInnerWidth"}}</label>
         <input type="number" name="persistentZone.geometry.ringInnerWidth" value="{{persistentZone.geometry.ringInnerWidth}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingInnerWidth"}}</p>
       </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingOuterWidth"}}</label>
         <input type="number" name="persistentZone.geometry.ringOuterWidth" value="{{persistentZone.geometry.ringOuterWidth}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingOuterWidth"}}</p>
       </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ReferenceRadiusMode"}}</label>
         <select name="persistentZone.geometry.referenceRadiusMode">
           {{selectOptions persistentZoneChoices.referenceRadiusModes selected=persistentZone.geometry.referenceRadiusMode localize=true}}
         </select>
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingRadiusMode"}}</p>
       </div>
     </div>
     <div data-pz-geometry="wall">
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallLength"}}</label>
         <input type="number" name="persistentZone.geometry.wallLength" value="{{persistentZone.geometry.wallLength}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.WallLength"}}</p>
       </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.WallThickness"}}</label>
         <input type="number" name="persistentZone.geometry.wallThickness" value="{{persistentZone.geometry.wallThickness}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.WallThickness"}}</p>
       </div>
     </div>
   </fieldset>
@@ -150,12 +168,18 @@
   {{#unless persistentZoneMultipartEnabled}}
   <fieldset class="persistent-zone-activity__section persistent-zone-activity__defaults">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggersSingle"}}</p>
     {{#each persistentZoneTriggerRows as |triggerRow|}}
       <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
         <header class="persistent-zone-activity__trigger-header">
           <label>{{triggerRow.label}}</label>
           <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.enabled" {{#if triggerRow.state.enabled}}checked{{/if}}>
         </header>
+        {{#if (eq triggerRow.timing "enter")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerEnter"}}</p>{{/if}}
+        {{#if (eq triggerRow.timing "move")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerMove"}}</p>{{/if}}
+        {{#if (eq triggerRow.timing "exit")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerExit"}}</p>{{/if}}
+        {{#if (eq triggerRow.timing "turnStart")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTurnStart"}}</p>{{/if}}
+        {{#if (eq triggerRow.timing "turnEnd")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTurnEnd"}}</p>{{/if}}
         <div data-pz-trigger-details>
           <div class="form-group">
             <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
@@ -217,6 +241,7 @@
 
             <fieldset>
               <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Save"}}</legend>
+              <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.Save"}}</p>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveEnabled"}}</label>
                 <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.enabled" data-pz-toggle-source="{{triggerRow.timing}}-save" {{#if triggerRow.state.simpleEffect.save.enabled}}checked{{/if}}>
@@ -245,12 +270,14 @@
                   <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.onSave">
                     {{selectOptions ../persistentZoneChoices.saveResults selected=triggerRow.state.simpleEffect.save.onSave localize=true}}
                   </select>
+                  <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.SaveResult"}}</p>
                 </div>
               </div>
             </fieldset>
 
             <fieldset>
               <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Statuses"}}</legend>
+              <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.Statuses"}}</p>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusesEnabled"}}</label>
                 <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.enabled" data-pz-toggle-source="{{triggerRow.timing}}-statuses" {{#if triggerRow.state.simpleEffect.statuses.enabled}}checked{{/if}}>
@@ -276,6 +303,7 @@
                 </div>
                 <fieldset data-pz-status-recovery>
                   <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.StatusRecovery"}}</legend>
+                  <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.StatusRecovery"}}</p>
                   <div class="form-group">
                     <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryMode"}}</label>
                     <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.mode" data-pz-status-recovery-mode>
@@ -310,6 +338,7 @@
           <div data-pz-mode="linked-activity">
             <div class="form-group">
               <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedActivity"}}</label>
+              <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.LinkedActivity"}}</p>
               <select name="persistentZone.triggers.{{triggerRow.timing}}.linkedActivity.id">
                 {{#each triggerRow.linkedActivityOptions as |option|}}
                   <option value="{{option.value}}" data-uuid="{{option.uuid}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
@@ -326,6 +355,7 @@
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.Movement"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StopMovement"}}</label>
       <input type="checkbox" name="persistentZone.movement.stopOnTrigger" data-pz-toggle-source="movement-stop" {{#if persistentZone.movement.stopOnTrigger}}checked{{/if}}>
@@ -354,7 +384,7 @@
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedWalls"}}</legend>
-    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.LinkedWalls"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateWalls"}}</label>
       <input type="checkbox" name="persistentZone.linkedWalls.enabled" data-pz-toggle-source="linked-walls" {{#if persistentZone.linkedWalls.enabled}}checked{{/if}}>
@@ -427,7 +457,7 @@
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedLights"}}</legend>
-    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.LinkedLights"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateLights"}}</label>
       <input type="checkbox" name="persistentZone.linkedLights.enabled" data-pz-toggle-source="linked-lights" {{#if persistentZone.linkedLights.enabled}}checked{{/if}}>
