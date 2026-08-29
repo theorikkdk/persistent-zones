@@ -44,7 +44,9 @@
         "Movement": "Réglage général du placement : détermine si une entrée ou un déplacement admissible peut interrompre le mouvement d'un token dans la Zone persistante.",
         "LinkedWalls": "Crée des murs Foundry depuis la géométrie du placement principal. Le preset, la géométrie, la direction, la proximité et les restrictions personnalisées s'appliquent globalement à ce placement.",
         "LinkedLights": "Crée des lumières Foundry depuis la géométrie du placement principal. Leur disposition et leurs limites s'appliquent globalement, et non séparément à chaque partie.",
-        "TerrainRuntimePending": "Stocke une demande de terrain pour la zone. Le terrain difficile runtime n'est pas encore activé depuis cette activité."
+        "TerrainRuntimePending": "Stocke une demande de terrain pour les anciennes données d'activité sans activer le terrain difficile runtime.",
+        "TerrainZone": "Le terrain difficile double le coût de déplacement dans cette zone selon les règles D&D5e.",
+        "TerrainPart": "Le terrain difficile double le coût de déplacement dans cette partie selon les règles D&D5e."
       },
       "Sections": {
         "Configuration": "Utilisation",
@@ -58,6 +60,7 @@
         "StatusRecovery": "Récupération de l'état",
         "Effects": "Effets",
         "Movement": "Mouvement",
+        "Terrain": "Terrain",
         "MovementAndTerrain": "Mouvement et terrain",
         "LinkedDocuments": "Murs et lumières",
         "LinkedWalls": "Murs liés",

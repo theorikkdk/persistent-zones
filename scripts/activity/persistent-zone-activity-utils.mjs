@@ -41,7 +41,7 @@ export function getActivityId(activity) {
 
 export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config) {
   const source = duplicate(config);
-  const activitySchemaVersion = normalizeActivityDefinitionSchemaVersion(source.schemaVersion);
+  const activitySchemaVersion = resolveStoredActivityDefinitionSchemaVersion(activity, source);
   const geometry = source.geometry ?? {};
   const damage = source.damage ?? {};
   const save = source.save ?? {};
@@ -108,12 +108,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
       max: linkedLights.max ?? 24,
       color: linkedLights.color ?? null
     },
-    terrain: {
-      enabled: false,
-      requestedEnabled: Boolean(terrain.enabled),
-      multiplier: numberOrNull(terrain.multiplier) ?? 2,
-      runtimeSupported: false
-    },
+    terrain: buildActivityTerrainDefinition(terrain, activitySchemaVersion),
     lifecycle: duplicate(source.lifecycle ?? {})
   };
 
@@ -273,6 +268,32 @@ export function buildGeometryDefinition(geometryType, geometry, {
 function normalizeActivityDefinitionSchemaVersion(value) {
   const numeric = Number(value);
   return Number.isInteger(numeric) && numeric > 0 ? numeric : 1;
+}
+
+function resolveStoredActivityDefinitionSchemaVersion(activity, config) {
+  const storedConfig = activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY];
+  if (storedConfig && typeof storedConfig === "object") {
+    return Object.hasOwn(storedConfig, "schemaVersion")
+      ? normalizeActivityDefinitionSchemaVersion(storedConfig.schemaVersion)
+      : 1;
+  }
+  return normalizeActivityDefinitionSchemaVersion(config?.schemaVersion);
+}
+
+function buildActivityTerrainDefinition(terrain, activitySchemaVersion) {
+  const requestedEnabled = Boolean(terrain?.enabled);
+  if (activitySchemaVersion >= 3) {
+    return {
+      enabled: requestedEnabled,
+      multiplier: 2
+    };
+  }
+  return {
+    enabled: false,
+    requestedEnabled,
+    multiplier: numberOrNull(terrain?.multiplier) ?? 2,
+    runtimeSupported: false
+  };
 }
 
 function buildTriggerDefinitions(triggers = {}, { damage = {}, save = {}, movement = {}, itemUuid = null, activityId = null } = {}) {

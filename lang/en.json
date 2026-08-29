@@ -44,7 +44,9 @@
         "Movement": "General placement setting: controls whether qualifying entry or movement can interrupt token movement across the Persistent Zone.",
         "LinkedWalls": "Creates Foundry walls from the main placement geometry. Preset, geometry, direction, proximity, and custom restrictions apply globally to this placement.",
         "LinkedLights": "Creates Foundry lights from the main placement geometry. Their layout and limits apply globally, not separately to each zone part.",
-        "TerrainRuntimePending": "Stores a terrain request for the zone. Runtime difficult terrain is not enabled from this activity yet."
+        "TerrainRuntimePending": "Stores a terrain request for legacy activity data without enabling runtime difficult terrain.",
+        "TerrainZone": "Difficult terrain doubles movement cost in this zone according to the D&D5e rules.",
+        "TerrainPart": "Difficult terrain doubles movement cost in this zone part according to the D&D5e rules."
       },
       "Sections": {
         "Configuration": "Usage",
@@ -58,6 +60,7 @@
         "StatusRecovery": "Status Recovery",
         "Effects": "Effects",
         "Movement": "Movement",
+        "Terrain": "Terrain",
         "MovementAndTerrain": "Movement and Terrain",
         "LinkedDocuments": "Walls and Lights",
         "LinkedWalls": "Linked Walls",

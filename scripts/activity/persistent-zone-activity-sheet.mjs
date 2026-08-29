@@ -57,6 +57,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   _preparePersistentZoneContext(context) {
     context.tab = context.tabs.persistentZone;
     const config = this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
+    const activitySchemaVersion = resolveStoredActivitySchemaVersion(this.activity, config);
     context.persistentZone = normalizePersistentZoneActivitySubmitData(duplicateData(config));
     context.persistentZoneChoices = buildActivityChoices();
     context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity);
@@ -69,7 +70,8 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneLinkedActivityOptions = buildLinkedActivityOptions(this.activity);
     const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
     context.persistentZoneMultipartEnabled = rawParts.length > 0;
-    context.persistentZoneRingUsesLegacySemantics = Number(config?.schemaVersion ?? 1) < 2;
+    context.persistentZoneRingUsesLegacySemantics = activitySchemaVersion < 2;
+    context.persistentZoneUsesActiveTerrain = activitySchemaVersion >= 3;
     context.persistentZonePartRows = buildMultipartPartRows(
       rawParts,
       context.persistentZone?.geometry?.type,
@@ -154,23 +156,25 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     const pendingMultipartFieldPatch = this.#pendingMultipartFieldPatch;
     this.#pendingMultipartAction = null;
     this.#pendingMultipartFieldPatch = null;
+    const existingDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY];
     await processMultipartEditorSubmit({
       submittedDefinition: submitData[ACTIVITY_DEFINITION_FIELD_KEY],
-      existingDefinition: this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY],
+      existingDefinition,
       pendingAction: pendingMultipartAction,
       pendingFieldPatch: pendingMultipartFieldPatch
     });
     preserveExistingActivitySchemaVersion(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
-      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+      existingDefinition
     );
     mergeExistingRecoveryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
-      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+      existingDefinition
     );
     mergeExistingGeometryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
-      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+      existingDefinition
     );
     const persistentZone = normalizePersistentZoneActivitySubmitData(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
@@ -339,6 +343,11 @@ async function patchMultipartFieldById(parts, {
     patchMultipartGeometryDistances(target.geometry, { gap: value });
   } else if (field === "geometry.width") {
     patchMultipartGeometryDistances(target.geometry, { width: value });
+  } else if (field === "terrain.enabled") {
+    target.terrain = target.terrain && typeof target.terrain === "object" && !Array.isArray(target.terrain)
+      ? target.terrain
+      : {};
+    target.terrain.enabled = Boolean(value);
   }
   return patchedParts;
 }
@@ -433,6 +442,12 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
         width: submittedPart.geometry.width
       });
     }
+    if (submittedPart?.terrain?.enabled !== undefined) {
+      patched.terrain = patched.terrain && typeof patched.terrain === "object" && !Array.isArray(patched.terrain)
+        ? patched.terrain
+        : {};
+      patched.terrain.enabled = Boolean(submittedPart.terrain.enabled);
+    }
     if (existingIndex === undefined) {
       existingIndexById.set(id, patchedParts.length);
       patchedParts.push(patched);
@@ -443,17 +458,18 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
   return patchedParts;
 }
 
-function buildInitialMultipartPart(globalTriggers = {}) {
+export function buildInitialMultipartPart(globalTriggers = {}) {
   return {
     id: "primary",
     label: localize("PERSISTENT_ZONES.Activity.Parts.PrimaryZone"),
     role: "primary",
     geometry: { type: "template" },
+    terrain: { enabled: false },
     triggers: foundry.utils.deepClone(globalTriggers ?? {})
   };
 }
 
-function buildSecondaryMultipartPart(parts = [], globalTriggers = {}) {
+export function buildSecondaryMultipartPart(parts = [], globalTriggers = {}) {
   const usedIds = new Set(Array.from(parts ?? []).map((part) => String(part?.id ?? "")));
   let id;
   do {
@@ -464,6 +480,7 @@ function buildSecondaryMultipartPart(parts = [], globalTriggers = {}) {
     label: localize("PERSISTENT_ZONES.Activity.Parts.SecondaryZone"),
     role: "secondary",
     geometry: { type: "template" },
+    terrain: { enabled: false },
     triggers: foundry.utils.deepClone(globalTriggers ?? {})
   };
 }
@@ -590,6 +607,7 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       sideOptions: buildMultipartSideOptions(geometryType, part?.geometry?.side),
       gap: distances.gap,
       width: distances.width,
+      terrainEnabled: Boolean(part?.terrain?.enabled),
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
       geometryTypeOptions: buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, geometryType)
     };
@@ -725,6 +743,9 @@ function normalizeActivityParts(parts) {
       normalized.role = String(normalized.role ?? (index === 0 ? "primary" : "secondary")).trim();
       normalized.geometry = normalizeActivityPartObject(normalized.geometry);
       normalized.geometry.type = String(normalized.geometry.type ?? "template").trim().toLowerCase();
+      if (Object.hasOwn(normalized, "terrain")) {
+        normalized.terrain = normalizeActivityPartTerrain(normalized.terrain);
+      }
       return normalized;
     });
 }
@@ -1400,6 +1421,17 @@ function coercePositiveNumber(value, fallback) {
 
 function localize(key) {
   return game.i18n?.localize?.(key) ?? key;
+}
+
+function resolveStoredActivitySchemaVersion(activity, config = {}) {
+  const storedConfig = activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY];
+  if (storedConfig && typeof storedConfig === "object") {
+    if (!Object.hasOwn(storedConfig, "schemaVersion")) return 1;
+    const storedVersion = Number(storedConfig.schemaVersion);
+    return Number.isInteger(storedVersion) && storedVersion > 0 ? storedVersion : 1;
+  }
+  const configVersion = Number(config?.schemaVersion);
+  return Number.isInteger(configVersion) && configVersion > 0 ? configVersion : 1;
 }
 
 function duplicateData(value) {

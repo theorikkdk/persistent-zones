@@ -1093,6 +1093,8 @@ function normalizeZoneParts({
   dc,
   item = null
 }) {
+  const usesExplicitPartTerrain = definition.source === "activity" &&
+    coerceNumber(definition.schemaVersion, 1) >= 3;
   const sourceParts = Array.isArray(definition.parts)
     ? definition.parts
     : Array.isArray(definition.zones)
@@ -1112,6 +1114,7 @@ function normalizeZoneParts({
     movementCostDefinition,
     linkedWallsDefinition,
     linkedLightDefinition,
+    usesExplicitPartTerrain,
     dc,
     item
   }));
@@ -1145,6 +1148,7 @@ function normalizeZonePart(partLikeDefinition, index, {
   movementCostDefinition,
   linkedWallsDefinition,
   linkedLightDefinition,
+  usesExplicitPartTerrain = false,
   dc,
   item = null
 }) {
@@ -1155,14 +1159,14 @@ function normalizeZonePart(partLikeDefinition, index, {
     Object.hasOwn(partDefinition, "linkedLight") ||
     Object.hasOwn(partDefinition, "linkedLights");
   const mergedTriggerDefinition = mergePlainObjects(triggerDefinition, partDefinition.triggers);
-  const mergedTerrainDefinition = mergePlainObjects(
-    terrainDefinition,
-    isPlainObject(partDefinition.terrain) ? partDefinition.terrain : {}
-  );
-  const mergedMovementCostDefinition = mergePlainObjects(
-    movementCostDefinition,
-    isPlainObject(partDefinition.movementCost) ? partDefinition.movementCost : {}
-  );
+  const partTerrainDefinition = isPlainObject(partDefinition.terrain) ? partDefinition.terrain : {};
+  const partMovementCostDefinition = isPlainObject(partDefinition.movementCost) ? partDefinition.movementCost : {};
+  const mergedTerrainDefinition = usesExplicitPartTerrain
+    ? mergePlainObjects({ enabled: false }, partTerrainDefinition)
+    : mergePlainObjects(terrainDefinition, partTerrainDefinition);
+  const mergedMovementCostDefinition = usesExplicitPartTerrain
+    ? partMovementCostDefinition
+    : mergePlainObjects(movementCostDefinition, partMovementCostDefinition);
   const partLinkedWallsDefinition = isPlainObject(partDefinition.linkedWalls)
     ? partDefinition.linkedWalls
     : {};

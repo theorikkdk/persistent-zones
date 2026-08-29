@@ -87,6 +87,14 @@
                   <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartWidth"}}</p>
                 </div>
               </div>
+              {{#if ../persistentZoneUsesActiveTerrain}}
+              <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Sections.Terrain"}}</div>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DifficultTerrain"}}</label>
+                <input type="checkbox" name="persistentZone.parts.{{partRow.index}}.terrain.enabled" data-pz-part-field="terrain.enabled" {{#if partRow.terrainEnabled}}checked{{/if}}>
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TerrainPart"}}</p>
+              </div>
+              {{/if}}
               <details class="persistent-zone-activity__part-trigger-section" data-pz-part-trigger-section>
                 <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</summary>
                 <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartTriggers"}}</p>
@@ -362,6 +370,19 @@
     {{/each}}
   </fieldset>
   {{/unless}}
+
+  {{#if persistentZoneUsesActiveTerrain}}
+  {{#unless persistentZoneMultipartEnabled}}
+  <fieldset class="persistent-zone-activity__section">
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Terrain"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DifficultTerrain"}}</label>
+      <input type="checkbox" name="persistentZone.terrain.enabled" {{#if persistentZone.terrain.enabled}}checked{{/if}}>
+      <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TerrainZone"}}</p>
+    </div>
+  </fieldset>
+  {{/unless}}
+  {{/if}}
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>
