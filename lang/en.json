@@ -87,6 +87,11 @@
         "Label": "Label",
         "Role": "Role",
         "GeometryType": "Geometry Type",
+        "ReferencePart": "Reference Part",
+        "SelectReference": "Select a previous part",
+        "Side": "Side",
+        "Gap": "Gap",
+        "Width": "Width",
         "Roles": {
           "primary": "Primary",
           "secondary": "Secondary"
@@ -106,7 +111,19 @@
         "LabelRequired": "Each zone part must have a label.",
         "InvalidRole": "A zone part has an invalid role.",
         "InvalidGeometryType": "A zone part has an invalid geometry type.",
-        "InvalidReference": "A derived zone part must reference an existing previous part."
+        "InvalidReference": "The selected reference part does not exist.",
+        "ReferenceRequired": "A derived zone part requires a reference part.",
+        "ReferenceMustPrecede": "The reference part must appear before the derived part.",
+        "IncompatibleReference": "The reference must be a previous Template part.",
+        "InvalidSide": "The selected side is not valid for this geometry type.",
+        "InvalidGap": "Gap must be zero or greater.",
+        "InvalidWidth": "Width must be greater than zero.",
+        "Sides": {
+          "left": "Left",
+          "right": "Right",
+          "inner": "Inner",
+          "outer": "Outer"
+        }
       },
       "TriggerModes": {
         "None": "None",

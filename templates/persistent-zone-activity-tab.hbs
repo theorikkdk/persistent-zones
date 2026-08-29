@@ -25,7 +25,7 @@
               <input type="hidden" name="persistentZone.parts.{{partRow.index}}.id" value="{{partRow.id}}">
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Label"}}</label>
-                <input type="text" name="persistentZone.parts.{{partRow.index}}.label" value="{{partRow.label}}" required>
+                <input type="text" name="persistentZone.parts.{{partRow.index}}.label" value="{{partRow.label}}" required data-pz-part-field="label">
               </div>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Role"}}</label>
@@ -42,6 +42,32 @@
                     <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
                   {{/each}}
                 </select>
+              </div>
+              <div class="persistent-zone-activity__part-geometry" data-pz-part-derived-geometry {{#unless partRow.derivedGeometry}}hidden{{/unless}}>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Parts.ReferencePart"}}</label>
+                  <select name="persistentZone.parts.{{partRow.index}}.geometry.referencePartId" data-pz-part-field="geometry.referencePartId">
+                    {{#each partRow.referenceOptions as |option|}}
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Side"}}</label>
+                  <select name="persistentZone.parts.{{partRow.index}}.geometry.side" data-pz-part-field="geometry.side">
+                    {{#each partRow.sideOptions as |option|}}
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Gap"}}</label>
+                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.gap" value="{{partRow.gap}}" min="0" step="any" data-pz-part-field="geometry.gap">
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Width"}}</label>
+                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.width" value="{{partRow.width}}" min="0.000001" step="any" data-pz-part-field="geometry.width">
+                </div>
               </div>
               <div class="persistent-zone-activity__part-actions">
                 <button type="button" data-pz-multipart-action="remove" data-pz-part-id="{{partRow.id}}">

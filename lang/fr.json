@@ -87,6 +87,11 @@
         "Label": "Libellé",
         "Role": "Rôle",
         "GeometryType": "Type de géométrie",
+        "ReferencePart": "Partie de référence",
+        "SelectReference": "Sélectionner une partie précédente",
+        "Side": "Côté",
+        "Gap": "Écart",
+        "Width": "Largeur",
         "Roles": {
           "primary": "Principale",
           "secondary": "Secondaire"
@@ -106,7 +111,19 @@
         "LabelRequired": "Chaque partie de zone doit posséder un libellé.",
         "InvalidRole": "Une partie de zone possède un rôle invalide.",
         "InvalidGeometryType": "Une partie de zone possède un type de géométrie invalide.",
-        "InvalidReference": "Une partie dérivée doit référencer une partie précédente existante."
+        "InvalidReference": "La partie de référence sélectionnée n’existe pas.",
+        "ReferenceRequired": "Une partie dérivée nécessite une partie de référence.",
+        "ReferenceMustPrecede": "La partie de référence doit précéder la partie dérivée.",
+        "IncompatibleReference": "La référence doit être une partie Gabarit précédente.",
+        "InvalidSide": "Le côté sélectionné n’est pas valide pour ce type de géométrie.",
+        "InvalidGap": "L’écart doit être supérieur ou égal à zéro.",
+        "InvalidWidth": "La largeur doit être strictement supérieure à zéro.",
+        "Sides": {
+          "left": "Gauche",
+          "right": "Droite",
+          "inner": "Intérieur",
+          "outer": "Extérieur"
+        }
       },
       "TriggerModes": {
         "None": "Aucun",

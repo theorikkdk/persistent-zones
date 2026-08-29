@@ -73,19 +73,12 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       updateConditionalVisibility(root);
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
-        const multipartField = event.target?.closest?.("[data-pz-part-field]");
-        const partCard = multipartField?.closest?.("[data-pz-part-id]");
-        if (multipartField && partCard) {
-          this.#pendingMultipartFieldPatch = {
-            partId: partCard.dataset.pzPartId ?? null,
-            field: multipartField.dataset.pzPartField ?? null,
-            value: multipartField.value
-          };
-        }
+        this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         updateConditionalVisibility(root);
       });
       root.addEventListener("input", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
+        this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         updateConditionalVisibility(root);
       });
       root.querySelectorAll("[data-pz-multipart-action]").forEach((button) => {
@@ -221,7 +214,7 @@ async function processMultipartEditorSubmit({
     parts = await removeMultipartPart(parts, pendingAction.partId);
   }
 
-  validateMultipartParts(parts, existingParts);
+  validateMultipartParts(parts, existingParts, { mode: "editing" });
   submittedDefinition.parts = parts;
   return submittedDefinition;
 }
@@ -231,15 +224,77 @@ function patchMultipartFieldById(parts, { partId = null, field = null, value = n
   const patchedParts = foundry.utils.deepClone(Array.from(parts ?? []));
   const target = patchedParts.find((part) => String(part?.id ?? "") === targetId);
   if (!target) return patchedParts;
-  if (field === "role") {
+  if (field === "label") {
+    target.label = String(value ?? "").trim();
+  } else if (field === "role") {
     target.role = String(value ?? "").trim();
   } else if (field === "geometry.type") {
     target.geometry = target.geometry && typeof target.geometry === "object" && !Array.isArray(target.geometry)
       ? target.geometry
       : {};
     target.geometry.type = String(value ?? "").trim().toLowerCase();
+    initializeDerivedMultipartGeometry(patchedParts, target);
+  } else if (field === "geometry.referencePartId") {
+    target.geometry.referencePartId = String(value ?? "").trim() || null;
+  } else if (field === "geometry.side") {
+    target.geometry.side = String(value ?? "").trim().toLowerCase();
+  } else if (field === "geometry.gap") {
+    patchMultipartGeometryDistances(target.geometry, { gap: value });
+  } else if (field === "geometry.width") {
+    patchMultipartGeometryDistances(target.geometry, { width: value });
   }
   return patchedParts;
+}
+
+function initializeDerivedMultipartGeometry(parts, target) {
+  const geometryType = String(target?.geometry?.type ?? "");
+  if (!isDerivedMultipartGeometryType(geometryType)) return;
+  const targetIndex = parts.findIndex((part) => String(part?.id ?? "") === String(target?.id ?? ""));
+  const compatibleReferences = parts.slice(0, Math.max(0, targetIndex))
+    .filter((part) => String(part?.geometry?.type ?? "template") === "template");
+  const currentReferenceId = String(target.geometry.referencePartId ?? "").trim();
+  if (!currentReferenceId && compatibleReferences.length === 1) {
+    target.geometry.referencePartId = compatibleReferences[0].id;
+  } else if (!currentReferenceId) {
+    target.geometry.referencePartId = null;
+  }
+  const allowedSides = geometryType === "side-of-line" ? ["left", "right"] : ["inner", "outer"];
+  if (!allowedSides.includes(String(target.geometry.side ?? ""))) {
+    target.geometry.side = geometryType === "side-of-line" ? "left" : "outer";
+  }
+  if (!target.geometry.offsetReference) target.geometry.offsetReference = "body-edge";
+  const distances = getMultipartGeometryDistances(target.geometry);
+  patchMultipartGeometryDistances(target.geometry, {
+    gap: distances.gap,
+    width: distances.width > 0 ? distances.width : resolveDefaultMultipartGeometryWidth()
+  });
+}
+
+function getMultipartGeometryDistances(geometry = {}) {
+  const offsetStart = Number(geometry?.offsetStart);
+  const gap = Number.isFinite(offsetStart) ? offsetStart : 0;
+  const offsetEnd = Number(geometry?.offsetEnd);
+  const width = Number.isFinite(offsetEnd) ? Math.max(0, offsetEnd - gap) : 0;
+  return { gap, width };
+}
+
+function patchMultipartGeometryDistances(geometry, { gap = undefined, width = undefined } = {}) {
+  const current = getMultipartGeometryDistances(geometry);
+  const submittedGap = gap === undefined || gap === "" ? current.gap : Number(gap);
+  const submittedWidth = width === undefined || width === "" ? current.width : Number(width);
+  const nextGap = Number.isFinite(submittedGap) ? submittedGap : current.gap;
+  const nextWidth = Number.isFinite(submittedWidth) ? submittedWidth : current.width;
+  geometry.offsetStart = nextGap;
+  geometry.offsetEnd = nextGap + nextWidth;
+}
+
+function resolveDefaultMultipartGeometryWidth() {
+  const gridDistance = Number(globalThis.canvas?.scene?.grid?.distance ?? globalThis.canvas?.dimensions?.distance);
+  return Number.isFinite(gridDistance) && gridDistance > 0 ? gridDistance : 1;
+}
+
+function isDerivedMultipartGeometryType(geometryType) {
+  return geometryType === "side-of-line" || geometryType === "side-of-ring";
 }
 
 function patchMultipartPartsById(existingParts = [], submittedParts = []) {
@@ -268,6 +323,18 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
       : {};
     if (submittedPart?.geometry?.type !== undefined) {
       patched.geometry.type = String(submittedPart.geometry.type ?? "").trim().toLowerCase();
+    }
+    if (submittedPart?.geometry?.referencePartId !== undefined) {
+      patched.geometry.referencePartId = String(submittedPart.geometry.referencePartId ?? "").trim() || null;
+    }
+    if (submittedPart?.geometry?.side !== undefined) {
+      patched.geometry.side = String(submittedPart.geometry.side ?? "").trim().toLowerCase();
+    }
+    if (submittedPart?.geometry?.gap !== undefined || submittedPart?.geometry?.width !== undefined) {
+      patchMultipartGeometryDistances(patched.geometry, {
+        gap: submittedPart.geometry.gap,
+        width: submittedPart.geometry.width
+      });
     }
     if (existingIndex === undefined) {
       existingIndexById.set(id, patchedParts.length);
@@ -325,8 +392,14 @@ async function removeMultipartPart(parts, partId) {
   return confirmed ? parts.filter((part) => String(part?.id ?? "") !== targetId) : parts;
 }
 
-function validateMultipartParts(parts, existingParts = []) {
+function validateMultipartParts(parts, existingParts = [], { mode = "strict" } = {}) {
   if (!parts.length) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.CannotRemoveLast"));
+  const editingErrors = [];
+  const reportEditingError = (localizationKey) => {
+    const error = new Error(localize(localizationKey));
+    if (mode === "strict") throw error;
+    editingErrors.push(error);
+  };
   const existingById = new Map(Array.from(existingParts ?? []).map((part) => [String(part?.id ?? ""), part]));
   const ids = new Set();
   const knownRoles = new Set(["primary", "secondary"]);
@@ -335,7 +408,7 @@ function validateMultipartParts(parts, existingParts = []) {
     const id = String(part?.id ?? "").trim();
     if (!id || ids.has(id)) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidIds"));
     ids.add(id);
-    if (!String(part?.label ?? "").trim()) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.LabelRequired"));
+    if (!String(part?.label ?? "").trim()) reportEditingError("PERSISTENT_ZONES.Activity.Parts.LabelRequired");
     const original = existingById.get(id);
     if (!knownRoles.has(part?.role) && part?.role !== original?.role) {
       throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidRole"));
@@ -344,19 +417,59 @@ function validateMultipartParts(parts, existingParts = []) {
       throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidGeometryType"));
     }
     const referencePartId = String(part?.geometry?.referencePartId ?? "").trim();
-    if (referencePartId) {
+    if (isDerivedMultipartGeometryType(part?.geometry?.type)) {
+      if (!referencePartId) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.ReferenceRequired");
+        return;
+      }
       const referenceIndex = parts.findIndex((candidate) => String(candidate?.id ?? "") === referencePartId);
-      if (referenceIndex < 0 || referenceIndex >= index) {
-        throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidReference"));
+      if (referenceIndex < 0) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.InvalidReference");
+        return;
+      }
+      if (referenceIndex >= index) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.ReferenceMustPrecede");
+        return;
+      }
+      if (String(parts[referenceIndex]?.geometry?.type ?? "template") !== "template") {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.IncompatibleReference");
+      }
+      const allowedSides = part.geometry.type === "side-of-line" ? ["left", "right"] : ["inner", "outer"];
+      if (!allowedSides.includes(String(part.geometry.side ?? ""))) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.InvalidSide");
+      }
+      const rawGap = Number(part.geometry.offsetStart);
+      const { width } = getMultipartGeometryDistances(part.geometry);
+      if (!Number.isFinite(rawGap) || rawGap < 0) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.InvalidGap");
+      }
+      if (!(width > 0) || !(Number(part.geometry.offsetEnd) > rawGap)) {
+        reportEditingError("PERSISTENT_ZONES.Activity.Parts.InvalidWidth");
       }
     }
   });
+  return editingErrors;
 }
 
 function buildMultipartPartRows(parts = []) {
   return Array.from(parts ?? []).map((part, index) => {
     const geometryType = String(part?.geometry?.type ?? "template");
     const role = String(part?.role ?? (index === 0 ? "primary" : "secondary"));
+    const previousCompatibleParts = parts.slice(0, index)
+      .filter((candidate) => String(candidate?.geometry?.type ?? "template") === "template");
+    const referencePartId = String(part?.geometry?.referencePartId ?? "");
+    const referenceOptions = [
+      { value: "", label: "PERSISTENT_ZONES.Activity.Parts.SelectReference", selected: !referencePartId },
+      ...previousCompatibleParts.map((candidate) => ({
+        value: candidate.id,
+        label: candidate.label ?? candidate.id,
+        selected: String(candidate.id) === referencePartId
+      }))
+    ];
+    if (referencePartId && !referenceOptions.some((option) => String(option.value) === referencePartId)) {
+      referenceOptions.push({ value: referencePartId, label: referencePartId, selected: true, invalid: true });
+    }
+    const distances = getMultipartGeometryDistances(part?.geometry ?? {});
     return {
       index,
       number: index + 1,
@@ -364,10 +477,28 @@ function buildMultipartPartRows(parts = []) {
       label: part?.label ?? part?.id ?? "",
       role,
       geometryType,
+      derivedGeometry: isDerivedMultipartGeometryType(geometryType),
+      referenceOptions,
+      sideOptions: buildMultipartSideOptions(geometryType, part?.geometry?.side),
+      gap: distances.gap,
+      width: distances.width,
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
       geometryTypeOptions: buildPreservingChoiceOptions(["template", "side-of-line", "side-of-ring"], geometryType, "PERSISTENT_ZONES.Activity.Parts.GeometryTypes")
     };
   });
+}
+
+function buildMultipartSideOptions(geometryType, currentSide) {
+  const values = geometryType === "side-of-line" ? ["left", "right"] : ["inner", "outer"];
+  const options = values.map((value) => ({
+    value,
+    label: `PERSISTENT_ZONES.Activity.Parts.Sides.${value}`,
+    selected: value === currentSide
+  }));
+  if (currentSide && !values.includes(currentSide)) {
+    options.push({ value: currentSide, label: currentSide, selected: true, invalid: true });
+  }
+  return options;
 }
 
 function buildPreservingChoiceOptions(values, currentValue, localizationRoot) {
@@ -405,6 +536,7 @@ function requestPersistentZoneFormSubmit(root, sheet = null) {
   }
   sheet?.submit?.();
 }
+
 
 
 
@@ -892,6 +1024,13 @@ function updateConditionalVisibility(root) {
     element.hidden = linkedWallPreset !== "custom" || geometry !== "wall" || linkedWallGeometry !== "centerline";
   });
 
+  root.querySelectorAll("[data-pz-part-id]").forEach((partCard) => {
+    const geometryType = partCard.querySelector("[data-pz-part-field='geometry.type']")?.value ?? "template";
+    partCard.querySelectorAll("[data-pz-part-derived-geometry]").forEach((element) => {
+      element.hidden = !isDerivedMultipartGeometryType(geometryType);
+    });
+  });
+
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
     const triggerId = element.dataset.pzTrigger;
     const enabled = root.querySelector(`[name='persistentZone.triggers.${triggerId}.enabled']`)?.checked === true;
@@ -929,6 +1068,17 @@ function updateConditionalVisibility(root) {
       customDC.hidden = mode !== "save-end-turn" || dcMode !== "custom";
     });
   });
+}
+
+function captureMultipartFieldPatch(event) {
+  const multipartField = event?.target?.closest?.("[data-pz-part-field]");
+  const partCard = multipartField?.closest?.("[data-pz-part-id]");
+  if (!multipartField || !partCard) return null;
+  return {
+    partId: partCard.dataset.pzPartId ?? null,
+    field: multipartField.dataset.pzPartField ?? null,
+    value: multipartField.value
+  };
 }
 
 function capturePersistentZoneViewportState(root, event = null) {
