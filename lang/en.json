@@ -9,6 +9,11 @@
       "Hint": "Create a persistent Region that can trigger effects while it remains on the scene.",
       "Help": {
         "ActivityConfig": "This activity stores the Persistent Zones configuration used by the V14-native runtime.",
+        "Multipart": "Create several linked zones from the same placement.",
+        "MultipartDefaults": "These settings are inherited by zone parts unless a part overrides them.",
+        "ReferencePart": "Part used as the base for positioning this zone.",
+        "PartGap": "Distance between the reference zone and this part.",
+        "PartWidth": "Width of this part.",
         "TerrainRuntimePending": "Stores a terrain request for the zone. Runtime difficult terrain is not enabled from this activity yet."
       },
       "Sections": {
@@ -84,6 +89,7 @@
         "PrimaryZone": "Primary Zone",
         "SecondaryZone": "Secondary Zone",
         "Part": "Part",
+        "Identity": "Identity",
         "Label": "Label",
         "Role": "Role",
         "GeometryType": "Geometry Type",
@@ -115,6 +121,7 @@
         "ReferenceRequired": "A derived zone part requires a reference part.",
         "ReferenceMustPrecede": "The reference part must appear before the derived part.",
         "IncompatibleReference": "The reference must be a previous Template part.",
+        "IncompatibleMainGeometry": "This stored geometry is not compatible with the current main zone shape. Choose one of the available geometry types to update it.",
         "InvalidSide": "The selected side is not valid for this geometry type.",
         "InvalidGap": "Gap must be zero or greater.",
         "InvalidWidth": "Width must be greater than zero.",

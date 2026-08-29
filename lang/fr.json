@@ -9,6 +9,11 @@
       "Hint": "Crée une Région persistante qui peut déclencher des effets tant qu'elle reste sur la scène.",
       "Help": {
         "ActivityConfig": "Cette activité stocke la configuration Persistent Zones utilisée par le runtime V14 natif.",
+        "Multipart": "Crée plusieurs zones liées à partir du même placement.",
+        "MultipartDefaults": "Ces réglages sont hérités par les parties de zone, sauf surcharge dans une partie.",
+        "ReferencePart": "Partie utilisée comme base pour positionner cette zone.",
+        "PartGap": "Distance entre la zone de référence et cette partie.",
+        "PartWidth": "Largeur de cette partie.",
         "TerrainRuntimePending": "Stocke une demande de terrain pour la zone. Le terrain difficile runtime n'est pas encore activé depuis cette activité."
       },
       "Sections": {
@@ -84,6 +89,7 @@
         "PrimaryZone": "Zone principale",
         "SecondaryZone": "Zone secondaire",
         "Part": "Partie",
+        "Identity": "Identité",
         "Label": "Libellé",
         "Role": "Rôle",
         "GeometryType": "Type de géométrie",
@@ -115,6 +121,7 @@
         "ReferenceRequired": "Une partie dérivée nécessite une partie de référence.",
         "ReferenceMustPrecede": "La partie de référence doit précéder la partie dérivée.",
         "IncompatibleReference": "La référence doit être une partie Gabarit précédente.",
+        "IncompatibleMainGeometry": "Cette géométrie enregistrée n’est pas compatible avec la forme principale actuelle. Choisissez l’un des types de géométrie disponibles pour la mettre à jour.",
         "InvalidSide": "Le côté sélectionné n’est pas valide pour ce type de géométrie.",
         "InvalidGap": "L’écart doit être supérieur ou égal à zéro.",
         "InvalidWidth": "La largeur doit être strictement supérieure à zéro.",

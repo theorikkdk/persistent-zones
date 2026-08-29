@@ -1,6 +1,6 @@
 <section class="tab activity-{{ tab.id }} {{ tab.cssClass }}" data-tab="{{ tab.id }}" data-group="{{ tab.group }}">
 <div class="persistent-zone-activity">
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Configuration"}}</legend>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.UI.Fields.Enabled"}}</label>
@@ -10,8 +10,9 @@
   </fieldset>
 
   <div data-pz-toggle-target="pz-enabled">
-  <fieldset class="persistent-zone-activity__parts">
+  <fieldset class="persistent-zone-activity__section persistent-zone-activity__parts">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Parts.ZoneParts"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.Multipart"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Parts.UseMultiple"}}</label>
       <input type="checkbox" name="persistentZone.multipartEnabled" data-pz-toggle-source="multipart-editor" {{#if persistentZoneMultipartEnabled}}checked{{/if}}>
@@ -23,6 +24,7 @@
             <summary>{{localize "PERSISTENT_ZONES.Activity.Parts.Part"}} {{partRow.number}} — {{partRow.label}}</summary>
             <div class="persistent-zone-activity__part-content">
               <input type="hidden" name="persistentZone.parts.{{partRow.index}}.id" value="{{partRow.id}}">
+              <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Parts.Identity"}}</div>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Label"}}</label>
                 <input type="text" name="persistentZone.parts.{{partRow.index}}.label" value="{{partRow.label}}" required data-pz-part-field="label">
@@ -35,26 +37,31 @@
                   {{/each}}
                 </select>
               </div>
+              <div class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--geometry">{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</div>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Parts.GeometryType"}}</label>
                 <select name="persistentZone.parts.{{partRow.index}}.geometry.type" data-pz-part-field="geometry.type">
                   {{#each partRow.geometryTypeOptions as |option|}}
-                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.invalid}}disabled{{/if}}>{{localize option.label}}</option>
                   {{/each}}
                 </select>
               </div>
+              {{#if partRow.geometryCompatibilityWarning}}
+                <p class="hint notification warning persistent-zone-activity__compatibility-warning">{{localize "PERSISTENT_ZONES.Activity.Parts.IncompatibleMainGeometry"}}</p>
+              {{/if}}
               <div class="persistent-zone-activity__part-geometry" data-pz-part-derived-geometry {{#unless partRow.derivedGeometry}}hidden{{/unless}}>
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Parts.ReferencePart"}}</label>
-                  <select name="persistentZone.parts.{{partRow.index}}.geometry.referencePartId" data-pz-part-field="geometry.referencePartId">
+                  <select name="persistentZone.parts.{{partRow.index}}.geometry.referencePartId" data-pz-part-field="geometry.referencePartId" {{#unless partRow.derivedGeometry}}disabled{{/unless}}>
                     {{#each partRow.referenceOptions as |option|}}
-                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                      <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.invalid}}disabled{{/if}}>{{localize option.label}}</option>
                     {{/each}}
                   </select>
+                  <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.ReferencePart"}}</p>
                 </div>
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Side"}}</label>
-                  <select name="persistentZone.parts.{{partRow.index}}.geometry.side" data-pz-part-field="geometry.side">
+                  <select name="persistentZone.parts.{{partRow.index}}.geometry.side" data-pz-part-field="geometry.side" {{#unless partRow.derivedGeometry}}disabled{{/unless}}>
                     {{#each partRow.sideOptions as |option|}}
                       <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
                     {{/each}}
@@ -62,11 +69,13 @@
                 </div>
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Gap"}}</label>
-                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.gap" value="{{partRow.gap}}" min="0" step="any" data-pz-part-field="geometry.gap">
+                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.gap" value="{{partRow.gap}}" min="0" step="any" data-pz-part-field="geometry.gap" {{#unless partRow.derivedGeometry}}disabled{{/unless}}>
+                  <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartGap"}}</p>
                 </div>
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Width"}}</label>
-                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.width" value="{{partRow.width}}" min="0.000001" step="any" data-pz-part-field="geometry.width">
+                  <input type="number" name="persistentZone.parts.{{partRow.index}}.geometry.width" value="{{partRow.width}}" min="0.000001" step="any" data-pz-part-field="geometry.width" {{#unless partRow.derivedGeometry}}disabled{{/unless}}>
+                  <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartWidth"}}</p>
                 </div>
               </div>
               <div class="persistent-zone-activity__part-actions">
@@ -88,7 +97,7 @@
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section persistent-zone-activity__geometry">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</legend>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.Shape"}}</label>
@@ -134,8 +143,9 @@
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section persistent-zone-activity__defaults">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
     {{#each persistentZoneTriggerRows as |triggerRow|}}
       <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
         <header class="persistent-zone-activity__trigger-header">
@@ -309,7 +319,7 @@
     {{/each}}
   </fieldset>
 
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StopMovement"}}</label>
@@ -337,8 +347,9 @@
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedWalls"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateWalls"}}</label>
       <input type="checkbox" name="persistentZone.linkedWalls.enabled" data-pz-toggle-source="linked-walls" {{#if persistentZone.linkedWalls.enabled}}checked{{/if}}>
@@ -409,8 +420,9 @@
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedLights"}}</legend>
+    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CreateLights"}}</label>
       <input type="checkbox" name="persistentZone.linkedLights.enabled" data-pz-toggle-source="linked-lights" {{#if persistentZone.linkedLights.enabled}}checked{{/if}}>

@@ -63,13 +63,14 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneLinkedActivityOptions = buildLinkedActivityOptions(this.activity);
     const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
     context.persistentZoneMultipartEnabled = rawParts.length > 0;
-    context.persistentZonePartRows = buildMultipartPartRows(rawParts);
+    context.persistentZonePartRows = buildMultipartPartRows(rawParts, context.persistentZone?.geometry?.type);
     return context;
   }
 
   async _onRender(context, options) {
     await super._onRender(context, options);
     this.element?.querySelectorAll?.(".persistent-zone-activity")?.forEach((root) => {
+      orderPersistentZoneActivitySections(root);
       updateConditionalVisibility(root);
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
@@ -195,7 +196,7 @@ async function processMultipartEditorSubmit({
       "PERSISTENT_ZONES.Activity.Parts.DisableConfirmTitle",
       "PERSISTENT_ZONES.Activity.Parts.DisableConfirm"
     );
-    if (confirmed) delete submittedDefinition.parts;
+    if (confirmed) submittedDefinition.parts = [];
     else submittedDefinition.parts = existingParts;
     return submittedDefinition;
   }
@@ -451,12 +452,16 @@ function validateMultipartParts(parts, existingParts = [], { mode = "strict" } =
   return editingErrors;
 }
 
-function buildMultipartPartRows(parts = []) {
+function buildMultipartPartRows(parts = [], mainGeometryType = "circle") {
+  const supportedDerivedGeometryType = resolveSupportedDerivedMultipartGeometryType(mainGeometryType);
   return Array.from(parts ?? []).map((part, index) => {
     const geometryType = String(part?.geometry?.type ?? "template");
     const role = String(part?.role ?? (index === 0 ? "primary" : "secondary"));
     const previousCompatibleParts = parts.slice(0, index)
-      .filter((candidate) => String(candidate?.geometry?.type ?? "template") === "template");
+      .filter((candidate) =>
+        String(candidate?.geometry?.type ?? "template") === "template" &&
+        geometryType === supportedDerivedGeometryType
+      );
     const referencePartId = String(part?.geometry?.referencePartId ?? "");
     const referenceOptions = [
       { value: "", label: "PERSISTENT_ZONES.Activity.Parts.SelectReference", selected: !referencePartId },
@@ -478,14 +483,42 @@ function buildMultipartPartRows(parts = []) {
       role,
       geometryType,
       derivedGeometry: isDerivedMultipartGeometryType(geometryType),
+      geometryCompatibilityWarning: isDerivedMultipartGeometryType(geometryType) && geometryType !== supportedDerivedGeometryType,
       referenceOptions,
       sideOptions: buildMultipartSideOptions(geometryType, part?.geometry?.side),
       gap: distances.gap,
       width: distances.width,
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
-      geometryTypeOptions: buildPreservingChoiceOptions(["template", "side-of-line", "side-of-ring"], geometryType, "PERSISTENT_ZONES.Activity.Parts.GeometryTypes")
+      geometryTypeOptions: buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, geometryType)
     };
   });
+}
+
+function resolveSupportedDerivedMultipartGeometryType(mainGeometryType) {
+  const geometryType = String(mainGeometryType ?? "").trim().toLowerCase();
+  if (geometryType === "wall") return "side-of-line";
+  if (geometryType === "ring") return "side-of-ring";
+  return null;
+}
+
+function buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, currentValue) {
+  const values = ["template"];
+  if (supportedDerivedGeometryType) values.push(supportedDerivedGeometryType);
+  const options = values.map((value) => ({
+    value,
+    label: `PERSISTENT_ZONES.Activity.Parts.GeometryTypes.${value}`,
+    selected: value === currentValue,
+    invalid: false
+  }));
+  if (currentValue && !values.includes(currentValue)) {
+    options.push({
+      value: currentValue,
+      label: `PERSISTENT_ZONES.Activity.Parts.GeometryTypes.${currentValue}`,
+      selected: true,
+      invalid: true
+    });
+  }
+  return options;
 }
 
 function buildMultipartSideOptions(geometryType, currentSide) {
@@ -1026,8 +1059,12 @@ function updateConditionalVisibility(root) {
 
   root.querySelectorAll("[data-pz-part-id]").forEach((partCard) => {
     const geometryType = partCard.querySelector("[data-pz-part-field='geometry.type']")?.value ?? "template";
+    const derivedGeometryEnabled = isDerivedMultipartGeometryType(geometryType);
     partCard.querySelectorAll("[data-pz-part-derived-geometry]").forEach((element) => {
-      element.hidden = !isDerivedMultipartGeometryType(geometryType);
+      element.hidden = !derivedGeometryEnabled;
+      element.querySelectorAll("input, select, textarea, button").forEach((control) => {
+        control.disabled = !derivedGeometryEnabled;
+      });
     });
   });
 
@@ -1068,6 +1105,14 @@ function updateConditionalVisibility(root) {
       customDC.hidden = mode !== "save-end-turn" || dcMode !== "custom";
     });
   });
+}
+
+function orderPersistentZoneActivitySections(root) {
+  const geometrySection = root?.querySelector?.(".persistent-zone-activity__geometry");
+  const partsSection = root?.querySelector?.(".persistent-zone-activity__parts");
+  if (geometrySection && partsSection && geometrySection.nextElementSibling !== partsSection) {
+    geometrySection.after(partsSection);
+  }
 }
 
 function captureMultipartFieldPatch(event) {
