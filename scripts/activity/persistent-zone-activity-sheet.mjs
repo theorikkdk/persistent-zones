@@ -24,6 +24,8 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   };
 
   #persistentZoneViewportState = null;
+  #pendingMultipartAction = null;
+  #pendingMultipartFieldPatch = null;
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -59,6 +61,9 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneLightPresets = buildLinkedLightPresetOptions(context.persistentZone.linkedLights?.preset);
     context.persistentZoneStatusOptions = buildStatusOptions();
     context.persistentZoneLinkedActivityOptions = buildLinkedActivityOptions(this.activity);
+    const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
+    context.persistentZoneMultipartEnabled = rawParts.length > 0;
+    context.persistentZonePartRows = buildMultipartPartRows(rawParts);
     return context;
   }
 
@@ -68,11 +73,30 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       updateConditionalVisibility(root);
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
+        const multipartField = event.target?.closest?.("[data-pz-part-field]");
+        const partCard = multipartField?.closest?.("[data-pz-part-id]");
+        if (multipartField && partCard) {
+          this.#pendingMultipartFieldPatch = {
+            partId: partCard.dataset.pzPartId ?? null,
+            field: multipartField.dataset.pzPartField ?? null,
+            value: multipartField.value
+          };
+        }
         updateConditionalVisibility(root);
       });
       root.addEventListener("input", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
         updateConditionalVisibility(root);
+      });
+      root.querySelectorAll("[data-pz-multipart-action]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          this.#pendingMultipartAction = {
+            action: button.dataset.pzMultipartAction,
+            partId: button.dataset.pzPartId ?? null
+          };
+          requestPersistentZoneFormSubmit(root, this);
+        });
       });
     });
     restorePersistentZoneViewportState(this.element, this.#persistentZoneViewportState);
@@ -89,10 +113,16 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   }
 
   async _processSubmitData(event, submitData) {
-    preserveExistingMultipartParts(
-      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
-      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
-    );
+    const pendingMultipartAction = this.#pendingMultipartAction;
+    const pendingMultipartFieldPatch = this.#pendingMultipartFieldPatch;
+    this.#pendingMultipartAction = null;
+    this.#pendingMultipartFieldPatch = null;
+    await processMultipartEditorSubmit({
+      submittedDefinition: submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      existingDefinition: this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY],
+      pendingAction: pendingMultipartAction,
+      pendingFieldPatch: pendingMultipartFieldPatch
+    });
     mergeExistingRecoveryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
@@ -141,6 +171,244 @@ export function preserveExistingMultipartParts(submittedDefinition, existingDefi
   return submittedDefinition;
 }
 
+async function processMultipartEditorSubmit({
+  submittedDefinition,
+  existingDefinition,
+  pendingAction = null,
+  pendingFieldPatch = null
+} = {}) {
+  if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
+  if (submittedDefinition.multipartEnabled === undefined) {
+    return preserveExistingMultipartParts(submittedDefinition, existingDefinition);
+  }
+
+  const multipartEnabled = submittedDefinition.multipartEnabled === true ||
+    submittedDefinition.multipartEnabled === "true" ||
+    submittedDefinition.multipartEnabled === "on" ||
+    submittedDefinition.multipartEnabled === 1;
+  delete submittedDefinition.multipartEnabled;
+  const existingParts = Array.isArray(existingDefinition?.parts)
+    ? foundry.utils.deepClone(existingDefinition.parts)
+    : [];
+  const submittedParts = Array.isArray(submittedDefinition.parts) ? submittedDefinition.parts : [];
+  let parts = patchMultipartPartsById(existingParts, submittedParts);
+
+  if (!multipartEnabled) {
+    if (!existingParts.length) {
+      delete submittedDefinition.parts;
+      return submittedDefinition;
+    }
+    const confirmed = await confirmPersistentZoneAction(
+      "PERSISTENT_ZONES.Activity.Parts.DisableConfirmTitle",
+      "PERSISTENT_ZONES.Activity.Parts.DisableConfirm"
+    );
+    if (confirmed) delete submittedDefinition.parts;
+    else submittedDefinition.parts = existingParts;
+    return submittedDefinition;
+  }
+
+  if (!parts.length) {
+    parts = [buildInitialMultipartPart()];
+  }
+
+  if (pendingFieldPatch) {
+    parts = patchMultipartFieldById(parts, pendingFieldPatch);
+  }
+
+  if (pendingAction?.action === "add") {
+    parts.push(buildSecondaryMultipartPart(parts));
+  } else if (pendingAction?.action === "remove") {
+    parts = await removeMultipartPart(parts, pendingAction.partId);
+  }
+
+  validateMultipartParts(parts, existingParts);
+  submittedDefinition.parts = parts;
+  return submittedDefinition;
+}
+
+function patchMultipartFieldById(parts, { partId = null, field = null, value = null } = {}) {
+  const targetId = String(partId ?? "").trim();
+  const patchedParts = foundry.utils.deepClone(Array.from(parts ?? []));
+  const target = patchedParts.find((part) => String(part?.id ?? "") === targetId);
+  if (!target) return patchedParts;
+  if (field === "role") {
+    target.role = String(value ?? "").trim();
+  } else if (field === "geometry.type") {
+    target.geometry = target.geometry && typeof target.geometry === "object" && !Array.isArray(target.geometry)
+      ? target.geometry
+      : {};
+    target.geometry.type = String(value ?? "").trim().toLowerCase();
+  }
+  return patchedParts;
+}
+
+function patchMultipartPartsById(existingParts = [], submittedParts = []) {
+  const patchedParts = foundry.utils.deepClone(Array.from(existingParts ?? []));
+  const existingIndexById = new Map(patchedParts.map((part, index) => [String(part?.id ?? ""), index]));
+  for (const [submittedIndexText, submittedPart] of Object.entries(submittedParts ?? {})) {
+    if (!submittedPart || typeof submittedPart !== "object" || Array.isArray(submittedPart)) continue;
+    const submittedIndex = Number(submittedIndexText);
+    const fallbackId = Number.isInteger(submittedIndex)
+      ? String(patchedParts[submittedIndex]?.id ?? "")
+      : "";
+    const id = String(submittedPart?.id ?? fallbackId).trim();
+    const existingIndex = existingIndexById.get(id);
+    const original = existingIndex === undefined ? null : patchedParts[existingIndex];
+    const patched = foundry.utils.deepClone(original ?? {
+      id,
+      label: patchedParts.length === 0 ? localize("PERSISTENT_ZONES.Activity.Parts.PrimaryZone") : localize("PERSISTENT_ZONES.Activity.Parts.SecondaryZone"),
+      role: patchedParts.length === 0 ? "primary" : "secondary",
+      geometry: { type: "template" }
+    });
+    patched.id = id;
+    if (submittedPart?.label !== undefined) patched.label = String(submittedPart.label ?? "").trim();
+    if (submittedPart?.role !== undefined) patched.role = String(submittedPart.role ?? "").trim();
+    patched.geometry = patched.geometry && typeof patched.geometry === "object" && !Array.isArray(patched.geometry)
+      ? patched.geometry
+      : {};
+    if (submittedPart?.geometry?.type !== undefined) {
+      patched.geometry.type = String(submittedPart.geometry.type ?? "").trim().toLowerCase();
+    }
+    if (existingIndex === undefined) {
+      existingIndexById.set(id, patchedParts.length);
+      patchedParts.push(patched);
+    } else {
+      patchedParts[existingIndex] = patched;
+    }
+  }
+  return patchedParts;
+}
+
+function buildInitialMultipartPart() {
+  return {
+    id: "primary",
+    label: localize("PERSISTENT_ZONES.Activity.Parts.PrimaryZone"),
+    role: "primary",
+    geometry: { type: "template" }
+  };
+}
+
+function buildSecondaryMultipartPart(parts = []) {
+  const usedIds = new Set(Array.from(parts ?? []).map((part) => String(part?.id ?? "")));
+  let id;
+  do {
+    id = `part-${foundry.utils.randomID(6)}`;
+  } while (usedIds.has(id));
+  return {
+    id,
+    label: localize("PERSISTENT_ZONES.Activity.Parts.SecondaryZone"),
+    role: "secondary",
+    geometry: { type: "template" }
+  };
+}
+
+async function removeMultipartPart(parts, partId) {
+  const targetId = String(partId ?? "");
+  if (parts.length <= 1) {
+    notifyMultipartError("PERSISTENT_ZONES.Activity.Parts.CannotRemoveLast");
+    return parts;
+  }
+  const target = parts.find((part) => String(part?.id ?? "") === targetId);
+  if (!target) return parts;
+  const dependents = parts.filter((part) => String(part?.geometry?.referencePartId ?? "") === targetId);
+  if (dependents.length) {
+    notifyMultipartError("PERSISTENT_ZONES.Activity.Parts.CannotRemoveReferenced", {
+      parts: dependents.map((part) => part?.label ?? part?.id).join(", ")
+    });
+    return parts;
+  }
+  const confirmed = await confirmPersistentZoneAction(
+    "PERSISTENT_ZONES.Activity.Parts.RemoveConfirmTitle",
+    "PERSISTENT_ZONES.Activity.Parts.RemoveConfirm",
+    { part: target.label ?? target.id }
+  );
+  return confirmed ? parts.filter((part) => String(part?.id ?? "") !== targetId) : parts;
+}
+
+function validateMultipartParts(parts, existingParts = []) {
+  if (!parts.length) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.CannotRemoveLast"));
+  const existingById = new Map(Array.from(existingParts ?? []).map((part) => [String(part?.id ?? ""), part]));
+  const ids = new Set();
+  const knownRoles = new Set(["primary", "secondary"]);
+  const knownGeometryTypes = new Set(["template", "side-of-line", "side-of-ring"]);
+  parts.forEach((part, index) => {
+    const id = String(part?.id ?? "").trim();
+    if (!id || ids.has(id)) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidIds"));
+    ids.add(id);
+    if (!String(part?.label ?? "").trim()) throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.LabelRequired"));
+    const original = existingById.get(id);
+    if (!knownRoles.has(part?.role) && part?.role !== original?.role) {
+      throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidRole"));
+    }
+    if (!knownGeometryTypes.has(part?.geometry?.type) && part?.geometry?.type !== original?.geometry?.type) {
+      throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidGeometryType"));
+    }
+    const referencePartId = String(part?.geometry?.referencePartId ?? "").trim();
+    if (referencePartId) {
+      const referenceIndex = parts.findIndex((candidate) => String(candidate?.id ?? "") === referencePartId);
+      if (referenceIndex < 0 || referenceIndex >= index) {
+        throw new Error(localize("PERSISTENT_ZONES.Activity.Parts.InvalidReference"));
+      }
+    }
+  });
+}
+
+function buildMultipartPartRows(parts = []) {
+  return Array.from(parts ?? []).map((part, index) => {
+    const geometryType = String(part?.geometry?.type ?? "template");
+    const role = String(part?.role ?? (index === 0 ? "primary" : "secondary"));
+    return {
+      index,
+      number: index + 1,
+      id: part?.id ?? "",
+      label: part?.label ?? part?.id ?? "",
+      role,
+      geometryType,
+      roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
+      geometryTypeOptions: buildPreservingChoiceOptions(["template", "side-of-line", "side-of-ring"], geometryType, "PERSISTENT_ZONES.Activity.Parts.GeometryTypes")
+    };
+  });
+}
+
+function buildPreservingChoiceOptions(values, currentValue, localizationRoot) {
+  const options = Array.from(values);
+  if (currentValue && !options.includes(currentValue)) options.push(currentValue);
+  return options.map((value) => ({
+    value,
+    label: values.includes(value) ? `${localizationRoot}.${value}` : value,
+    selected: value === currentValue
+  }));
+}
+
+async function confirmPersistentZoneAction(titleKey, contentKey, data = {}) {
+  const title = localize(titleKey);
+  const content = game.i18n?.format?.(contentKey, data) ?? localize(contentKey);
+  if (globalThis.foundry?.applications?.api?.DialogV2?.confirm) {
+    return foundry.applications.api.DialogV2.confirm({ window: { title }, content });
+  }
+  if (globalThis.Dialog?.confirm) {
+    return Dialog.confirm({ title, content });
+  }
+  return globalThis.confirm?.(content) ?? false;
+}
+
+function notifyMultipartError(key, data = {}) {
+  const message = game.i18n?.format?.(key, data) ?? localize(key);
+  ui.notifications?.error?.(message);
+}
+
+function requestPersistentZoneFormSubmit(root, sheet = null) {
+  const form = root?.closest?.("form") ?? null;
+  if (form?.requestSubmit) {
+    form.requestSubmit();
+    return;
+  }
+  sheet?.submit?.();
+}
+
+
+
+
 export function normalizePersistentZoneActivitySubmitData(value) {
   const config = foundry.utils.deepClone(value ?? {});
   config.schemaVersion = Number(config.schemaVersion || 1);
@@ -187,15 +455,9 @@ function normalizeActivityParts(parts) {
       const normalized = foundry.utils.deepClone(part);
       normalized.id = buildUniquePartId(normalized.id, index, usedIds);
       normalized.label = String(normalized.label ?? normalized.id).trim() || normalized.id;
-      normalized.role = normalizeChoice(normalized.role, ["primary", "secondary"], index === 0 ? "primary" : "secondary");
-      normalized.geometry = normalizeActivityPartGeometry(normalized.geometry);
-      normalized.targeting = normalizeActivityPartObject(normalized.targeting);
-      normalized.terrain = normalizeActivityPartTerrain(normalized.terrain);
-      normalized.linkedWalls = normalizeActivityPartLinkedWalls(normalized.linkedWalls);
-      normalized.linkedLight = normalizeActivityPartLinkedLight(normalized.linkedLight ?? normalized.linkedLights);
-      if (normalized.triggers !== undefined) {
-        normalized.triggers = normalizeActivityPartTriggers(normalized.triggers, normalized);
-      }
+      normalized.role = String(normalized.role ?? (index === 0 ? "primary" : "secondary")).trim();
+      normalized.geometry = normalizeActivityPartObject(normalized.geometry);
+      normalized.geometry.type = String(normalized.geometry.type ?? "template").trim().toLowerCase();
       return normalized;
     });
 }

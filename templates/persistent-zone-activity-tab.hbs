@@ -10,6 +10,58 @@
   </fieldset>
 
   <div data-pz-toggle-target="pz-enabled">
+  <fieldset class="persistent-zone-activity__parts">
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Parts.ZoneParts"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Parts.UseMultiple"}}</label>
+      <input type="checkbox" name="persistentZone.multipartEnabled" data-pz-toggle-source="multipart-editor" {{#if persistentZoneMultipartEnabled}}checked{{/if}}>
+    </div>
+    <div data-pz-toggle-target="multipart-editor">
+      <div class="persistent-zone-activity__part-list">
+        {{#each persistentZonePartRows as |partRow|}}
+          <details class="persistent-zone-activity__part-card" data-pz-part-id="{{partRow.id}}" open>
+            <summary>{{localize "PERSISTENT_ZONES.Activity.Parts.Part"}} {{partRow.number}} — {{partRow.label}}</summary>
+            <div class="persistent-zone-activity__part-content">
+              <input type="hidden" name="persistentZone.parts.{{partRow.index}}.id" value="{{partRow.id}}">
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Label"}}</label>
+                <input type="text" name="persistentZone.parts.{{partRow.index}}.label" value="{{partRow.label}}" required>
+              </div>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Parts.Role"}}</label>
+                <select name="persistentZone.parts.{{partRow.index}}.role" data-pz-part-field="role">
+                  {{#each partRow.roleOptions as |option|}}
+                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Parts.GeometryType"}}</label>
+                <select name="persistentZone.parts.{{partRow.index}}.geometry.type" data-pz-part-field="geometry.type">
+                  {{#each partRow.geometryTypeOptions as |option|}}
+                    <option value="{{option.value}}" {{#if option.selected}}selected{{/if}}>{{localize option.label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="persistent-zone-activity__part-actions">
+                <button type="button" data-pz-multipart-action="remove" data-pz-part-id="{{partRow.id}}">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                  {{localize "PERSISTENT_ZONES.Activity.Parts.RemovePart"}}
+                </button>
+              </div>
+            </div>
+          </details>
+        {{/each}}
+      </div>
+      <div class="persistent-zone-activity__part-actions">
+        <button type="button" data-pz-multipart-action="add">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          {{localize "PERSISTENT_ZONES.Activity.Parts.AddPart"}}
+        </button>
+      </div>
+    </div>
+  </fieldset>
+
   <fieldset>
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</legend>
     <div class="form-group">

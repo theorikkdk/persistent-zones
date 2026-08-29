@@ -780,3 +780,30 @@
 .persistent-zone-activity__trigger-header label {
   font-weight: 600;
 }
+
+.persistent-zone-activity__part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.persistent-zone-activity__part-card {
+  border: 1px solid var(--color-border-light-tertiary, rgba(0, 0, 0, 0.18));
+  border-radius: 5px;
+  padding: 0.5rem;
+}
+
+.persistent-zone-activity__part-card > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.persistent-zone-activity__part-content {
+  padding-top: 0.65rem;
+}
+
+.persistent-zone-activity__part-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}

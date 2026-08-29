@@ -76,6 +76,38 @@
         "Ring": "Ring",
         "Wall": "Wall"
       },
+      "Parts": {
+        "ZoneParts": "Zone Parts",
+        "UseMultiple": "Use multiple zone parts",
+        "AddPart": "Add Part",
+        "RemovePart": "Remove Part",
+        "PrimaryZone": "Primary Zone",
+        "SecondaryZone": "Secondary Zone",
+        "Part": "Part",
+        "Label": "Label",
+        "Role": "Role",
+        "GeometryType": "Geometry Type",
+        "Roles": {
+          "primary": "Primary",
+          "secondary": "Secondary"
+        },
+        "GeometryTypes": {
+          "template": "Template",
+          "side-of-line": "Side of Line",
+          "side-of-ring": "Side of Ring"
+        },
+        "DisableConfirmTitle": "Disable multipart zones?",
+        "DisableConfirm": "Disable multipart zones and permanently remove all zone-part configuration?",
+        "RemoveConfirmTitle": "Remove zone part?",
+        "RemoveConfirm": "Permanently remove the zone part “{part}”?",
+        "CannotRemoveReferenced": "This part cannot be removed because it is referenced by: {parts}.",
+        "CannotRemoveLast": "The last part cannot be removed while multipart zones are enabled.",
+        "InvalidIds": "Each zone part must have a unique, non-empty ID.",
+        "LabelRequired": "Each zone part must have a label.",
+        "InvalidRole": "A zone part has an invalid role.",
+        "InvalidGeometryType": "A zone part has an invalid geometry type.",
+        "InvalidReference": "A derived zone part must reference an existing previous part."
+      },
       "TriggerModes": {
         "None": "None",
         "Simple": "Simple effect",

@@ -76,6 +76,38 @@
         "Ring": "Anneau",
         "Wall": "Mur"
       },
+      "Parts": {
+        "ZoneParts": "Parties de zone",
+        "UseMultiple": "Utiliser plusieurs parties de zone",
+        "AddPart": "Ajouter une partie",
+        "RemovePart": "Supprimer la partie",
+        "PrimaryZone": "Zone principale",
+        "SecondaryZone": "Zone secondaire",
+        "Part": "Partie",
+        "Label": "Libellé",
+        "Role": "Rôle",
+        "GeometryType": "Type de géométrie",
+        "Roles": {
+          "primary": "Principale",
+          "secondary": "Secondaire"
+        },
+        "GeometryTypes": {
+          "template": "Gabarit",
+          "side-of-line": "Côté d’une ligne",
+          "side-of-ring": "Côté d’un anneau"
+        },
+        "DisableConfirmTitle": "Désactiver les zones multiparties ?",
+        "DisableConfirm": "Désactiver les zones multiparties et supprimer définitivement toute la configuration des parties ?",
+        "RemoveConfirmTitle": "Supprimer la partie de zone ?",
+        "RemoveConfirm": "Supprimer définitivement la partie de zone « {part} » ?",
+        "CannotRemoveReferenced": "Cette partie ne peut pas être supprimée car elle est référencée par : {parts}.",
+        "CannotRemoveLast": "La dernière partie ne peut pas être supprimée tant que les zones multiparties sont activées.",
+        "InvalidIds": "Chaque partie de zone doit posséder un identifiant unique et non vide.",
+        "LabelRequired": "Chaque partie de zone doit posséder un libellé.",
+        "InvalidRole": "Une partie de zone possède un rôle invalide.",
+        "InvalidGeometryType": "Une partie de zone possède un type de géométrie invalide.",
+        "InvalidReference": "Une partie dérivée doit référencer une partie précédente existante."
+      },
       "TriggerModes": {
         "None": "Aucun",
         "Simple": "Effet simple",
