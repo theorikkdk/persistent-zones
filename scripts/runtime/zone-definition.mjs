@@ -1149,6 +1149,11 @@ function normalizeZonePart(partLikeDefinition, index, {
   item = null
 }) {
   const partDefinition = isPlainObject(partLikeDefinition) ? partLikeDefinition : {};
+  const inheritsGlobalLinkedDocuments = index === 0;
+  const hasExplicitLinkedWalls = Object.hasOwn(partDefinition, "linkedWalls");
+  const hasExplicitLinkedLight =
+    Object.hasOwn(partDefinition, "linkedLight") ||
+    Object.hasOwn(partDefinition, "linkedLights");
   const mergedTriggerDefinition = mergePlainObjects(triggerDefinition, partDefinition.triggers);
   const mergedTerrainDefinition = mergePlainObjects(
     terrainDefinition,
@@ -1158,18 +1163,20 @@ function normalizeZonePart(partLikeDefinition, index, {
     movementCostDefinition,
     isPlainObject(partDefinition.movementCost) ? partDefinition.movementCost : {}
   );
-  const mergedLinkedWallsDefinition = mergePlainObjects(
-    linkedWallsDefinition,
-    isPlainObject(partDefinition.linkedWalls) ? partDefinition.linkedWalls : {}
-  );
-  const mergedLinkedLightDefinition = mergePlainObjects(
-    linkedLightDefinition,
-    isPlainObject(partDefinition.linkedLight)
-      ? partDefinition.linkedLight
-      : isPlainObject(partDefinition.linkedLights)
-        ? partDefinition.linkedLights
-        : {}
-  );
+  const partLinkedWallsDefinition = isPlainObject(partDefinition.linkedWalls)
+    ? partDefinition.linkedWalls
+    : {};
+  const partLinkedLightDefinition = isPlainObject(partDefinition.linkedLight)
+    ? partDefinition.linkedLight
+    : isPlainObject(partDefinition.linkedLights)
+      ? partDefinition.linkedLights
+      : {};
+  const mergedLinkedWallsDefinition = inheritsGlobalLinkedDocuments || hasExplicitLinkedWalls
+    ? mergePlainObjects(linkedWallsDefinition, partLinkedWallsDefinition)
+    : mergePlainObjects(linkedWallsDefinition, { enabled: false });
+  const mergedLinkedLightDefinition = inheritsGlobalLinkedDocuments || hasExplicitLinkedLight
+    ? mergePlainObjects(linkedLightDefinition, partLinkedLightDefinition)
+    : mergePlainObjects(linkedLightDefinition, { enabled: false });
   const globalTargeting = normalizeTargeting(normalizedDefinition.targeting);
   const partTargetingDefinition =
     isPlainObject(partDefinition.targeting) && Object.keys(partDefinition.targeting).length > 0

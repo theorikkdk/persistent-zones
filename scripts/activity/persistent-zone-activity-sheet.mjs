@@ -31,6 +31,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #pendingMultipartAction = null;
   #pendingMultipartFieldPatch = null;
   #openMultipartTriggerPartIds = new Set();
+  #multipartPartOpenState = new Map();
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -85,7 +86,18 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       orderPersistentZoneActivitySections(root);
       updateConditionalVisibility(root);
       const multipartEnabled = root.querySelector("[name='persistentZone.multipartEnabled']")?.checked === true;
-      if (!multipartEnabled) this.#openMultipartTriggerPartIds.clear();
+      if (!multipartEnabled) {
+        this.#openMultipartTriggerPartIds.clear();
+        this.#multipartPartOpenState.clear();
+      }
+      restoreMultipartPartCardState(root, this.#multipartPartOpenState);
+      root.querySelectorAll(".persistent-zone-activity__part-card[data-pz-part-id]").forEach((partCard) => {
+        partCard.addEventListener("toggle", () => {
+          const partId = partCard.dataset.pzPartId;
+          if (!partId) return;
+          this.#multipartPartOpenState.set(partId, partCard.open);
+        });
+      });
       restoreMultipartTriggerSectionState(root, this.#openMultipartTriggerPartIds);
       root.querySelectorAll("[data-pz-part-trigger-section]").forEach((section) => {
         section.addEventListener("toggle", () => {
@@ -100,6 +112,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
           this.#openMultipartTriggerPartIds.clear();
+          this.#multipartPartOpenState.clear();
         }
         updateConditionalVisibility(root);
       });
@@ -113,6 +126,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
           event.preventDefault();
           if (button.dataset.pzMultipartAction === "remove" && button.dataset.pzPartId) {
             this.#openMultipartTriggerPartIds.delete(button.dataset.pzPartId);
+            this.#multipartPartOpenState.delete(button.dataset.pzPartId);
           }
           this.#pendingMultipartAction = {
             action: button.dataset.pzMultipartAction,
@@ -1217,6 +1231,22 @@ export function restoreMultipartTriggerSectionState(root, openPartIds = new Set(
   sections.forEach((section) => {
     const partId = section.closest("[data-pz-part-id]")?.dataset?.pzPartId;
     section.open = Boolean(partId && openPartIds.has(partId));
+  });
+}
+
+export function restoreMultipartPartCardState(root, partOpenState = new Map()) {
+  const partCards = Array.from(root?.querySelectorAll?.(".persistent-zone-activity__part-card[data-pz-part-id]") ?? []);
+  const renderedPartIds = new Set(partCards
+    .map((partCard) => partCard.dataset?.pzPartId)
+    .filter(Boolean));
+  for (const partId of partOpenState.keys()) {
+    if (!renderedPartIds.has(partId)) partOpenState.delete(partId);
+  }
+  partCards.forEach((partCard) => {
+    const partId = partCard.dataset?.pzPartId;
+    if (partId && partOpenState.has(partId)) {
+      partCard.open = partOpenState.get(partId) === true;
+    }
   });
 }
 
