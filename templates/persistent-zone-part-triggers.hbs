@@ -1,0 +1,171 @@
+{{#each triggerRows as |triggerRow|}}
+  <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
+    <header class="persistent-zone-activity__trigger-header">
+      <label>{{triggerRow.label}}</label>
+      <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.enabled" {{#if triggerRow.state.enabled}}checked{{/if}}>
+    </header>
+    <div data-pz-trigger-details>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
+        <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.mode" data-pz-part-field="triggers.{{triggerRow.timing}}.mode">
+          {{selectOptions ../persistentZoneChoices.triggerModes selected=triggerRow.state.mode localize=true}}
+        </select>
+      </div>
+
+      <div data-pz-mode="simple-effect">
+        <fieldset>
+          <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Damage"}}</legend>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageEnabled"}}</label>
+            <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.damage.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.damage.enabled" data-pz-toggle-source="part-{{../partRow.id}}-{{triggerRow.timing}}-damage" {{#if triggerRow.state.simpleEffect.damage.enabled}}checked{{/if}}>
+          </div>
+          <div data-pz-toggle-target="part-{{../partRow.id}}-{{triggerRow.timing}}-damage">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageFormula"}}</label>
+              <input type="text" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.damage.formula" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.damage.formula" value="{{triggerRow.state.simpleEffect.damage.formula}}">
+            </div>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.DamageType"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.damage.type" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.damage.type">
+                {{#each ../persistentZoneDamageTypes as |option|}}
+                  <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.damage.type)}}selected{{/if}}>{{option.label}}</option>
+                {{/each}}
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Healing"}}</legend>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.HealingEnabled"}}</label>
+            <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.healing.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.healing.enabled" data-pz-toggle-source="part-{{../partRow.id}}-{{triggerRow.timing}}-healing" {{#if triggerRow.state.simpleEffect.healing.enabled}}checked{{/if}}>
+          </div>
+          <div data-pz-toggle-target="part-{{../partRow.id}}-{{triggerRow.timing}}-healing">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.HealingFormula"}}</label>
+              <input type="text" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.healing.formula" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.healing.formula" value="{{triggerRow.state.simpleEffect.healing.formula}}">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.TemporaryHitPoints"}}</legend>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TempHpEnabled"}}</label>
+            <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.enabled" data-pz-toggle-source="part-{{../partRow.id}}-{{triggerRow.timing}}-temphp" {{#if triggerRow.state.simpleEffect.temporaryHitPoints.enabled}}checked{{/if}}>
+          </div>
+          <div data-pz-toggle-target="part-{{../partRow.id}}-{{triggerRow.timing}}-temphp">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TempHpFormula"}}</label>
+              <input type="text" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.formula" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.formula" value="{{triggerRow.state.simpleEffect.temporaryHitPoints.formula}}">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Save"}}</legend>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveEnabled"}}</label>
+            <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.save.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.save.enabled" data-pz-toggle-source="part-{{../partRow.id}}-{{triggerRow.timing}}-save" {{#if triggerRow.state.simpleEffect.save.enabled}}checked{{/if}}>
+          </div>
+          <div data-pz-toggle-target="part-{{../partRow.id}}-{{triggerRow.timing}}-save">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveAbility"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.save.ability" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.save.ability">
+                {{#each ../persistentZoneAbilities as |option|}}
+                  <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.save.ability)}}selected{{/if}}>{{option.label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDcMode"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.save.dcMode" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.save.dcMode">
+                {{selectOptions ../persistentZoneChoices.saveDcModes selected=triggerRow.state.simpleEffect.save.dcMode localize=true}}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.SaveDc"}}</label>
+              <input type="number" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.save.dc" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.save.dc" value="{{triggerRow.state.simpleEffect.save.dc}}" min="1" step="1">
+            </div>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveResult"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.save.onSave" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.save.onSave">
+                {{selectOptions ../persistentZoneChoices.saveResults selected=triggerRow.state.simpleEffect.save.onSave localize=true}}
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Statuses"}}</legend>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusesEnabled"}}</label>
+            <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.enabled" data-pz-toggle-source="part-{{../partRow.id}}-{{triggerRow.timing}}-statuses" {{#if triggerRow.state.simpleEffect.statuses.enabled}}checked{{/if}}>
+          </div>
+          <div data-pz-toggle-target="part-{{../partRow.id}}-{{triggerRow.timing}}-statuses">
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusId"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.statusId" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.statusId">
+                {{#each ../persistentZoneStatusOptions as |option|}}
+                  <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.statuses.statusId)}}selected{{/if}}>{{option.label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.Activity.Fields.PersistenceMode"}}</label>
+              <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.persistenceMode" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.persistenceMode">
+                {{#if triggerRow.allowsWhileInside}}
+                  {{selectOptions ../persistentZoneChoices.persistenceModes selected=triggerRow.state.simpleEffect.statuses.persistenceMode localize=true}}
+                {{else}}
+                  {{selectOptions ../persistentZoneChoices.exitPersistenceModes selected=triggerRow.state.simpleEffect.statuses.persistenceMode localize=true}}
+                {{/if}}
+              </select>
+            </div>
+              <fieldset data-pz-status-recovery>
+                <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.StatusRecovery"}}</legend>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryMode"}}</label>
+                  <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.mode" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.mode" data-pz-status-recovery-mode>
+                    {{selectOptions ../persistentZoneChoices.statusRecoveryModes selected=triggerRow.state.simpleEffect.statuses.recovery.mode localize=true}}
+                  </select>
+                </div>
+                <div data-pz-status-recovery-options>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryAbility"}}</label>
+                    <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.ability" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.ability">
+                      {{#each ../persistentZoneAbilities as |option|}}
+                        <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.statuses.recovery.ability)}}selected{{/if}}>{{option.label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryDcMode"}}</label>
+                    <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.dcMode" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.dcMode" data-pz-status-recovery-dc-mode>
+                      {{selectOptions ../persistentZoneChoices.statusRecoveryDcModes selected=triggerRow.state.simpleEffect.statuses.recovery.dcMode localize=true}}
+                    </select>
+                  </div>
+                  <div class="form-group" data-pz-status-recovery-custom-dc>
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusRecoveryCustomDC"}}</label>
+                    <input type="number" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.customDC" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.recovery.customDC" value="{{triggerRow.state.simpleEffect.statuses.recovery.customDC}}" min="1" step="1">
+                  </div>
+                </div>
+              </fieldset>
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-pz-mode="linked-activity">
+        <div class="form-group">
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.LinkedActivity"}}</label>
+          <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.linkedActivity.id" data-pz-part-field="triggers.{{triggerRow.timing}}.linkedActivity.id">
+            {{#each triggerRow.linkedActivityOptions as |option|}}
+              <option value="{{option.value}}" data-uuid="{{option.uuid}}" {{#if option.selected}}selected{{/if}}>{{option.label}}</option>
+            {{/each}}
+          </select>
+          <input type="hidden" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.linkedActivity.uuid" data-pz-part-field="triggers.{{triggerRow.timing}}.linkedActivity.uuid" value="{{triggerRow.state.linkedActivity.uuid}}">
+        </div>
+      </div>
+    </div>
+  </section>
+{{/each}}

@@ -844,6 +844,19 @@
   padding-top: 0.65rem;
 }
 
+.persistent-zone-activity__part-subtitle--triggers {
+  border-top: 1px solid var(--color-border-light-tertiary, rgba(0, 0, 0, 0.14));
+  cursor: pointer;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+}
+
+.persistent-zone-activity__part-trigger-editor {
+  border-left: 2px solid var(--color-border-highlight, var(--color-border-light-tertiary));
+  margin-top: 0.5rem;
+  padding-left: 0.65rem;
+}
+
 .persistent-zone-activity__compatibility-warning {
   margin: 0.35rem 0 0.55rem;
   padding: 0.4rem 0.5rem;

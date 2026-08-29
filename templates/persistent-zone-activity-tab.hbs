@@ -78,6 +78,10 @@
                   <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartWidth"}}</p>
                 </div>
               </div>
+              <details class="persistent-zone-activity__part-trigger-section" data-pz-part-trigger-section>
+                <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</summary>
+                <div class="persistent-zone-activity__part-trigger-editor" data-pz-part-trigger-editor></div>
+              </details>
               <div class="persistent-zone-activity__part-actions">
                 <button type="button" data-pz-multipart-action="remove" data-pz-part-id="{{partRow.id}}">
                   <i class="fa-solid fa-trash" aria-hidden="true"></i>
@@ -143,9 +147,9 @@
     </div>
   </fieldset>
 
+  {{#unless persistentZoneMultipartEnabled}}
   <fieldset class="persistent-zone-activity__section persistent-zone-activity__defaults">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</legend>
-    <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.MultipartDefaults"}}</p>
     {{#each persistentZoneTriggerRows as |triggerRow|}}
       <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
         <header class="persistent-zone-activity__trigger-header">
@@ -318,6 +322,7 @@
       </section>
     {{/each}}
   </fieldset>
+  {{/unless}}
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>

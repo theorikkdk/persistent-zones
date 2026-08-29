@@ -26,6 +26,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #persistentZoneViewportState = null;
   #pendingMultipartAction = null;
   #pendingMultipartFieldPatch = null;
+  #openMultipartTriggerPartIds = new Set();
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -63,18 +64,38 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneLinkedActivityOptions = buildLinkedActivityOptions(this.activity);
     const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
     context.persistentZoneMultipartEnabled = rawParts.length > 0;
-    context.persistentZonePartRows = buildMultipartPartRows(rawParts, context.persistentZone?.geometry?.type);
+    context.persistentZonePartRows = buildMultipartPartRows(
+      rawParts,
+      context.persistentZone?.geometry?.type,
+      this.activity,
+      context.persistentZone?.triggers
+    );
     return context;
   }
 
   async _onRender(context, options) {
     await super._onRender(context, options);
+    await renderMultipartTriggerEditors(this.element, buildMultipartTriggerRenderContext(this.activity));
     this.element?.querySelectorAll?.(".persistent-zone-activity")?.forEach((root) => {
       orderPersistentZoneActivitySections(root);
       updateConditionalVisibility(root);
+      const multipartEnabled = root.querySelector("[name='persistentZone.multipartEnabled']")?.checked === true;
+      if (!multipartEnabled) this.#openMultipartTriggerPartIds.clear();
+      restoreMultipartTriggerSectionState(root, this.#openMultipartTriggerPartIds);
+      root.querySelectorAll("[data-pz-part-trigger-section]").forEach((section) => {
+        section.addEventListener("toggle", () => {
+          const partId = section.closest("[data-pz-part-id]")?.dataset?.pzPartId;
+          if (!partId) return;
+          if (section.open) this.#openMultipartTriggerPartIds.add(partId);
+          else this.#openMultipartTriggerPartIds.delete(partId);
+        });
+      });
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
+        if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
+          this.#openMultipartTriggerPartIds.clear();
+        }
         updateConditionalVisibility(root);
       });
       root.addEventListener("input", (event) => {
@@ -85,6 +106,9 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       root.querySelectorAll("[data-pz-multipart-action]").forEach((button) => {
         button.addEventListener("click", (event) => {
           event.preventDefault();
+          if (button.dataset.pzMultipartAction === "remove" && button.dataset.pzPartId) {
+            this.#openMultipartTriggerPartIds.delete(button.dataset.pzPartId);
+          }
           this.#pendingMultipartAction = {
             action: button.dataset.pzMultipartAction,
             partId: button.dataset.pzPartId ?? null
@@ -118,6 +142,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       pendingFieldPatch: pendingMultipartFieldPatch
     });
     mergeExistingRecoveryConfiguration(
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+    );
+    mergeExistingGeometryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
     );
@@ -165,6 +193,19 @@ export function preserveExistingMultipartParts(submittedDefinition, existingDefi
   return submittedDefinition;
 }
 
+export function mergeExistingGeometryConfiguration(submittedDefinition, existingDefinition) {
+  if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
+  const existingGeometry = existingDefinition?.geometry;
+  if (!existingGeometry || typeof existingGeometry !== "object" || Array.isArray(existingGeometry)) {
+    return submittedDefinition;
+  }
+  submittedDefinition.geometry = {
+    ...foundry.utils.deepClone(existingGeometry),
+    ...(submittedDefinition.geometry ?? {})
+  };
+  return submittedDefinition;
+}
+
 async function processMultipartEditorSubmit({
   submittedDefinition,
   existingDefinition,
@@ -181,6 +222,10 @@ async function processMultipartEditorSubmit({
     submittedDefinition.multipartEnabled === "on" ||
     submittedDefinition.multipartEnabled === 1;
   delete submittedDefinition.multipartEnabled;
+  if (multipartEnabled && submittedDefinition.triggers === undefined && existingDefinition?.triggers !== undefined) {
+    submittedDefinition.triggers = foundry.utils.deepClone(existingDefinition.triggers);
+  }
+  const globalTriggers = submittedDefinition.triggers ?? existingDefinition?.triggers ?? {};
   const existingParts = Array.isArray(existingDefinition?.parts)
     ? foundry.utils.deepClone(existingDefinition.parts)
     : [];
@@ -202,15 +247,17 @@ async function processMultipartEditorSubmit({
   }
 
   if (!parts.length) {
-    parts = [buildInitialMultipartPart()];
+    parts = [buildInitialMultipartPart(globalTriggers)];
   }
 
   if (pendingFieldPatch) {
-    parts = patchMultipartFieldById(parts, pendingFieldPatch);
+    parts = await patchMultipartFieldById(parts, pendingFieldPatch, {
+      globalTriggers
+    });
   }
 
   if (pendingAction?.action === "add") {
-    parts.push(buildSecondaryMultipartPart(parts));
+    parts.push(buildSecondaryMultipartPart(parts, globalTriggers));
   } else if (pendingAction?.action === "remove") {
     parts = await removeMultipartPart(parts, pendingAction.partId);
   }
@@ -220,12 +267,26 @@ async function processMultipartEditorSubmit({
   return submittedDefinition;
 }
 
-function patchMultipartFieldById(parts, { partId = null, field = null, value = null } = {}) {
+async function patchMultipartFieldById(parts, {
+  partId = null,
+  field = null,
+  value = null,
+  companionField = null,
+  companionValue = null
+} = {}, {
+  globalTriggers = {}
+} = {}) {
   const targetId = String(partId ?? "").trim();
   const patchedParts = foundry.utils.deepClone(Array.from(parts ?? []));
   const target = patchedParts.find((part) => String(part?.id ?? "") === targetId);
   if (!target) return patchedParts;
-  if (field === "label") {
+  if (field.startsWith("triggers.")) {
+    if (!Object.hasOwn(target, "triggers")) {
+      target.triggers = foundry.utils.deepClone(globalTriggers ?? {});
+    }
+    foundry.utils.setProperty(target, field, value);
+    if (companionField) foundry.utils.setProperty(target, companionField, companionValue);
+  } else if (field === "label") {
     target.label = String(value ?? "").trim();
   } else if (field === "role") {
     target.role = String(value ?? "").trim();
@@ -347,16 +408,17 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
   return patchedParts;
 }
 
-function buildInitialMultipartPart() {
+function buildInitialMultipartPart(globalTriggers = {}) {
   return {
     id: "primary",
     label: localize("PERSISTENT_ZONES.Activity.Parts.PrimaryZone"),
     role: "primary",
-    geometry: { type: "template" }
+    geometry: { type: "template" },
+    triggers: foundry.utils.deepClone(globalTriggers ?? {})
   };
 }
 
-function buildSecondaryMultipartPart(parts = []) {
+function buildSecondaryMultipartPart(parts = [], globalTriggers = {}) {
   const usedIds = new Set(Array.from(parts ?? []).map((part) => String(part?.id ?? "")));
   let id;
   do {
@@ -366,7 +428,8 @@ function buildSecondaryMultipartPart(parts = []) {
     id,
     label: localize("PERSISTENT_ZONES.Activity.Parts.SecondaryZone"),
     role: "secondary",
-    geometry: { type: "template" }
+    geometry: { type: "template" },
+    triggers: foundry.utils.deepClone(globalTriggers ?? {})
   };
 }
 
@@ -452,11 +515,13 @@ function validateMultipartParts(parts, existingParts = [], { mode = "strict" } =
   return editingErrors;
 }
 
-function buildMultipartPartRows(parts = [], mainGeometryType = "circle") {
+function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activity = null, globalTriggers = null) {
   const supportedDerivedGeometryType = resolveSupportedDerivedMultipartGeometryType(mainGeometryType);
   return Array.from(parts ?? []).map((part, index) => {
     const geometryType = String(part?.geometry?.type ?? "template");
     const role = String(part?.role ?? (index === 0 ? "primary" : "secondary"));
+    const hasOwnTriggers = Object.hasOwn(part ?? {}, "triggers");
+    const effectiveTriggers = hasOwnTriggers ? part.triggers ?? {} : globalTriggers ?? {};
     const previousCompatibleParts = parts.slice(0, index)
       .filter((candidate) =>
         String(candidate?.geometry?.type ?? "template") === "template" &&
@@ -481,6 +546,8 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle") {
       id: part?.id ?? "",
       label: part?.label ?? part?.id ?? "",
       role,
+      hasOwnTriggers,
+      triggerRows: buildTriggerRows(normalizeActivityTriggers(effectiveTriggers), activity),
       geometryType,
       derivedGeometry: isDerivedMultipartGeometryType(geometryType),
       geometryCompatibilityWarning: isDerivedMultipartGeometryType(geometryType) && geometryType !== supportedDerivedGeometryType,
@@ -1038,7 +1105,11 @@ function buildStatusOptions() {
 function updateConditionalVisibility(root) {
   const geometry = root.querySelector("[name='persistentZone.geometry.type']")?.value ?? "circle";
   root.querySelectorAll("[data-pz-geometry]").forEach((element) => {
-    element.hidden = element.dataset.pzGeometry !== geometry;
+    const applicable = element.dataset.pzGeometry === geometry;
+    element.hidden = !applicable;
+    element.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = !applicable;
+    });
   });
   root.querySelectorAll("[data-pz-linked-wall-geometry]").forEach((element) => {
     element.hidden = geometry !== "wall";
@@ -1069,9 +1140,8 @@ function updateConditionalVisibility(root) {
   });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
-    const triggerId = element.dataset.pzTrigger;
-    const enabled = root.querySelector(`[name='persistentZone.triggers.${triggerId}.enabled']`)?.checked === true;
-    const mode = root.querySelector(`[name='persistentZone.triggers.${triggerId}.mode']`)?.value ?? "none";
+    const enabled = element.querySelector(":scope > .persistent-zone-activity__trigger-header input[type='checkbox']")?.checked === true;
+    const mode = element.querySelector(":scope > [data-pz-trigger-details] select[name$='.mode']")?.value ?? "none";
     element.querySelectorAll("[data-pz-trigger-details]").forEach((details) => {
       details.hidden = !enabled;
     });
@@ -1115,14 +1185,87 @@ function orderPersistentZoneActivitySections(root) {
   }
 }
 
+export function restoreMultipartTriggerSectionState(root, openPartIds = new Set()) {
+  const sections = Array.from(root?.querySelectorAll?.("[data-pz-part-trigger-section]") ?? []);
+  const renderedPartIds = new Set(sections
+    .map((section) => section.closest("[data-pz-part-id]")?.dataset?.pzPartId)
+    .filter(Boolean));
+  for (const partId of openPartIds) {
+    if (!renderedPartIds.has(partId)) openPartIds.delete(partId);
+  }
+  sections.forEach((section) => {
+    const partId = section.closest("[data-pz-part-id]")?.dataset?.pzPartId;
+    section.open = Boolean(partId && openPartIds.has(partId));
+  });
+}
+
+async function renderMultipartTriggerEditors(sheetElement, context) {
+  const roots = Array.from(sheetElement?.querySelectorAll?.(".persistent-zone-activity") ?? []);
+  if (!roots.length) return;
+  const renderTemplate = globalThis.foundry?.applications?.handlebars?.renderTemplate;
+  if (typeof renderTemplate !== "function") {
+    throw new Error("Foundry V14 Handlebars renderTemplate API is unavailable.");
+  }
+  const rowsById = new Map(Array.from(context?.persistentZonePartRows ?? []).map((row) => [String(row.id), row]));
+  for (const root of roots) {
+    const editors = Array.from(root.querySelectorAll("[data-pz-part-trigger-editor]"));
+    for (const editor of editors) {
+      const partCard = editor.closest("[data-pz-part-id]");
+      const partId = String(partCard?.dataset?.pzPartId ?? "");
+      const row = rowsById.get(partId);
+      if (!row || !Array.isArray(row.triggerRows)) {
+        console.error(`[${MODULE_ID}][activity] Missing multipart trigger editor context.`, {
+          partId,
+          partFound: Boolean(row),
+          triggerRowsFound: Array.isArray(row?.triggerRows),
+          availablePartIds: Array.from(rowsById.keys())
+        });
+        editor.replaceChildren();
+        continue;
+      }
+      const html = await renderTemplate(`modules/${MODULE_ID}/templates/persistent-zone-part-triggers.hbs`, {
+        partRow: row,
+        triggerRows: row.triggerRows,
+        persistentZoneChoices: context.persistentZoneChoices,
+        persistentZoneDamageTypes: context.persistentZoneDamageTypes,
+        persistentZoneAbilities: context.persistentZoneAbilities,
+        persistentZoneStatusOptions: context.persistentZoneStatusOptions
+      });
+      editor.innerHTML = html;
+    }
+  }
+}
+
+function buildMultipartTriggerRenderContext(activity) {
+  const config = activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
+  const normalized = normalizePersistentZoneActivitySubmitData(duplicateData(config));
+  const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
+  return {
+    persistentZonePartRows: buildMultipartPartRows(
+      rawParts,
+      normalized?.geometry?.type,
+      activity,
+      normalized?.triggers
+    ),
+    persistentZoneChoices: buildActivityChoices(),
+    persistentZoneDamageTypes: buildDamageTypeOptions(config?.damage?.type),
+    persistentZoneAbilities: buildAbilityOptions(config?.save?.ability),
+    persistentZoneStatusOptions: buildStatusOptions()
+  };
+}
+
 function captureMultipartFieldPatch(event) {
   const multipartField = event?.target?.closest?.("[data-pz-part-field]");
   const partCard = multipartField?.closest?.("[data-pz-part-id]");
   if (!multipartField || !partCard) return null;
+  const field = multipartField.dataset.pzPartField ?? null;
+  const linkedActivityField = field?.endsWith(".linkedActivity.id") === true;
   return {
     partId: partCard.dataset.pzPartId ?? null,
-    field: multipartField.dataset.pzPartField ?? null,
-    value: multipartField.value
+    field,
+    value: multipartField.type === "checkbox" ? multipartField.checked : multipartField.value,
+    companionField: linkedActivityField ? field.replace(/\.id$/, ".uuid") : null,
+    companionValue: linkedActivityField ? multipartField.selectedOptions?.[0]?.dataset?.uuid ?? "" : null
   };
 }
 
