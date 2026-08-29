@@ -1224,6 +1224,8 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
   templateDefinition = {},
   definition = {}
 } = {}) {
+  const widthSemantics = String(geometryDefinition.widthSemantics ?? "legacy-combined").trim().toLowerCase();
+  const usesIndependentWidths = widthSemantics === "independent";
   const templateRadius = coerceNumber(
     pickFirstDefined(
       templateDefinition.distance,
@@ -1284,6 +1286,12 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
     ),
     null
   );
+  const independentInnerWidth = usesIndependentWidths
+    ? Math.max(0, coerceNumber(geometryDefinition.innerWidth, 0))
+    : null;
+  const independentOuterWidth = usesIndependentWidths
+    ? Math.max(0, coerceNumber(geometryDefinition.outerWidth, 0))
+    : null;
   const explicitOuterRadius = coerceNumber(
     pickFirstDefined(
       geometryDefinition.outerRadius,
@@ -1310,9 +1318,15 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
   let computedInnerRadius = explicitInnerRadius;
   let computedOuterRadius = explicitOuterRadius;
   let radiusResolutionMode = "explicit-radii";
-  const normalizedWallThickness = thickness !== null ? Math.max(0, thickness) : null;
+  const normalizedWallThickness = usesIndependentWidths
+    ? null
+    : thickness !== null ? Math.max(0, thickness) : null;
 
-  if (normalizedWallThickness !== null && normalizedWallThickness > 0) {
+  if (usesIndependentWidths && referenceRadius !== null) {
+    computedInnerRadius = Math.max(0, referenceRadius - independentInnerWidth);
+    computedOuterRadius = referenceRadius + independentOuterWidth;
+    radiusResolutionMode = "independent-widths";
+  } else if (normalizedWallThickness !== null && normalizedWallThickness > 0) {
     if (templateRadius !== null) {
       computedOuterRadius = templateRadius;
       computedInnerRadius = Math.max(0, templateRadius - normalizedWallThickness);
@@ -1344,6 +1358,9 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
   const normalizedGeometry = {
     type: "ring",
     centerMode: "template",
+    widthSemantics: usesIndependentWidths ? "independent" : "legacy-combined",
+    innerWidth: independentInnerWidth,
+    outerWidth: independentOuterWidth,
     innerRadius: computedInnerRadius === null ? null : Math.max(0, computedInnerRadius),
     innerRadiusRatio,
     outerRadius: computedOuterRadius,
@@ -1352,7 +1369,7 @@ function normalizeRingGeometryDefinition(geometryDefinition, {
     wallThickness: normalizedWallThickness,
     thicknessRatio,
     templateRadius,
-    referenceRadiusMode,
+    referenceRadiusMode: usesIndependentWidths ? null : referenceRadiusMode,
     referenceRadius,
     radiusResolutionMode,
     segments: normalizeRingSegmentCount(

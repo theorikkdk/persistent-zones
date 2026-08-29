@@ -1,4 +1,8 @@
-import { ACTIVITY_DEFINITION_FIELD_KEY, MODULE_ID } from "../constants.mjs";
+import {
+  ACTIVITY_DEFINITION_FIELD_KEY,
+  ACTIVITY_DEFINITION_SCHEMA_VERSION,
+  MODULE_ID
+} from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
 
 export class PersistentZoneActivitySheet extends dnd5e.applications.activity.ActivitySheet {
@@ -64,6 +68,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneLinkedActivityOptions = buildLinkedActivityOptions(this.activity);
     const rawParts = Array.isArray(config?.parts) ? foundry.utils.deepClone(config.parts) : [];
     context.persistentZoneMultipartEnabled = rawParts.length > 0;
+    context.persistentZoneRingUsesLegacySemantics = Number(config?.schemaVersion ?? 1) < 2;
     context.persistentZonePartRows = buildMultipartPartRows(
       rawParts,
       context.persistentZone?.geometry?.type,
@@ -141,6 +146,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       pendingAction: pendingMultipartAction,
       pendingFieldPatch: pendingMultipartFieldPatch
     });
+    preserveExistingActivitySchemaVersion(
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
+    );
     mergeExistingRecoveryConfiguration(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]
@@ -190,6 +199,18 @@ export function preserveExistingMultipartParts(submittedDefinition, existingDefi
   if (submittedDefinition.parts !== undefined) return submittedDefinition;
   if (!Array.isArray(existingDefinition?.parts)) return submittedDefinition;
   submittedDefinition.parts = foundry.utils.deepClone(existingDefinition.parts);
+  return submittedDefinition;
+}
+
+export function preserveExistingActivitySchemaVersion(submittedDefinition, existingDefinition) {
+  if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
+  if (submittedDefinition.schemaVersion !== undefined) return submittedDefinition;
+  const existingVersion = Number(existingDefinition?.schemaVersion);
+  submittedDefinition.schemaVersion = Number.isInteger(existingVersion) && existingVersion > 0
+    ? existingVersion
+    : existingDefinition && typeof existingDefinition === "object"
+      ? 1
+      : ACTIVITY_DEFINITION_SCHEMA_VERSION;
   return submittedDefinition;
 }
 

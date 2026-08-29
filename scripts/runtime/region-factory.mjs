@@ -2524,7 +2524,8 @@ function buildV14NativeRingShapesFromResolved(resolved, sourceRegionDocument = n
   const { radius, innerWidth, outerWidth, radiusMapping } = resolveV14NativeRingWidths({
     geometry,
     sourceRadiusPixels: outerRadiusPixels,
-    thicknessPixels: thicknessResolution.thicknessPixels
+    thicknessPixels: thicknessResolution.thicknessPixels,
+    scene: templateDocument?.parent ?? sourceRegionDocument?.parent ?? null
   });
   const rawShape = {
     x: centerX,
@@ -2636,13 +2637,26 @@ function readNativeCircleLikeSourceShape(regionDocument) {
   };
 }
 
-function resolveV14NativeRingWidths({
+export function resolveV14NativeRingWidths({
   geometry = {},
   sourceRadiusPixels = 0,
-  thicknessPixels = null
+  thicknessPixels = null,
+  scene = null
 } = {}) {
   const referenceRadiusMode = String(geometry?.referenceRadiusMode ?? geometry?.radiusReference ?? "outer-edge").toLowerCase();
   const resolvedRadius = Math.max(0, coerceNumber(sourceRadiusPixels, 0));
+  if (String(geometry?.widthSemantics ?? "").toLowerCase() === "independent") {
+    const independentRadius = distanceToPixels(
+      Math.max(0, coerceNumber(geometry?.referenceRadius, 0)),
+      scene
+    ) || resolvedRadius;
+    return {
+      radius: independentRadius,
+      innerWidth: distanceToPixels(Math.max(0, coerceNumber(geometry?.innerWidth, 0)), scene),
+      outerWidth: distanceToPixels(Math.max(0, coerceNumber(geometry?.outerWidth, 0)), scene),
+      radiusMapping: "independent-widths"
+    };
+  }
   const resolvedThickness = Math.max(0, coerceNumber(thicknessPixels, 0));
   if (referenceRadiusMode === "centerline" || referenceRadiusMode === "center-line") {
     const halfWidth = resolvedThickness / 2;
@@ -9159,7 +9173,8 @@ function buildNativeRingShapeFromGeometry(templateDocument, geometry) {
   const { radius, innerWidth, outerWidth } = resolveV14NativeRingWidths({
     geometry,
     sourceRadiusPixels: outerRadiusPixels,
-    thicknessPixels: thicknessResolution.thicknessPixels
+    thicknessPixels: thicknessResolution.thicknessPixels,
+    scene: templateDocument?.parent ?? null
   });
   const ringShape = serializeNativeRingShape({
     x: coerceNumber(templateDocument?.x, 0),

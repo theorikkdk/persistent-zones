@@ -136,13 +136,22 @@
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingInnerWidth"}}</label>
         <input type="number" name="persistentZone.geometry.ringInnerWidth" value="{{persistentZone.geometry.ringInnerWidth}}" min="0" step="any">
-        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingInnerWidth"}}</p>
+        {{#if persistentZoneRingUsesLegacySemantics}}
+          <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.LegacyRingInnerWidth"}}</p>
+        {{else}}
+          <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingInnerWidth"}}</p>
+        {{/if}}
       </div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RingOuterWidth"}}</label>
         <input type="number" name="persistentZone.geometry.ringOuterWidth" value="{{persistentZone.geometry.ringOuterWidth}}" min="0" step="any">
-        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingOuterWidth"}}</p>
+        {{#if persistentZoneRingUsesLegacySemantics}}
+          <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.LegacyRingOuterWidth"}}</p>
+        {{else}}
+          <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingOuterWidth"}}</p>
+        {{/if}}
       </div>
+      {{#if persistentZoneRingUsesLegacySemantics}}
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ReferenceRadiusMode"}}</label>
         <select name="persistentZone.geometry.referenceRadiusMode">
@@ -150,6 +159,7 @@
         </select>
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RingRadiusMode"}}</p>
       </div>
+      {{/if}}
     </div>
     <div data-pz-geometry="wall">
       <div class="form-group">

@@ -1,6 +1,5 @@
 import {
   ACTIVITY_DEFINITION_FIELD_KEY,
-  ACTIVITY_DEFINITION_SCHEMA_VERSION,
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
@@ -42,6 +41,7 @@ export function getActivityId(activity) {
 
 export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config) {
   const source = duplicate(config);
+  const activitySchemaVersion = normalizeActivityDefinitionSchemaVersion(source.schemaVersion);
   const geometry = source.geometry ?? {};
   const damage = source.damage ?? {};
   const save = source.save ?? {};
@@ -56,7 +56,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const itemUuid = getActivityItem(activity)?.uuid ?? null;
 
   const definition = {
-    schemaVersion: ACTIVITY_DEFINITION_SCHEMA_VERSION,
+    schemaVersion: activitySchemaVersion,
     source: "activity",
     enabled: source.enabled !== false,
     label: activity?.name ?? null,
@@ -65,7 +65,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     activityUuid,
     activityType: PERSISTENT_ZONE_ACTIVITY_TYPE,
     template: buildTemplateDefinition(activity, geometryType, geometry),
-    geometry: buildGeometryDefinition(geometryType, geometry),
+    geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {
       required: Boolean(activity?.duration?.concentration)
     },
@@ -225,15 +225,30 @@ function getActivityItem(activity) {
   return activity?.item ?? activity?.parent ?? null;
 }
 
-function buildGeometryDefinition(geometryType, geometry) {
+export function buildGeometryDefinition(geometryType, geometry, {
+  activitySchemaVersion = 1
+} = {}) {
   if (geometryType === "ring") {
     const referenceRadius = numberOrNull(geometry.ringReferenceRadius) ?? numberOrNull(geometry.radius);
+    const resolvedReferenceRadius = Math.max(0, referenceRadius ?? 0);
     const innerWidth = numberOrNull(geometry.ringInnerWidth) ?? 0;
     const outerWidth = numberOrNull(geometry.ringOuterWidth) ?? 0;
+    if (activitySchemaVersion >= 2) {
+      return {
+        type: "ring",
+        widthSemantics: "independent",
+        referenceRadius: resolvedReferenceRadius,
+        innerWidth,
+        outerWidth,
+        innerRadius: Math.max(0, resolvedReferenceRadius - innerWidth),
+        outerRadius: resolvedReferenceRadius + outerWidth
+      };
+    }
     const thickness = Math.max(innerWidth + outerWidth, innerWidth, outerWidth, 0);
     return {
       type: "ring",
-      referenceRadius,
+      widthSemantics: "legacy-combined",
+      referenceRadius: resolvedReferenceRadius,
       referenceRadiusMode: geometry.referenceRadiusMode ?? "outer-edge",
       thickness,
       innerWidth,
@@ -253,6 +268,11 @@ function buildGeometryDefinition(geometryType, geometry) {
     type: "circle",
     radius: numberOrNull(geometry.radius)
   };
+}
+
+function normalizeActivityDefinitionSchemaVersion(value) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : 1;
 }
 
 function buildTriggerDefinitions(triggers = {}, { damage = {}, save = {}, movement = {}, itemUuid = null, activityId = null } = {}) {

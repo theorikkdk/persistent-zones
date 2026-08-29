@@ -11,7 +11,7 @@ export const DEFINITION_FLAG_KEY = "definition";
 export const RUNTIME_FLAG_KEY = "runtime";
 export const PERSISTENT_ZONE_ACTIVITY_TYPE = "persistent-zone";
 export const ACTIVITY_DEFINITION_FIELD_KEY = "persistentZone";
-export const ACTIVITY_DEFINITION_SCHEMA_VERSION = 1;
+export const ACTIVITY_DEFINITION_SCHEMA_VERSION = 2;
 export const NORMALIZED_DEFINITION_VERSION = 2;
 
 export const DEFAULT_REGION_COLOR = "#3B7A57";

@@ -1,4 +1,5 @@
 import {
+  ACTIVITY_DEFINITION_SCHEMA_VERSION,
   MODULE_ID,
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
@@ -24,7 +25,7 @@ export function registerPersistentZoneActivityType() {
     configurable: true,
     persistentZones: {
       moduleId: MODULE_ID,
-      schemaVersion: 1
+      schemaVersion: ACTIVITY_DEFINITION_SCHEMA_VERSION
     }
   };
 
