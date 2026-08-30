@@ -50,7 +50,7 @@ import {
   ZONE_TRIGGER_SUPPORTED_ACTIVITY_TYPES
 } from "../runtime/activity-compatibility.mjs";
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const { ApplicationV2, DialogV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const AUTHORING_APP_ID = `${MODULE_ID}-item-config`;
 const HEADER_BUTTON_CLASS = `${MODULE_ID}-item-config-button`;
@@ -984,11 +984,13 @@ class PersistentZonesItemConfig extends PersistentZonesItemConfigBase {
       return;
     }
 
-    const confirmed = await Dialog.confirm({
-      title: localize(
-        "PERSISTENT_ZONES.UI.ProfileDeleteTitle",
-        "Delete Persistent Zones Profile"
-      ),
+    const confirmed = await DialogV2.confirm({
+      window: {
+        title: localize(
+          "PERSISTENT_ZONES.UI.ProfileDeleteTitle",
+          "Delete Persistent Zones Profile"
+        )
+      },
       content: `<p>${localize(
         "PERSISTENT_ZONES.UI.ProfileDeleteConfirm",
         "Delete the selected Persistent Zones profile?"
@@ -1139,8 +1141,10 @@ class PersistentZonesItemConfig extends PersistentZonesItemConfigBase {
   async #onClear(event) {
     event.preventDefault();
 
-    const confirmed = await Dialog.confirm({
-      title: localize("PERSISTENT_ZONES.UI.ClearTitle", "Clear Persistent Zones Definition"),
+    const confirmed = await DialogV2.confirm({
+      window: {
+        title: localize("PERSISTENT_ZONES.UI.ClearTitle", "Clear Persistent Zones Definition")
+      },
       content: `<p>${localize("PERSISTENT_ZONES.UI.ClearConfirm", "Remove the persistent-zones definition from this Item?")}</p>`
     });
 
