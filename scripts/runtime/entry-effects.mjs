@@ -1051,7 +1051,6 @@ async function applyTriggeredStatuses({
   const created = await actor.createEmbeddedDocuments("ActiveEffect", [{
     name: `${statusData.name} — Persistent Zones source`,
     img: statusData.img,
-    icon: statusData.img,
     statuses: [],
     showIcon: globalThis.CONST?.ACTIVE_EFFECT_SHOW_ICON?.NEVER ?? 0,
     origin: regionDocument?.uuid ?? null,

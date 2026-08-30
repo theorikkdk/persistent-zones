@@ -24,6 +24,8 @@ import {
   trimClosingPolygonPoint,
   wait
 } from "./utils.mjs";
+import { isManagedOwnerEffect, resolveActiveEffectExpiration } from "./active-effect-compat.mjs";
+import { isStatusSourceEffect, qualifyLifecycleOwnerCandidate } from "./owner-effect-qualification.mjs";
 import {
   cleanupLinkedDocumentsForRegion,
   syncLinkedDocumentsForRegion
@@ -93,7 +95,9 @@ export function registerRegionFactoryHooks() {
   Hooks.on("updateMeasuredTemplate", onUpdateMeasuredTemplate);
   Hooks.on("preUpdateRegion", onPreUpdateRegion);
   Hooks.on("createRegion", (...args) => {
-    Promise.resolve(onCreateRegion(...args)).catch((caughtError) => {
+    Promise.resolve(onCreateRegion(...args))
+      .then(() => reconcileMissingOwnerEffectLinksForWorld({ reason: "createRegion-post-create" }))
+      .catch((caughtError) => {
       logV14RegionDiagnostic("createRegionHookFailed", {
         hook: "createRegion",
         reason: caughtError?.message ?? "unknown",
@@ -150,7 +154,15 @@ export function registerRegionFactoryHooks() {
   });
   Hooks.on("preCreateActiveEffect", onPreCreateActiveEffect);
   Hooks.on("preDeleteActiveEffect", onPreDeleteActiveEffect);
-  Hooks.on("deleteActiveEffect", onDeleteActiveEffectGenericOwnerContextCleanup);
+  Hooks.on("deleteActiveEffect", (activeEffect, options = {}) => {
+    Promise.resolve(onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect, options)).catch((caughtError) => {
+      logV14RegionDiagnostic("ownerEffectDeleteReconciliationFailed", {
+        hook: "deleteActiveEffect",
+        effectUuid: activeEffect?.uuid ?? null,
+        reason: caughtError?.message ?? "unknown"
+      });
+      });
+  });
   Hooks.on("preDeleteRegion", onPreDeleteRegion);
   Hooks.on("deleteRegion", (...args) => {
     Promise.resolve(onDeleteRegion(...args)).catch((caughtError) => {
@@ -4801,7 +4813,7 @@ function onPreDeleteActiveEffect(activeEffect, options = {}, userId = null) {
   return undefined;
 }
 
-function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect, options = {}) {
+async function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect, options = {}) {
   const persistentZoneFlags = activeEffect?.flags?.[MODULE_ID] ?? {};
   const statusRecovery = persistentZoneFlags.statusRecovery ?? null;
   if (persistentZoneFlags.managedTriggeredEffect && statusRecovery?.mode) {
@@ -4822,6 +4834,9 @@ function onDeleteActiveEffectGenericOwnerContextCleanup(activeEffect, options = 
     context.effectDeletedAt = Date.now();
     activeGenericOwnerDeleteContexts.set(activeEffect.uuid, context);
     cleanupGenericOwnerDeleteContext(activeEffect.uuid, "deleteActiveEffect");
+  }
+  if (isStatusSourceEffect(activeEffect, MODULE_ID)) {
+    await repairInvalidOwnerEffectReferences(activeEffect?.uuid, { reason: "status-source-deleted" });
   }
 }
 
@@ -4991,7 +5006,7 @@ function evaluateGenericCleanupEffectSuppression(activeEffect, data = {}, option
   const itemUuid = resolveActiveEffectItemUuid(activeEffect, effectData);
   const activityId = resolveActiveEffectActivityId(activeEffect, effectData);
   const workflowId = getPropertyPath(effectData, "flags.midi-qol.workflowId") ?? getPropertyPath(effectData, "flags.dnd5e.workflowId") ?? null;
-  const changes = Array.from(effectData.changes ?? activeEffect?.changes ?? []);
+  const changes = Array.from(effectData.system?.changes ?? activeEffect?.system?.changes ?? effectData.changes ?? activeEffect?.changes ?? []);
   const statuses = extractEffectStatuses(activeEffect, effectData);
   const isDedicatedPzEffect = Boolean(getPropertyPath(effectData, `flags.${MODULE_ID}.managedOwnerEffect`) === true);
   const isManagedTriggeredStatusSource = Boolean(
@@ -5245,7 +5260,7 @@ function summarizeDocumentDependencyState(document) {
     img: document?.img ?? document?.icon ?? objectData?.img ?? objectData?.icon ?? null,
     origin: document?.origin ?? objectData?.origin ?? null,
     flags: duplicateData(objectData?.flags ?? document?.flags ?? null),
-    changes: duplicateData(objectData?.changes ?? document?.changes ?? null),
+    changes: duplicateData(objectData?.system?.changes ?? document?.system?.changes ?? objectData?.changes ?? document?.changes ?? null),
     statuses: duplicateData(Array.from(document?.statuses ?? objectData?.statuses ?? [])),
     duration: duplicateData(objectData?.duration ?? document?.duration ?? null),
     toObject: duplicateData(objectData),
@@ -5498,6 +5513,7 @@ async function onOwnerActiveEffectChanged(hook, activeEffect, changed = {}, opti
     reason: hook,
     changedKeys: Object.keys(changed ?? {})
   });
+  await reconcileMissingOwnerEffectLinksForWorld({ reason: `${hook}-post-effect` });
   logOwnerEffectOwnershipSnapshot({ reason: hook, activeEffect, reconciledCount: reconciled.length });
   await evaluateDedicatedOwnerEffectExpiration(activeEffect, {
     hookName: hook,
@@ -5514,9 +5530,25 @@ async function reconcileMissingOwnerEffectLinksForWorld({ reason = "manual" } = 
   const results = [];
   for (const scene of game?.scenes?.contents ?? []) {
     for (const region of findManagedRegions(scene)) {
-      const runtime = getRegionRuntimeFlags(region) ?? {};
-      if (getOwnerEffectUuidFromRuntime(runtime)) {
-        continue;
+      let runtime = getRegionRuntimeFlags(region) ?? {};
+      const currentOwnerEffectUuid = getOwnerEffectUuidFromRuntime(runtime);
+      if (currentOwnerEffectUuid) {
+        const currentOwnerEffect = resolveOwnerEffectSync(currentOwnerEffectUuid);
+        const currentMatch = currentOwnerEffect
+          ? buildOwnerEffectCandidateMatch(region, runtime, currentOwnerEffect)
+          : null;
+        if (currentMatch?.lifecycleEligible) continue;
+        if (runtime.normalizedDefinition?.concentration?.required !== true) continue;
+        await clearInvalidOwnerEffectLink(region, currentOwnerEffectUuid, {
+          reason,
+          rejectionReason: currentMatch?.lifecycleEligibilityReason ?? "owner-effect-unresolved"
+        });
+        runtime = {
+          ...runtime,
+          ownerEffectUuid: null,
+          activeEffectUuid: null,
+          concentrationEffectUuid: null
+        };
       }
       const reconciliation = reconcileOwnerEffectLinkForRegionSync(region, {
         reason,
@@ -5620,24 +5652,25 @@ function isDedicatedOwnerEffectExpired(activeEffect, {
   const data = activeEffect?.toObject?.() ?? {};
   const duration = data.duration ?? activeEffect?.duration ?? {};
   const disabled = Boolean(activeEffect?.disabled ?? data.disabled);
-  const durationExpired = duration?.expired === true;
-  const remaining = resolveActiveEffectRemaining(activeEffect, duration, context);
-  const remainingExpired = Number.isFinite(remaining) && remaining <= 0;
-  const secondsExpired = isSecondsDurationExpired(duration);
-  const combatExpired = isCombatDurationExpired(duration, context);
-  const expirationDetected = Boolean(durationExpired || remainingExpired || secondsExpired || combatExpired);
+  const expiration = resolveActiveEffectExpiration(activeEffect, {
+    effectData: data,
+    worldTime: context?.worldTime ?? globalThis.game?.time?.worldTime,
+    combat: context?.combat ?? globalThis.game?.combat ?? null
+  });
+  const { durationExpired, remaining, remainingExpired, modernExpired, legacyExpired } = expiration;
+  const expirationDetected = expiration.expired;
   const disabledOnly = disabled && !expirationDetected;
   return {
     expired: expirationDetected && !disabledOnly,
     reason: durationExpired ? "duration-expired-flag" :
       remainingExpired ? "duration-remaining-zero" :
-        secondsExpired ? "duration-seconds-elapsed" :
-          combatExpired ? "duration-combat-elapsed" :
+        modernExpired ? "duration-modern-elapsed" :
+          legacyExpired ? "duration-legacy-elapsed" :
             disabledOnly ? "manual-disabled-or-ambiguous-disabled" : "no-expiration-signal",
     signalSource: durationExpired ? "duration.expired" :
       remainingExpired ? "duration.remaining" :
-        secondsExpired ? "duration.seconds-worldTime" :
-          combatExpired ? "duration.rounds-turns-combat" :
+        modernExpired ? "duration.value-units-start" :
+          legacyExpired ? "duration-legacy-fields" :
             disabledOnly ? "disabled-without-duration-expiration" : "none",
     remaining,
     durationExpired,
@@ -5647,48 +5680,6 @@ function isDedicatedOwnerEffectExpired(activeEffect, {
     changedKeys: Object.keys(changed ?? {}),
     hookName
   };
-}
-
-function resolveActiveEffectRemaining(activeEffect, duration = {}, context = {}) {
-  const candidates = [
-    duration?.remaining,
-    duration?.remainingTime,
-    activeEffect?.remaining
-  ];
-  const direct = candidates.map((value) => coerceNumber(value, NaN)).find((value) => Number.isFinite(value));
-  if (Number.isFinite(direct)) {
-    return direct;
-  }
-  if (Number.isFinite(coerceNumber(duration?.seconds, NaN)) && Number.isFinite(coerceNumber(duration?.startTime, NaN))) {
-    return (coerceNumber(duration.startTime, 0) + coerceNumber(duration.seconds, 0)) - coerceNumber(game?.time?.worldTime ?? context?.worldTime, 0);
-  }
-  return null;
-}
-
-function isSecondsDurationExpired(duration = {}) {
-  const seconds = coerceNumber(duration?.seconds, NaN);
-  const startTime = coerceNumber(duration?.startTime, NaN);
-  const worldTime = coerceNumber(game?.time?.worldTime, NaN);
-  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(startTime) || !Number.isFinite(worldTime)) {
-    return false;
-  }
-  return worldTime >= startTime + seconds;
-}
-
-function isCombatDurationExpired(duration = {}, context = {}) {
-  const rounds = coerceNumber(duration?.rounds, NaN);
-  const turns = coerceNumber(duration?.turns, 0);
-  const startRound = coerceNumber(duration?.startRound, NaN);
-  const startTurn = coerceNumber(duration?.startTurn, 0);
-  const combat = context?.combat ?? game?.combat ?? null;
-  const currentRound = coerceNumber(combat?.round, NaN);
-  const currentTurn = coerceNumber(combat?.turn, 0);
-  if (!Number.isFinite(rounds) || rounds <= 0 || !Number.isFinite(startRound) || !Number.isFinite(currentRound)) {
-    return false;
-  }
-  const elapsedTurns = ((currentRound - startRound) * Math.max(Array.from(combat?.turns ?? []).length, 1)) + (currentTurn - startTurn);
-  const targetTurns = (rounds * Math.max(Array.from(combat?.turns ?? []).length, 1)) + turns;
-  return elapsedTurns >= targetTurns;
 }
 
 function buildOwnerEffectExpirationDecision(activeEffect, region, expiration) {
@@ -6073,6 +6064,8 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
   const sourceTemplateId = runtime.sourceTemplateId ?? runtime.templateId ?? null;
   const activityId = runtime.activityId ?? null;
   const workflowId = runtime.workflowId ?? null;
+  const statusSourceEffect = isStatusSourceEffect(activeEffect, MODULE_ID);
+  const concentrationEffect = hasStructuredConcentrationSignal(activeEffect, effectData);
   const signals = {
     dedicatedOwnerEffect: Boolean(isPersistentZonesDedicatedOwnerEffect(activeEffect) && (
       getPropertyPath(effectData, `flags.${MODULE_ID}.regionId`) === regionId ||
@@ -6088,10 +6081,23 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
     actor: Boolean(actorUuid && effectActor?.uuid === actorUuid),
     item: Boolean(itemUuid && (effectItemUuid === itemUuid || String(activeEffect?.origin ?? "").startsWith(itemUuid)))
   };
-  const hasExplicitSignal = signals.dedicatedOwnerEffect || signals.explicitRegion || signals.explicitTemplate;
-  const hasLaunchSignal = signals.workflow || signals.activity;
+  const qualification = qualifyLifecycleOwnerCandidate({
+    dedicatedOwnerEffect: signals.dedicatedOwnerEffect,
+    statusSourceEffect,
+    concentrationEffect,
+    actorRequired: Boolean(actorUuid),
+    actorMatches: signals.actor,
+    itemRequired: Boolean(itemUuid),
+    itemMatches: signals.item,
+    activityRequired: Boolean(activityId && effectActivityId),
+    activityMatches: signals.activity,
+    workflowMatches: signals.workflow
+  });
+  const hasExplicitSignal = qualification.eligible &&
+    (signals.dedicatedOwnerEffect || signals.explicitRegion || signals.explicitTemplate);
+  const hasLaunchSignal = qualification.eligible && (signals.workflow || signals.activity);
   const matchesActorAndItem = signals.actor && signals.item;
-  const hasAnySignal = hasExplicitSignal || hasLaunchSignal || matchesActorAndItem;
+  const hasAnySignal = qualification.eligible && (hasExplicitSignal || hasLaunchSignal || matchesActorAndItem);
   const resolutionMode = signals.dedicatedOwnerEffect
     ? "persistent-zones-dedicated-owner-effect"
     : signals.explicitRegion
@@ -6115,6 +6121,10 @@ function buildOwnerEffectCandidateMatch(regionDocument, runtime = {}, activeEffe
     matchesActorAndItem,
     actorMatches: signals.actor,
     itemMatches: signals.item,
+    lifecycleEligible: qualification.eligible,
+    lifecycleEligibilityReason: qualification.reason,
+    statusSourceEffect,
+    concentrationEffect,
     hasAnySignal,
     resolutionMode
   };
@@ -6224,7 +6234,7 @@ async function ensureDedicatedOwnerEffectForNonConcentrationRegion(regionDocumen
     origin: runtime.itemUuid ?? null,
     disabled: false,
     ...durationPayload,
-    changes: [],
+    system: { changes: [] },
     flags: {
       [MODULE_ID]: {
         managedOwnerEffect: true,
@@ -6465,7 +6475,7 @@ function evaluateGenericOwnerEffectCleanupSafety(effect, {
     return { safe: false, reason: "missing-or-dedicated-owner-effect" };
   }
   const data = effect?.toObject?.(false) ?? effect?.toObject?.() ?? {};
-  const changes = Array.from(data.changes ?? []);
+  const changes = Array.from(data.system?.changes ?? data.changes ?? []);
   if (changes.length) {
     return { safe: false, reason: "effect-has-mechanical-changes", changeCount: changes.length };
   }
@@ -6714,11 +6724,7 @@ function isNonConcentrationRuntime(runtime = {}) {
 }
 
 function isPersistentZonesDedicatedOwnerEffect(activeEffect) {
-  const data = activeEffect?.toObject?.() ?? {};
-  return Boolean(
-    activeEffect?.flags?.[MODULE_ID]?.managedOwnerEffect === true ||
-      data.flags?.[MODULE_ID]?.managedOwnerEffect === true
-  );
+  return isManagedOwnerEffect(activeEffect, MODULE_ID);
 }
 
 function isRegionDocumentStillPresent(regionDocument) {
@@ -8515,6 +8521,37 @@ async function cleanupOrphanedDedicatedOwnerEffectsForWorld({ reason = "manual" 
     results.push(await deleteDedicatedOwnerEffectIfOrphaned(activeEffect, { reason }));
   }
   return results;
+}
+
+async function repairInvalidOwnerEffectReferences(ownerEffectUuid, { reason = "manual" } = {}) {
+  if (!ownerEffectUuid) return [];
+  const repaired = [];
+  for (const region of findManagedRegionsReferencingOwnerEffect(ownerEffectUuid)) {
+    const runtime = getRegionRuntimeFlags(region) ?? {};
+    if (runtime.normalizedDefinition?.concentration?.required !== true) continue;
+    await clearInvalidOwnerEffectLink(region, ownerEffectUuid, {
+      reason,
+      rejectionReason: "status-source-effect-excluded"
+    });
+    repaired.push(region?.id ?? null);
+  }
+  await reconcileMissingOwnerEffectLinksForWorld({ reason: `${reason}-backfill` });
+  return repaired.filter(Boolean);
+}
+
+async function clearInvalidOwnerEffectLink(regionDocument, ownerEffectUuid, {
+  reason = "manual",
+  rejectionReason = "invalid-lifecycle-owner"
+} = {}) {
+  if (!regionDocument?.update) return false;
+  await regionDocument.update({
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectUuid`]: null,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.activeEffectUuid`]: null,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.concentrationEffectUuid`]: null,
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkReconciledAt`]: Date.now(),
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}.ownerEffectLinkResolutionMode`]: rejectionReason
+  }, { persistentZonesOwnerEffectLinkRepair: true });
+  return true;
 }
 
 async function deleteDedicatedOwnerEffectIfOrphaned(activeEffect, { reason = "manual" } = {}) {

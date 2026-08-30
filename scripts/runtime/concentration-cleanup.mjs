@@ -15,6 +15,7 @@ import { cleanupLinkedDocumentsForRegion } from "./linked-documents.mjs";
 import { createRegionFromTemplate } from "./region-factory.mjs";
 import { findManagedRegionContractsByItem } from "./v14-region-contract.mjs";
 import { getZoneDefinitionFromItem } from "./zone-definition.mjs";
+import { shouldHandleLifecycleEffect } from "./owner-effect-qualification.mjs";
 
 let hooksRegistered = false;
 const pendingRegionCleanup = new Set();
@@ -580,11 +581,13 @@ async function onDeleteActiveEffect(activeEffect, options = {}) {
   if (options?.persistentZonesRegionLifecycleCleanup) {
     return;
   }
-
   try {
     logOwnerEffectEvent("deleteActiveEffect", activeEffect);
     const ownerEffectUuid = activeEffect?.uuid ?? null;
     const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
+    if (!shouldHandleLifecycleEffect(activeEffect, MODULE_ID, { referencedRegionCount: matchingRegions.length })) {
+      return;
+    }
     logOwnerEffectDeletePlan(activeEffect, matchingRegions);
     if (isPersistentZonesDedicatedOwnerEffect(activeEffect)) {
       logDedicatedOwnerDeletePlan(activeEffect, matchingRegions);
@@ -628,9 +631,13 @@ async function onUpdateActiveEffect(activeEffect, changed = {}, options = {}) {
   if (options?.persistentZonesRegionLifecycleCleanup) {
     return;
   }
-
   try {
     logOwnerEffectEvent("updateActiveEffect", activeEffect);
+    const ownerEffectUuid = activeEffect?.uuid ?? null;
+    const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
+    if (!shouldHandleLifecycleEffect(activeEffect, MODULE_ID, { referencedRegionCount: matchingRegions.length })) {
+      return;
+    }
     const changedKeys = Object.keys(changed ?? {});
     const disabledChanged = changedKeys.includes("disabled") || changedKeys.some((key) => key.endsWith(".disabled"));
     if (!disabledChanged) {
@@ -638,8 +645,6 @@ async function onUpdateActiveEffect(activeEffect, changed = {}, options = {}) {
       return;
     }
 
-    const ownerEffectUuid = activeEffect?.uuid ?? null;
-    const matchingRegions = findManagedRegionsByOwnerEffect(ownerEffectUuid);
     const disabled = Boolean(activeEffect?.disabled);
     for (const { scene, regions } of groupRegionsByScene(matchingRegions)) {
       for (const region of regions) {

@@ -155,7 +155,7 @@ export function buildStatusRecoveryPatch(recoveryLike, context = {}) {
       system: {
         changes: [{
           key: MIDI_OVERTIME_CHANGE_KEY,
-          mode: globalThis.CONST?.ACTIVE_EFFECT_MODES?.OVERRIDE ?? 5,
+          type: "override",
           value: overtimeValue
         }]
       },
@@ -207,7 +207,7 @@ export async function updateStatusRecovery(effect, recoveryLike, context = {}) {
     return { ...result, effect, updated: false };
   }
 
-  const retainedChanges = Array.from(effect.changes ?? effect.system?.changes ?? [])
+  const retainedChanges = Array.from(effect.system?.changes ?? effect.changes ?? [])
     .filter((change) => !isManagedOvertimeChange(effect, change))
     .map((change) => typeof change?.toObject === "function" ? change.toObject() : { ...change });
   await effect.update({
@@ -222,7 +222,7 @@ export async function removeStatusRecovery(effect) {
     return { effect, removed: false, reason: "missing-updatable-effect" };
   }
 
-  const changes = Array.from(effect.changes ?? effect.system?.changes ?? []);
+  const changes = Array.from(effect.system?.changes ?? effect.changes ?? []);
   const retainedChanges = changes
     .filter((change) => !isManagedOvertimeChange(effect, change))
     .map((change) => typeof change?.toObject === "function" ? change.toObject() : { ...change });
@@ -235,7 +235,7 @@ export async function removeStatusRecovery(effect) {
 }
 
 export function hasManagedStatusRecoveryOvertime(effect) {
-  return Array.from(effect?.changes ?? effect?.system?.changes ?? [])
+  return Array.from(effect?.system?.changes ?? effect?.changes ?? [])
     .some((change) => isManagedOvertimeChange(effect, change));
 }
 
