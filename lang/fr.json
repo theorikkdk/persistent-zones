@@ -21,9 +21,7 @@
           "DifficultTerrain": { "Name": "Terrain difficile", "Description": "Une zone circulaire avec le terrain difficile natif activé." },
           "Ring": { "Name": "Anneau", "Description": "Un anneau natif v2 avec largeurs intérieure et extérieure indépendantes." },
           "WallLine": { "Name": "Mur / ligne", "Description": "Une Zone persistante linéaire simple sans murs ni lumières liés." },
-          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." },
-          "TestM2OncePerTurn": { "Name": "TEST — M2 Une fois par tour", "Description": "Preset temporaire de validation d'un groupe de fréquence partagé entre création et entrée." },
-          "TestM2Multipart": { "Name": "TEST — M2 Fréquence multipart", "Description": "Preset temporaire de validation d'un groupe de fréquence partagé entre deux parties superposées." }
+          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." }
         }
       },
       "Help": {

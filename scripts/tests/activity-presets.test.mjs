@@ -11,7 +11,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 7);
+  assert.equal(BUILTIN_PRESETS.length, 5);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -176,22 +176,22 @@ test("all technical built-ins replace stale effects with explicit disabled trigg
   }
 });
 
-test("M2 test presets preserve mono and multipart frequency configuration", async () => {
-  const mono = getPersistentZonePreset("test.m2-once-per-turn");
-  assert.equal(mono.category, "development-test");
-  assert.equal(mono.persistentZone.triggers.onCreate.frequency, "once-per-turn");
-  assert.equal(mono.persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
-  assert.equal(mono.persistentZone.triggers.enter.frequencyGroup, "m2-shared");
-  assert.equal(mono.persistentZone.triggers.exit.frequency, "unlimited");
-
-  const multipart = getPersistentZonePreset("test.m2-multipart-frequency");
-  assert.equal(multipart.persistentZone.parts.length, 2);
-  assert.ok(multipart.persistentZone.parts.every((part) => part.triggers.onCreate.frequency === "once-per-turn"));
-  assert.ok(multipart.persistentZone.parts.every((part) => part.triggers.onCreate.frequencyGroup === "m2-multipart"));
-
-  const extracted = extractPresetDataFromActivity({ name: "Frequency", persistentZone: mono.persistentZone }, { id: "user.frequency" });
+test("preset extraction and application preserve frequency configuration", async () => {
+  const persistentZone = {
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "circle", radius: 10 },
+    triggers: {
+      onCreate: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "shared" },
+      enter: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "shared" },
+      exit: { enabled: false, mode: "none", frequency: "unlimited", frequencyGroup: "" }
+    }
+  };
+  const extracted = extractPresetDataFromActivity({ name: "Frequency", persistentZone }, { id: "user.frequency" });
   assert.equal(extracted.persistentZone.triggers.onCreate.frequency, "once-per-turn");
-  assert.equal(extracted.persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
+  assert.equal(extracted.persistentZone.triggers.onCreate.frequencyGroup, "shared");
+  assert.equal(extracted.persistentZone.triggers.enter.frequencyGroup, "shared");
+  assert.equal(extracted.persistentZone.triggers.exit.frequency, "unlimited");
 
   const captured = [];
   await applyPresetToActivity({
@@ -199,7 +199,7 @@ test("M2 test presets preserve mono and multipart frequency configuration", asyn
     item: { async updateActivity(_id, update) { captured.push(update); } }
   }, extracted);
   assert.equal(captured[1].persistentZone.triggers.onCreate.frequency, "once-per-turn");
-  assert.equal(captured[1].persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
+  assert.equal(captured[1].persistentZone.triggers.onCreate.frequencyGroup, "shared");
 });
 
 test("library returns independent copies", () => {

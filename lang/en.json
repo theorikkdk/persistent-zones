@@ -21,9 +21,7 @@
           "DifficultTerrain": { "Name": "Difficult terrain", "Description": "A circular zone with native difficult terrain enabled." },
           "Ring": { "Name": "Ring", "Description": "A native v2 ring with independent inner and outer widths." },
           "WallLine": { "Name": "Wall / line", "Description": "A simple linear Persistent Zone without linked walls or lights." },
-          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." },
-          "TestM2OncePerTurn": { "Name": "TEST — M2 Once per turn", "Description": "Temporary validation preset for a shared on-create and on-enter frequency group." },
-          "TestM2Multipart": { "Name": "TEST — M2 Multipart Frequency", "Description": "Temporary validation preset for one shared on-create frequency group across two overlapping parts." }
+          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." }
         }
       },
       "Help": {

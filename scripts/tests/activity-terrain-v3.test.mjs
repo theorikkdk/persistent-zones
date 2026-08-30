@@ -21,8 +21,6 @@ const { buildLegacyDefinitionFromPersistentZoneActivity } = await import(
 );
 const { normalizeZoneDefinition } = await import("../runtime/zone-definition.mjs");
 const { buildManagedRegionFlags, getRegionRuntime } = await import("../runtime/utils.mjs");
-const { getPersistentZonePreset } = await import("../presets/preset-library.mjs");
-const { applyPresetToActivity } = await import("../presets/preset-utils.mjs");
 const {
   buildInitialMultipartPart,
   buildSecondaryMultipartPart,
@@ -81,19 +79,31 @@ function normalize(config) {
 }
 
 {
-  for (const [presetId, expectedGroup, multipart] of [
-    ["test.m2-once-per-turn", "m2-shared", false],
-    ["test.m2-multipart-frequency", "m2-multipart", true]
+  const activeTrigger = (frequencyGroup) => ({
+    enabled: true,
+    mode: "simple-effect",
+    frequency: "once-per-turn",
+    frequencyGroup,
+    simpleEffect: { damage: { enabled: true, formula: "1", type: "force" } }
+  });
+  for (const [source, expectedGroup, multipart] of [
+    [{
+      schemaVersion: 3,
+      enabled: true,
+      geometry: { type: "circle", radius: 10 },
+      triggers: { onCreate: activeTrigger("shared-mono"), enter: activeTrigger("shared-mono") }
+    }, "shared-mono", false],
+    [{
+      schemaVersion: 3,
+      enabled: true,
+      geometry: { type: "circle", radius: 10 },
+      parts: [
+        { id: "primary", role: "primary", geometry: { type: "template" }, triggers: { onCreate: activeTrigger("shared-multipart") } },
+        { id: "secondary", role: "secondary", geometry: { type: "template" }, triggers: { onCreate: activeTrigger("shared-multipart") } }
+      ]
+    }, "shared-multipart", true]
   ]) {
-    const state = {};
-    const item = {
-      async updateActivity(_id, update) {
-        if (Object.hasOwn(update, "-=persistentZone")) delete state.persistentZone;
-        if (update.persistentZone) state.persistentZone = structuredClone(update.persistentZone);
-      }
-    };
-    await applyPresetToActivity({ id: `activity-${presetId}`, item }, getPersistentZonePreset(presetId));
-    const prepared = normalizePersistentZoneActivitySubmitData(state.persistentZone);
+    const prepared = normalizePersistentZoneActivitySubmitData(source);
     const runtime = normalize(prepared);
     if (multipart) {
       assert.ok(prepared.parts.every((part) => part.triggers.onCreate.frequency === "once-per-turn"));

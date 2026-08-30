@@ -313,18 +313,7 @@ function buildTriggerDefinitions(triggers = {}, { damage = {}, save = {}, moveme
     onStartTurn: buildTriggerConfig(resolveActivityTriggerSource(triggers, "turnStart", "onStartTurn"), { damage, save, movement, triggerId: "turnStart", itemUuid, activityId }),
     onEndTurn: buildTriggerConfig(resolveActivityTriggerSource(triggers, "turnEnd", "onEndTurn"), { damage, save, movement, triggerId: "turnEnd", itemUuid, activityId })
   };
-  logM2ActivityTriggerHandoff(definitions);
   return definitions;
-}
-
-function logM2ActivityTriggerHandoff(triggers = {}) {
-  for (const [trigger, config] of [["onCreate", triggers?.onCreate], ["enter", triggers?.onEnter]]) {
-    console.log(
-      `[PZ M2 TRIGGER HANDOFF] stage=activity | trigger=${trigger} | enabled=${config?.enabled === true} | ` +
-      `mode=${config?.mode ?? "none"} | frequency=${config?.frequency ?? "unlimited"} | ` +
-      `frequencyGroup=${config?.frequencyGroup ?? "null"} | damageEnabled=${config?.damage?.enabled === true || config?.simpleEffect?.damage?.enabled === true}`
-    );
-  }
 }
 
 function resolveActivityTriggerSource(triggers, canonicalKey, legacyKey) {

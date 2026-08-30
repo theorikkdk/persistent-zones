@@ -1060,7 +1060,6 @@ function normalizeTriggers(triggerDefinition, dc, {
     triggerDefinition.onMovement
   );
 
-  logM2TriggerHandoff("definition", { onCreate: createDefinition, onEnter: triggerDefinition.onEnter });
   const normalizedTriggers = {
     onCreate: normalizeTriggerConfig(createDefinition, dc, {
       item,
@@ -1087,7 +1086,6 @@ function normalizeTriggers(triggerDefinition, dc, {
       scene
     })
   };
-  logM2TriggerHandoff("resolved", normalizedTriggers);
   return normalizedTriggers;
 }
 
@@ -1836,16 +1834,6 @@ function normalizeTriggerFrequency(value) {
   return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn"
     ? "once-per-turn"
     : "unlimited";
-}
-
-function logM2TriggerHandoff(stage, triggers = {}) {
-  for (const [trigger, config] of [["onCreate", triggers?.onCreate], ["enter", triggers?.onEnter]]) {
-    console.log(
-      `[PZ M2 TRIGGER HANDOFF] stage=${stage} | trigger=${trigger} | enabled=${config?.enabled === true} | ` +
-      `mode=${config?.mode ?? "none"} | frequency=${config?.frequency ?? "unlimited"} | ` +
-      `frequencyGroup=${config?.frequencyGroup ?? "null"} | damageEnabled=${config?.damage?.enabled === true || config?.simpleEffect?.damage?.enabled === true}`
-    );
-  }
 }
 
 function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {

@@ -35,7 +35,6 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #openMultipartTriggerPartIds = new Set();
   #multipartPartOpenState = new Map();
   #selectedPresetId = "";
-  #pendingFrequencyDiagnostic = null;
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -129,7 +128,6 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
-        this.#pendingFrequencyDiagnostic = captureFrequencyDiagnostic(event) ?? this.#pendingFrequencyDiagnostic;
         if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
           this.#openMultipartTriggerPartIds.clear();
           this.#multipartPartOpenState.clear();
@@ -195,18 +193,6 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     restorePersistentZoneViewportState(this.element, this.#persistentZoneViewportState);
   }
 
-  _prepareSubmitData(event, formData) {
-    const root = event?.target?.closest?.(".persistent-zone-activity") ??
-      this.element?.querySelector?.(".persistent-zone-activity") ??
-      null;
-    if (root) {
-      this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
-      const activeFrequencyControl = root.querySelector("[name$='.frequency']:focus, [name$='.frequencyGroup']:focus");
-      this.#pendingFrequencyDiagnostic = captureFrequencyDiagnostic({ target: activeFrequencyControl }) ?? this.#pendingFrequencyDiagnostic;
-    }
-    return super._prepareSubmitData(event, formData);
-  }
-
   async _processSubmitData(event, submitData) {
     const pendingMultipartAction = this.#pendingMultipartAction;
     const pendingMultipartFieldPatch = this.#pendingMultipartFieldPatch;
@@ -214,9 +200,6 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     this.#pendingMultipartFieldPatch = null;
     const existingDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY];
-    const frequencyDiagnostic = this.#pendingFrequencyDiagnostic;
-    this.#pendingFrequencyDiagnostic = null;
-    const expandedFrequency = readFrequencyDiagnosticValue(submitData?.[ACTIVITY_DEFINITION_FIELD_KEY], frequencyDiagnostic);
     await processMultipartEditorSubmit({
       submittedDefinition: submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       existingDefinition,
@@ -239,47 +222,14 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
     );
     submitData[ACTIVITY_DEFINITION_FIELD_KEY] = persistentZone;
-    const processedFrequency = readFrequencyDiagnosticValue(persistentZone, frequencyDiagnostic);
-
     const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(persistentZone, this.activity);
     foundry.utils.setProperty(submitData, "target.override", true);
     foundry.utils.setProperty(submitData, "target.prompt", true);
     foundry.utils.setProperty(submitData, "target.template", targetTemplate);
 
-    const sentFrequency = readFrequencyDiagnosticValue(submitData[ACTIVITY_DEFINITION_FIELD_KEY], frequencyDiagnostic);
     const result = await super._processSubmitData(event, submitData);
-    if (frequencyDiagnostic) {
-      const storedDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? null;
-      const preparedDefinition = this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? null;
-      console.log(
-        `[PZ M2 FREQUENCY DIAG] trigger=${frequencyDiagnostic.trigger ?? "unknown"} | ` +
-        `formKey=${frequencyDiagnostic.formKey} | raw=${frequencyDiagnostic.raw ?? "null"} | ` +
-        `expanded=${expandedFrequency ?? "null"} | processed=${processedFrequency ?? "null"} | ` +
-        `sent=${sentFrequency ?? "null"} | stored=${readFrequencyDiagnosticValue(storedDefinition, frequencyDiagnostic) ?? "null"} | ` +
-        `prepared=${readFrequencyDiagnosticValue(preparedDefinition, frequencyDiagnostic) ?? "null"}`
-      );
-    }
     return result;
   }
-}
-
-function captureFrequencyDiagnostic(event) {
-  const control = event?.target;
-  const formKey = String(control?.name ?? "");
-  if (!formKey.startsWith(`${ACTIVITY_DEFINITION_FIELD_KEY}.`) || !/\.(frequency|frequencyGroup)$/.test(formKey)) return null;
-  const definitionPath = formKey.slice(`${ACTIVITY_DEFINITION_FIELD_KEY}.`.length);
-  const triggerMatch = definitionPath.match(/triggers\.([^.]+)\.(?:frequency|frequencyGroup)$/);
-  return {
-    formKey,
-    definitionPath,
-    trigger: triggerMatch?.[1] ?? null,
-    raw: control?.value ?? null
-  };
-}
-
-function readFrequencyDiagnosticValue(definition, diagnostic) {
-  if (!definition || !diagnostic?.definitionPath) return null;
-  return foundry.utils.getProperty(definition, diagnostic.definitionPath);
 }
 
 export function mergeExistingRecoveryConfiguration(submittedDefinition, existingDefinition) {

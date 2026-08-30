@@ -93,15 +93,6 @@ export async function applyConfiguredTriggerEffect({
     currentInside: context.currentInside ?? null
   };
 
-  if (["onCreate", "onEnter"].includes(normalizedTiming)) {
-    console.log(
-      `[PZ M2 TRIGGER HANDOFF] stage=read | trigger=${normalizedTiming === "onCreate" ? "onCreate" : "enter"} | ` +
-      `enabled=${configuredTrigger?.enabled === true} | mode=${configuredTrigger?.mode ?? "none"} | ` +
-      `frequency=${configuredTrigger?.frequency ?? "unlimited"} | frequencyGroup=${configuredTrigger?.frequencyGroup ?? "null"} | ` +
-      `damageEnabled=${configuredTrigger?.damage?.enabled === true || configuredTrigger?.simpleEffect?.damage?.enabled === true}`
-    );
-  }
-
   logV14RuntimeDiagnostic("triggerTiming", baseDiagnostic);
   logV14RuntimeDiagnostic("PZ EFFECT CONFIG RESOLVED", {
     ...baseDiagnostic,

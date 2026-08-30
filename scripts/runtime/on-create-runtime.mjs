@@ -14,7 +14,6 @@ export async function applyRegionOnCreateTrigger(regionDocument, {
   const completedBefore = initialRuntime.onCreateTriggerCompleted === true;
   if (completedBefore || onCreateEvaluationsInFlight.has(regionDocument)) {
     const reason = completedBefore ? "already-completed" : "evaluation-in-flight";
-    logOnCreateDiagnostic({ regionDocument, runtime: initialRuntime, completedBefore, completedAfter: completedBefore, skipReason: reason });
     return { applied: false, reason };
   }
 
@@ -24,7 +23,6 @@ export async function applyRegionOnCreateTrigger(regionDocument, {
     const triggerConfig = normalizedDefinition?.triggers?.onCreate ?? normalizedDefinition?.triggers?.create ?? {};
     if (!normalizedDefinition.enabled || !triggerConfig.enabled) {
       await markOnCreateCompleted(regionDocument);
-      logOnCreateDiagnostic({ regionDocument, runtime: initialRuntime, triggerConfig, completedBefore, completedAfter: true, skipReason: "trigger-disabled" });
       return { applied: false, reason: "trigger-disabled" };
     }
 
@@ -60,7 +58,6 @@ export async function applyRegionOnCreateTrigger(regionDocument, {
         : !candidates.length ? "no-candidates"
           : !insideTokens.length ? "not-inside"
             : !effectAttemptTokenIds.length ? "target-filtered" : "no-effect";
-    logOnCreateDiagnostic({ regionDocument, runtime: initialRuntime, triggerConfig, completedBefore, completedAfter: true, candidates, insideTokens, effectAttemptTokenIds, skipReason });
     return { applied: appliedCount > 0, appliedCount, reason: skipReason ?? "completed" };
   } finally {
     onCreateEvaluationsInFlight.delete(regionDocument);
@@ -88,14 +85,4 @@ async function markOnCreateCompleted(regionDocument) {
 async function settleOnCreateGeometry() {
   if (typeof globalThis.requestAnimationFrame === "function") await new Promise((resolve) => globalThis.requestAnimationFrame(() => resolve()));
   await wait(50);
-}
-
-function logOnCreateDiagnostic({ regionDocument, runtime = {}, triggerConfig = {}, completedBefore = false, completedAfter = false, candidates = [], insideTokens = [], effectAttemptTokenIds = [], skipReason = null } = {}) {
-  console.log(
-    `[PZ M2 ONCREATE DIAG] regionId=${regionDocument?.id ?? "null"} | partId=${runtime?.partId ?? "null"} | ` +
-    `triggerEnabled=${triggerConfig?.enabled === true} | triggerMode=${triggerConfig?.mode ?? "none"} | frequency=${triggerConfig?.frequency ?? "unlimited"} | ` +
-    `frequencyGroup=${triggerConfig?.frequencyGroup ?? "null"} | completedBefore=${completedBefore} | candidateTokenCount=${candidates.length} | ` +
-    `candidateTokenIds=${candidates.map((token) => token?.id).filter(Boolean).join(",") || "none"} | insideTokenIds=${insideTokens.map((token) => token?.id).filter(Boolean).join(",") || "none"} | ` +
-    `effectAttemptTokenIds=${effectAttemptTokenIds.join(",") || "none"} | completedAfter=${completedAfter} | skipReason=${skipReason ?? "none"}`
-  );
 }
