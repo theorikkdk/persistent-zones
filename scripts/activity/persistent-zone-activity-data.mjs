@@ -81,6 +81,7 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           exit: createTriggerSchema(fields, false, true),
           turnStart: createTriggerSchema(fields, false, false),
           turnEnd: createTriggerSchema(fields, false, false),
+          onCreate: createTriggerSchema(fields, false, false),
           onEnter: createTriggerSchema(fields, false, false),
           onExit: createTriggerSchema(fields, false, true),
           onMove: createTriggerSchema(fields, false, false),
@@ -243,6 +244,15 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       required: false,
       initial: enabledInitial ? "simple-effect" : "none",
       choices: ["none", "simple-effect", "linked-activity", "simple", "activity"]
+    }),
+    frequency: new fields.StringField({
+      required: false,
+      initial: "unlimited",
+      choices: ["unlimited", "once-per-turn"]
+    }),
+    frequencyGroup: new fields.StringField({
+      required: false,
+      initial: ""
     }),
     simpleEffect: new fields.SchemaField({
       damage: createDamageSchema(fields),

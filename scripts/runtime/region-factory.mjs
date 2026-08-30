@@ -31,6 +31,7 @@ import {
   syncLinkedDocumentsForRegion
 } from "./linked-documents.mjs";
 import { cleanupWhileInsideStatusesForRegion } from "./entry-effects.mjs";
+import { applyRegionGroupOnCreateTriggers, applyRegionOnCreateTrigger } from "./on-create-runtime.mjs";
 import { resolveTemplateSourceContext } from "./template-source-context.mjs";
 import {
   findPersistentZoneActivityOnItem,
@@ -1093,6 +1094,7 @@ export async function createManagedRegionFromRegion(regionDocument, {
     shapes: null,
     stage: "v14-native-region-adoption"
   });
+  await applyRegionOnCreateTrigger(regionDocument);
 
   return {
     handled: true,
@@ -2001,6 +2003,8 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     regionSourceStrategy: getRegionRuntimeFlags(createdRegion)?.regionSourceStrategy ?? null,
     regionDocumentFinal: summarizeRegionDocumentForPipeline(createdRegion)
   });
+
+  await applyRegionOnCreateTrigger(createdRegion);
 
   return {
     handled: true,
@@ -7781,6 +7785,10 @@ async function createManagedRegionDocuments({
     shapeSummary: summarizeRegionCreateData(regionCreateData)
   });
 
+  if (!isRebuild) {
+    await applyRegionGroupOnCreateTriggers(createdRegions);
+  }
+
   return createdRegions;
 }
 
@@ -7817,8 +7825,11 @@ async function ensureManagedRegionRuntimeFlags(regionDocument, runtimeFlagsPaylo
     return null;
   }
 
+  logM2RegionTriggerHandoff("pre-write", runtimeFlagsPayload?.normalizedDefinition?.triggers);
+
   const existingRuntime = getRegionRuntimeFlags(regionDocument);
   if (existingRuntime?.templateId || existingRuntime?.templateUuid) {
+    logM2RegionTriggerHandoff("stored", existingRuntime?.normalizedDefinition?.triggers);
     logV14RegionDiagnostic("regionDocumentFlagsAfterCreate", {
       templateId: templateDocument?.id ?? null,
       sceneId: scene?.id ?? null,
@@ -7846,6 +7857,7 @@ async function ensureManagedRegionRuntimeFlags(regionDocument, runtimeFlagsPaylo
     }
 
     const updatedRuntime = getRegionRuntimeFlags(regionDocument);
+    logM2RegionTriggerHandoff("stored", updatedRuntime?.normalizedDefinition?.triggers);
     logV14RegionDiagnostic("regionDocumentFlagsAfterUpdate", {
       templateId: templateDocument?.id ?? null,
       sceneId: scene?.id ?? null,
@@ -7906,6 +7918,16 @@ async function ensureManagedRegionRuntimeFlags(regionDocument, runtimeFlagsPaylo
       regionManagedFlagsPayload: duplicateData(runtimeFlagsPayload)
     });
     return null;
+  }
+}
+
+function logM2RegionTriggerHandoff(stage, triggers = {}) {
+  for (const [trigger, config] of [["onCreate", triggers?.onCreate], ["enter", triggers?.onEnter]]) {
+    console.log(
+      `[PZ M2 TRIGGER HANDOFF] stage=${stage} | trigger=${trigger} | enabled=${config?.enabled === true} | ` +
+      `mode=${config?.mode ?? "none"} | frequency=${config?.frequency ?? "unlimited"} | ` +
+      `frequencyGroup=${config?.frequencyGroup ?? "null"} | damageEnabled=${config?.damage?.enabled === true || config?.simpleEffect?.damage?.enabled === true}`
+    );
   }
 }
 

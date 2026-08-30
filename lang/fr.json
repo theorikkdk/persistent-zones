@@ -21,7 +21,9 @@
           "DifficultTerrain": { "Name": "Terrain difficile", "Description": "Une zone circulaire avec le terrain difficile natif activé." },
           "Ring": { "Name": "Anneau", "Description": "Un anneau natif v2 avec largeurs intérieure et extérieure indépendantes." },
           "WallLine": { "Name": "Mur / ligne", "Description": "Une Zone persistante linéaire simple sans murs ni lumières liés." },
-          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." }
+          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." },
+          "TestM2OncePerTurn": { "Name": "TEST — M2 Une fois par tour", "Description": "Preset temporaire de validation d'un groupe de fréquence partagé entre création et entrée." },
+          "TestM2Multipart": { "Name": "TEST — M2 Fréquence multipart", "Description": "Preset temporaire de validation d'un groupe de fréquence partagé entre deux parties superposées." }
         }
       },
       "Help": {
@@ -48,6 +50,8 @@
         "RingSide": "Intérieur va vers le centre ; Extérieur s'éloigne du centre.",
         "PartTriggers": "Ces déclenchements concernent uniquement cette partie de zone.",
         "TriggersSingle": "Détermine ce qui se produit lorsqu'un token interagit avec cette zone.",
+        "TriggerCreate": "Se produit une fois pour chaque token déjà dans la zone après la création complète de sa Region.",
+        "TriggerFrequencyGroup": "Les déclenchements utilisant le même groupe partagent la limite d'une fois par tour. La limite s'applique pendant un combat actif ; hors combat, le déclenchement reste illimité.",
         "TriggerEnter": "Se produit lorsqu'un token passe de l'extérieur vers l'intérieur de la zone.",
         "TriggerMove": "Se produit pendant un mouvement qui reste dans la zone, selon les règles de pas configurées ; ce n'est pas nécessairement une application par case parcourue.",
         "TriggerExit": "Se produit lorsqu'un token passe de l'intérieur vers l'extérieur de la zone.",
@@ -95,6 +99,8 @@
         "ReferenceRadiusMode": "Mode du rayon de référence",
         "WallLength": "Longueur du mur",
         "WallThickness": "Épaisseur du mur",
+        "TriggerFrequency": "Fréquence",
+        "TriggerFrequencyGroup": "Groupe de fréquence partagé",
         "DamageEnabled": "Appliquer des dégâts",
         "HealingEnabled": "Appliquer un soin",
         "HealingFormula": "Formule de soin",
@@ -196,11 +202,17 @@
         "Centerline": "Ligne centrale",
         "InnerEdge": "Bord intérieur"
       },
+      "TriggerFrequencies": {
+        "Unlimited": "Illimitée",
+        "OncePerTurn": "Une fois par tour"
+      },
       "LinkedWallGeometry": {
         "Centerline": "Axe central",
         "Perimeter": "Périmètre"
       },
       "Triggers": {
+        "create": "À la création",
+        "onCreate": "À la création",
         "enter": "À l'entrée",
         "move": "Au mouvement",
         "exit": "À la sortie",

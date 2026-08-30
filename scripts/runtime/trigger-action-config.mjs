@@ -13,6 +13,8 @@ export function resolveTriggerActionConfiguration({
 
   return {
     mode,
+    frequency: normalizeTriggerFrequency(config.frequency),
+    frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
     damage: config.damage ?? simpleEffect.damage ?? {},
     save: config.save ?? simpleEffect.save ?? {},
     statuses,
@@ -37,6 +39,9 @@ export function resolveTriggerActionConfiguration({
 function getTriggerFromZoneConfiguration(zoneConfiguration, triggerId) {
   const triggers = zoneConfiguration?.triggers ?? {};
   switch (String(triggerId ?? "")) {
+    case "create":
+    case "onCreate":
+      return triggers.onCreate ?? triggers.create ?? null;
     case "enter":
     case "onEnter":
       return triggers.enter ?? triggers.onEnter ?? null;
@@ -55,6 +60,10 @@ function getTriggerFromZoneConfiguration(zoneConfiguration, triggerId) {
     default:
       return null;
   }
+}
+
+function normalizeTriggerFrequency(value) {
+  return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited";
 }
 
 function normalizeTriggerMode(value) {

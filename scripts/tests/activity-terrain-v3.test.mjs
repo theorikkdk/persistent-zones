@@ -20,9 +20,13 @@ const { buildLegacyDefinitionFromPersistentZoneActivity } = await import(
   "../activity/persistent-zone-activity-utils.mjs"
 );
 const { normalizeZoneDefinition } = await import("../runtime/zone-definition.mjs");
+const { buildManagedRegionFlags, getRegionRuntime } = await import("../runtime/utils.mjs");
+const { getPersistentZonePreset } = await import("../presets/preset-library.mjs");
+const { applyPresetToActivity } = await import("../presets/preset-utils.mjs");
 const {
   buildInitialMultipartPart,
   buildSecondaryMultipartPart,
+  normalizePersistentZoneActivitySubmitData,
   preserveExistingActivitySchemaVersion
 } = await import("../activity/persistent-zone-activity-sheet.mjs");
 
@@ -62,6 +66,104 @@ function convert(config) {
 
 function normalize(config) {
   return normalizeZoneDefinition(convert(config));
+}
+
+{
+  const migrated = normalizePersistentZoneActivitySubmitData({
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "circle", radius: 10 },
+    triggers: { create: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "legacy-alias" } }
+  });
+  assert.equal(migrated.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(migrated.triggers.onCreate.frequencyGroup, "legacy-alias");
+  assert.equal(Object.hasOwn(migrated.triggers, "create"), false);
+}
+
+{
+  for (const [presetId, expectedGroup, multipart] of [
+    ["test.m2-once-per-turn", "m2-shared", false],
+    ["test.m2-multipart-frequency", "m2-multipart", true]
+  ]) {
+    const state = {};
+    const item = {
+      async updateActivity(_id, update) {
+        if (Object.hasOwn(update, "-=persistentZone")) delete state.persistentZone;
+        if (update.persistentZone) state.persistentZone = structuredClone(update.persistentZone);
+      }
+    };
+    await applyPresetToActivity({ id: `activity-${presetId}`, item }, getPersistentZonePreset(presetId));
+    const prepared = normalizePersistentZoneActivitySubmitData(state.persistentZone);
+    const runtime = normalize(prepared);
+    if (multipart) {
+      assert.ok(prepared.parts.every((part) => part.triggers.onCreate.frequency === "once-per-turn"));
+      assert.ok(prepared.parts.every((part) => part.triggers.onCreate.frequencyGroup === expectedGroup));
+      assert.ok(runtime.parts.every((part) => part.triggers.onCreate.enabled === true));
+      assert.ok(runtime.parts.every((part) => part.triggers.onCreate.mode === "simple"));
+      assert.ok(runtime.parts.every((part) => part.triggers.onCreate.frequency === "once-per-turn"));
+      assert.ok(runtime.parts.every((part) => part.triggers.onCreate.frequencyGroup === expectedGroup));
+    } else {
+      assert.equal(prepared.triggers.onCreate.frequency, "once-per-turn");
+      assert.equal(prepared.triggers.onCreate.frequencyGroup, expectedGroup);
+      assert.equal(prepared.triggers.enter.frequency, "once-per-turn");
+      assert.equal(prepared.triggers.enter.frequencyGroup, expectedGroup);
+      for (const triggerId of ["onCreate", "onEnter"]) {
+        assert.equal(runtime.triggers[triggerId].enabled, true);
+        assert.equal(runtime.triggers[triggerId].mode, "simple");
+        assert.equal(runtime.triggers[triggerId].frequency, "once-per-turn");
+        assert.equal(runtime.triggers[triggerId].frequencyGroup, expectedGroup);
+        assert.equal(runtime.triggers[triggerId].damage.enabled, true);
+      }
+      const storedFlags = structuredClone(buildManagedRegionFlags({ normalizedDefinition: runtime }));
+      const regionDocument = {
+        flags: storedFlags,
+        toObject: () => ({ flags: structuredClone(storedFlags) })
+      };
+      const runtimeRead = getRegionRuntime(regionDocument)?.normalizedDefinition;
+      for (const triggerId of ["onCreate", "onEnter"]) {
+        assert.equal(runtimeRead.triggers[triggerId].enabled, true);
+        assert.equal(runtimeRead.triggers[triggerId].mode, "simple");
+        assert.equal(runtimeRead.triggers[triggerId].frequency, "once-per-turn");
+        assert.equal(runtimeRead.triggers[triggerId].frequencyGroup, expectedGroup);
+        assert.equal(runtimeRead.triggers[triggerId].damage.enabled, true);
+      }
+    }
+  }
+}
+
+{
+  const submitted = normalizePersistentZoneActivitySubmitData({
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "circle", radius: 10 },
+    triggers: {
+      onCreate: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "mono-group" },
+      enter: { enabled: false, mode: "none", frequency: "unlimited", frequencyGroup: "" }
+    },
+    parts: [{
+      id: "primary",
+      role: "primary",
+      geometry: { type: "template" },
+      triggers: { onCreate: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "part-group" } }
+    }]
+  });
+  assert.equal(submitted.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(submitted.triggers.onCreate.frequencyGroup, "mono-group");
+  assert.equal(submitted.triggers.enter.frequency, "unlimited");
+  assert.equal(submitted.parts[0].triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(submitted.parts[0].triggers.onCreate.frequencyGroup, "part-group");
+  const runtimeDefinition = convert(submitted);
+  assert.equal(runtimeDefinition.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(runtimeDefinition.triggers.onCreate.frequencyGroup, "mono-group");
+  const normalizedRuntime = normalize(submitted);
+  for (const triggerId of ["onCreate", "onEnter"]) {
+    assert.equal(normalizedRuntime.triggers[triggerId].enabled, triggerId === "onCreate");
+    assert.equal(normalizedRuntime.triggers[triggerId].frequency, triggerId === "onCreate" ? "once-per-turn" : "unlimited");
+  }
+  assert.equal(normalizedRuntime.triggers.onCreate.mode, "simple");
+  assert.equal(normalizedRuntime.triggers.onCreate.frequencyGroup, "mono-group");
+  assert.equal(normalizedRuntime.parts[0].triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(normalizedRuntime.parts[0].triggers.onCreate.frequencyGroup, "part-group");
 }
 
 {

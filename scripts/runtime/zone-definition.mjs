@@ -1043,6 +1043,10 @@ function normalizeTriggers(triggerDefinition, dc, {
   item = null,
   scene = null
 } = {}) {
+  const createDefinition = pickFirstDefined(
+    triggerDefinition.onCreate,
+    triggerDefinition.create
+  );
   const startTurnDefinition = pickFirstDefined(
     triggerDefinition.onStartTurn,
     triggerDefinition.onTurnStart
@@ -1056,7 +1060,12 @@ function normalizeTriggers(triggerDefinition, dc, {
     triggerDefinition.onMovement
   );
 
-  return {
+  logM2TriggerHandoff("definition", { onCreate: createDefinition, onEnter: triggerDefinition.onEnter });
+  const normalizedTriggers = {
+    onCreate: normalizeTriggerConfig(createDefinition, dc, {
+      item,
+      scene
+    }),
     onEnter: normalizeTriggerConfig(triggerDefinition.onEnter, dc, {
       item,
       scene
@@ -1078,6 +1087,8 @@ function normalizeTriggers(triggerDefinition, dc, {
       scene
     })
   };
+  logM2TriggerHandoff("resolved", normalizedTriggers);
+  return normalizedTriggers;
 }
 
 function normalizeZoneParts({
@@ -1732,6 +1743,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
   return {
     enabled,
     mode: enabled ? mode : "none",
+    frequency: normalizeTriggerFrequency(definition.frequency),
+    frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
     stepMode,
     cellStep: stepMode === "grid-cell"
       ? normalizeMoveCellStep(
@@ -1819,6 +1832,22 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
   };
 }
 
+function normalizeTriggerFrequency(value) {
+  return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn"
+    ? "once-per-turn"
+    : "unlimited";
+}
+
+function logM2TriggerHandoff(stage, triggers = {}) {
+  for (const [trigger, config] of [["onCreate", triggers?.onCreate], ["enter", triggers?.onEnter]]) {
+    console.log(
+      `[PZ M2 TRIGGER HANDOFF] stage=${stage} | trigger=${trigger} | enabled=${config?.enabled === true} | ` +
+      `mode=${config?.mode ?? "none"} | frequency=${config?.frequency ?? "unlimited"} | ` +
+      `frequencyGroup=${config?.frequencyGroup ?? "null"} | damageEnabled=${config?.damage?.enabled === true || config?.simpleEffect?.damage?.enabled === true}`
+    );
+  }
+}
+
 function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
   const reasons = [];
 
@@ -1847,12 +1876,14 @@ function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {
     }
   }
 
+  const onCreate = normalizedDefinition.triggers.onCreate;
   const onEnter = normalizedDefinition.triggers.onEnter;
   const onExit = normalizedDefinition.triggers.onExit;
   const onMove = normalizedDefinition.triggers.onMove;
   const onStartTurn = normalizedDefinition.triggers.onStartTurn;
   const onEndTurn = normalizedDefinition.triggers.onEndTurn;
 
+  validateTriggerConfig("onCreate", onCreate, reasons);
   validateTriggerConfig("onEnter", onEnter, reasons);
   validateTriggerConfig("onExit", onExit, reasons);
   validateTriggerConfig("onMove", onMove, reasons, { requireDistanceStep: true });
@@ -1958,6 +1989,7 @@ function validateZonePartConfig(part, index, reasons, {
     reasons.push(`Part ${index + 1} requires an id.`);
   }
 
+  validateTriggerConfig(`${partLabel} onCreate`, part?.triggers?.onCreate ?? {}, reasons);
   validateTriggerConfig(`${partLabel} onEnter`, part?.triggers?.onEnter ?? {}, reasons);
   validateTriggerConfig(`${partLabel} onExit`, part?.triggers?.onExit ?? {}, reasons);
   validateTriggerConfig(`${partLabel} onMove`, part?.triggers?.onMove ?? {}, reasons, {

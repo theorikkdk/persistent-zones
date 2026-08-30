@@ -11,7 +11,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 5);
+  assert.equal(BUILTIN_PRESETS.length, 7);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -154,7 +154,7 @@ test("all technical built-ins replace stale effects with explicit disabled trigg
     ["builtin.multipart-simple", "circle"]
   ]);
 
-  for (const preset of getBuiltinPersistentZonePresets()) {
+  for (const preset of getBuiltinPersistentZonePresets().filter((candidate) => candidate.id.startsWith("builtin."))) {
     const state = { persistentZone: buildStalePersistentZoneConfiguration() };
     const item = {
       async updateActivity(_id, updates) {
@@ -176,6 +176,32 @@ test("all technical built-ins replace stale effects with explicit disabled trigg
   }
 });
 
+test("M2 test presets preserve mono and multipart frequency configuration", async () => {
+  const mono = getPersistentZonePreset("test.m2-once-per-turn");
+  assert.equal(mono.category, "development-test");
+  assert.equal(mono.persistentZone.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(mono.persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
+  assert.equal(mono.persistentZone.triggers.enter.frequencyGroup, "m2-shared");
+  assert.equal(mono.persistentZone.triggers.exit.frequency, "unlimited");
+
+  const multipart = getPersistentZonePreset("test.m2-multipart-frequency");
+  assert.equal(multipart.persistentZone.parts.length, 2);
+  assert.ok(multipart.persistentZone.parts.every((part) => part.triggers.onCreate.frequency === "once-per-turn"));
+  assert.ok(multipart.persistentZone.parts.every((part) => part.triggers.onCreate.frequencyGroup === "m2-multipart"));
+
+  const extracted = extractPresetDataFromActivity({ name: "Frequency", persistentZone: mono.persistentZone }, { id: "user.frequency" });
+  assert.equal(extracted.persistentZone.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(extracted.persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
+
+  const captured = [];
+  await applyPresetToActivity({
+    id: "frequency-activity",
+    item: { async updateActivity(_id, update) { captured.push(update); } }
+  }, extracted);
+  assert.equal(captured[1].persistentZone.triggers.onCreate.frequency, "once-per-turn");
+  assert.equal(captured[1].persistentZone.triggers.onCreate.frequencyGroup, "m2-shared");
+});
+
 test("library returns independent copies", () => {
   const first = getBuiltinPersistentZonePresets();
   first[0].persistentZone.geometry.radius = 999;
@@ -193,7 +219,7 @@ function deepMerge(target, source) {
 }
 
 function hasOnlyDisabledTriggers(triggers) {
-  const ids = ["enter", "exit", "move", "turnStart", "turnEnd"];
+  const ids = ["onCreate", "enter", "exit", "move", "turnStart", "turnEnd"];
   return ids.every(id => {
     const trigger = triggers?.[id];
     return trigger?.enabled === false &&

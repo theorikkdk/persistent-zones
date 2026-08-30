@@ -4,6 +4,8 @@ import { PRESET_SCHEMA_VERSION } from "./preset-utils.mjs";
 const buildDisabledTrigger = () => ({
   enabled: false,
   mode: "none",
+  frequency: "unlimited",
+  frequencyGroup: "",
   simpleEffect: {
     damage: { enabled: false, formula: "1d6", type: "fire" },
     healing: { enabled: false, formula: "1d6" },
@@ -20,6 +22,7 @@ const buildDisabledTrigger = () => ({
 });
 
 const buildDisabledTriggers = () => ({
+  onCreate: buildDisabledTrigger(),
   enter: buildDisabledTrigger(),
   exit: buildDisabledTrigger(),
   move: buildDisabledTrigger(),
@@ -27,7 +30,19 @@ const buildDisabledTriggers = () => ({
   turnEnd: buildDisabledTrigger()
 });
 
-const base = ({ id, name, description, category, geometry, parts = [] , terrain = { enabled: false, multiplier: 2 } }) => ({
+const buildTestDamageTrigger = (frequencyGroup) => ({
+  ...buildDisabledTrigger(),
+  enabled: true,
+  mode: "simple-effect",
+  frequency: "once-per-turn",
+  frequencyGroup,
+  simpleEffect: {
+    ...buildDisabledTrigger().simpleEffect,
+    damage: { enabled: true, formula: "1", type: "force" }
+  }
+});
+
+const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), terrain = { enabled: false, multiplier: 2 } }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -41,7 +56,7 @@ const base = ({ id, name, description, category, geometry, parts = [] , terrain 
     enabled: true,
     geometry,
     parts,
-    triggers: buildDisabledTriggers(),
+    triggers,
     movement: { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, cellStep: 1 },
     terrain,
     linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
@@ -64,6 +79,29 @@ export const BUILTIN_PRESETS = Object.freeze([
     parts: [
       { id: "primary", label: "Primary", role: "primary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggers() },
       { id: "secondary", label: "Secondary", role: "secondary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggers() }
+    ]
+  }),
+  base({
+    id: "test.m2-once-per-turn",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.TestM2OncePerTurn.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.TestM2OncePerTurn.Description",
+    category: "development-test",
+    geometry: { type: "circle", radius: 10 },
+    triggers: {
+      ...buildDisabledTriggers(),
+      onCreate: buildTestDamageTrigger("m2-shared"),
+      enter: buildTestDamageTrigger("m2-shared")
+    }
+  }),
+  base({
+    id: "test.m2-multipart-frequency",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.TestM2Multipart.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.TestM2Multipart.Description",
+    category: "development-test",
+    geometry: { type: "circle", radius: 10 },
+    parts: [
+      { id: "primary", label: "Primary", role: "primary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: { ...buildDisabledTriggers(), onCreate: buildTestDamageTrigger("m2-multipart") } },
+      { id: "secondary", label: "Secondary", role: "secondary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: { ...buildDisabledTriggers(), onCreate: buildTestDamageTrigger("m2-multipart") } }
     ]
   })
 ]);

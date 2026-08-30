@@ -20,6 +20,7 @@ import {
   buildRecoverySourceIdentity,
   reconcileRecoveryArbitration
 } from "./status-recovery-arbitration.mjs";
+import { claimTriggerFrequency } from "./trigger-frequency.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -54,6 +55,8 @@ export async function applyConfiguredTriggerEffect({
   const resolvedTrigger = {
     ...configuredTrigger,
     mode: actionConfig.mode,
+    frequency: actionConfig.frequency,
+    frequencyGroup: actionConfig.frequencyGroup,
     damage: actionConfig.damage,
     save: actionConfig.save,
     statuses: actionConfig.statuses,
@@ -89,6 +92,15 @@ export async function applyConfiguredTriggerEffect({
     previousInside: context.previousInside ?? null,
     currentInside: context.currentInside ?? null
   };
+
+  if (["onCreate", "onEnter"].includes(normalizedTiming)) {
+    console.log(
+      `[PZ M2 TRIGGER HANDOFF] stage=read | trigger=${normalizedTiming === "onCreate" ? "onCreate" : "enter"} | ` +
+      `enabled=${configuredTrigger?.enabled === true} | mode=${configuredTrigger?.mode ?? "none"} | ` +
+      `frequency=${configuredTrigger?.frequency ?? "unlimited"} | frequencyGroup=${configuredTrigger?.frequencyGroup ?? "null"} | ` +
+      `damageEnabled=${configuredTrigger?.damage?.enabled === true || configuredTrigger?.simpleEffect?.damage?.enabled === true}`
+    );
+  }
 
   logV14RuntimeDiagnostic("triggerTiming", baseDiagnostic);
   logV14RuntimeDiagnostic("PZ EFFECT CONFIG RESOLVED", {
@@ -157,6 +169,21 @@ export async function applyConfiguredTriggerEffect({
       partId,
       triggerMode
     });
+  }
+
+  const frequencyDecision = await claimTriggerFrequency({ regionDocument, tokenDocument, triggerConfig: resolvedTrigger, timing: normalizedTiming });
+  logV14RuntimeDiagnostic("PZ TRIGGER FREQUENCY DECISION", {
+    ...baseDiagnostic,
+    frequency: frequencyDecision.frequency,
+    frequencyGroup: frequencyDecision.identity?.frequencyGroup ?? resolvedTrigger?.frequencyGroup ?? null,
+    frequencyAllowed: frequencyDecision.allowed,
+    frequencyReason: frequencyDecision.reason,
+    combatId: frequencyDecision.identity?.combatId ?? null,
+    round: frequencyDecision.identity?.round ?? null,
+    turn: frequencyDecision.identity?.turn ?? null
+  });
+  if (!frequencyDecision.allowed) {
+    return buildSkippedResult(`${normalizedTiming} already applied for this frequency group this turn.`, { ...baseDiagnostic, timing: normalizedTiming, partId, triggerMode, frequency: frequencyDecision.frequency, frequencyReason: frequencyDecision.reason });
   }
 
   if (triggerMode === "activity") {
@@ -945,7 +972,7 @@ async function applyTriggeredStatuses({
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const triggerId = normalizeStatusTriggerId(timing);
   const saveEnabled = Boolean(triggerConfig?.save?.enabled);
-  const requiresFailedSave = triggerId === "enter" && saveEnabled;
+  const requiresFailedSave = ["enter", "create"].includes(triggerId) && saveEnabled;
   const saveSuccess = requiresFailedSave ? saveResult?.success === true : false;
   const saveFailed = requiresFailedSave ? saveResult?.success === false : false;
   const statusesConfigured = Boolean(actor && statusConfig?.enabled && statusId);
@@ -1923,6 +1950,8 @@ function normalizeStatusPersistenceMode(value) {
 
 function normalizeStatusTriggerId(timing) {
   switch (String(timing ?? "")) {
+    case "onCreate":
+      return "create";
     case "onEnter":
       return "enter";
     case "onMove":

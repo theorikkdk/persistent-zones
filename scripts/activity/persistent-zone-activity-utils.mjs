@@ -161,6 +161,14 @@ function buildRuntimePartTriggerDefinitions(triggers, context) {
     ["turnEnd", "onEndTurn"]
   ];
 
+  if (triggers?.onCreate !== undefined || triggers?.create !== undefined) {
+    runtimeTriggers.onCreate = buildTriggerConfig(
+      resolveExplicitPartTriggerSource(triggers, "onCreate", "create"),
+      { ...context, triggerId: "onCreate", inheritGlobalActions: false }
+    );
+    delete runtimeTriggers.create;
+  }
+
   for (const [canonicalKey, runtimeKey] of triggerMappings) {
     if (triggers?.[canonicalKey] === undefined && triggers?.[runtimeKey] === undefined) continue;
     runtimeTriggers[runtimeKey] = buildTriggerConfig(
@@ -297,13 +305,26 @@ function buildActivityTerrainDefinition(terrain, activitySchemaVersion) {
 }
 
 function buildTriggerDefinitions(triggers = {}, { damage = {}, save = {}, movement = {}, itemUuid = null, activityId = null } = {}) {
-  return {
+  const definitions = {
+    onCreate: buildTriggerConfig(resolveActivityTriggerSource(triggers, "onCreate", "create"), { damage, save, movement, triggerId: "onCreate", itemUuid, activityId }),
     onEnter: buildTriggerConfig(resolveActivityTriggerSource(triggers, "enter", "onEnter"), { damage, save, movement, triggerId: "enter", itemUuid, activityId }),
     onExit: buildTriggerConfig(resolveActivityTriggerSource(triggers, "exit", "onExit"), { damage, save, movement, triggerId: "exit", itemUuid, activityId }),
     onMove: buildTriggerConfig(resolveActivityTriggerSource(triggers, "move", "onMove"), { damage, save, movement, triggerId: "move", itemUuid, activityId }),
     onStartTurn: buildTriggerConfig(resolveActivityTriggerSource(triggers, "turnStart", "onStartTurn"), { damage, save, movement, triggerId: "turnStart", itemUuid, activityId }),
     onEndTurn: buildTriggerConfig(resolveActivityTriggerSource(triggers, "turnEnd", "onEndTurn"), { damage, save, movement, triggerId: "turnEnd", itemUuid, activityId })
   };
+  logM2ActivityTriggerHandoff(definitions);
+  return definitions;
+}
+
+function logM2ActivityTriggerHandoff(triggers = {}) {
+  for (const [trigger, config] of [["onCreate", triggers?.onCreate], ["enter", triggers?.onEnter]]) {
+    console.log(
+      `[PZ M2 TRIGGER HANDOFF] stage=activity | trigger=${trigger} | enabled=${config?.enabled === true} | ` +
+      `mode=${config?.mode ?? "none"} | frequency=${config?.frequency ?? "unlimited"} | ` +
+      `frequencyGroup=${config?.frequencyGroup ?? "null"} | damageEnabled=${config?.damage?.enabled === true || config?.simpleEffect?.damage?.enabled === true}`
+    );
+  }
 }
 
 function resolveActivityTriggerSource(triggers, canonicalKey, legacyKey) {
@@ -368,6 +389,8 @@ function buildTriggerConfig(triggerSource = {}, {
     enabled,
     mode,
     triggerId,
+    frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
+    frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
     movementMode: movement.movementMode ?? "any",
     stepMode: movement.stepMode ?? "distance",
     distanceStep: numberOrNull(movement.distanceStep) ?? 5,

@@ -35,6 +35,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #openMultipartTriggerPartIds = new Set();
   #multipartPartOpenState = new Map();
   #selectedPresetId = "";
+  #pendingFrequencyDiagnostic = null;
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -128,6 +129,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       root.addEventListener("change", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
+        this.#pendingFrequencyDiagnostic = captureFrequencyDiagnostic(event) ?? this.#pendingFrequencyDiagnostic;
         if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
           this.#openMultipartTriggerPartIds.clear();
           this.#multipartPartOpenState.clear();
@@ -199,6 +201,8 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       null;
     if (root) {
       this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
+      const activeFrequencyControl = root.querySelector("[name$='.frequency']:focus, [name$='.frequencyGroup']:focus");
+      this.#pendingFrequencyDiagnostic = captureFrequencyDiagnostic({ target: activeFrequencyControl }) ?? this.#pendingFrequencyDiagnostic;
     }
     return super._prepareSubmitData(event, formData);
   }
@@ -210,6 +214,9 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     this.#pendingMultipartFieldPatch = null;
     const existingDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY];
+    const frequencyDiagnostic = this.#pendingFrequencyDiagnostic;
+    this.#pendingFrequencyDiagnostic = null;
+    const expandedFrequency = readFrequencyDiagnosticValue(submitData?.[ACTIVITY_DEFINITION_FIELD_KEY], frequencyDiagnostic);
     await processMultipartEditorSubmit({
       submittedDefinition: submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       existingDefinition,
@@ -232,19 +239,52 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
     );
     submitData[ACTIVITY_DEFINITION_FIELD_KEY] = persistentZone;
+    const processedFrequency = readFrequencyDiagnosticValue(persistentZone, frequencyDiagnostic);
 
     const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(persistentZone, this.activity);
     foundry.utils.setProperty(submitData, "target.override", true);
     foundry.utils.setProperty(submitData, "target.prompt", true);
     foundry.utils.setProperty(submitData, "target.template", targetTemplate);
 
-    return super._processSubmitData(event, submitData);
+    const sentFrequency = readFrequencyDiagnosticValue(submitData[ACTIVITY_DEFINITION_FIELD_KEY], frequencyDiagnostic);
+    const result = await super._processSubmitData(event, submitData);
+    if (frequencyDiagnostic) {
+      const storedDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? null;
+      const preparedDefinition = this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? null;
+      console.log(
+        `[PZ M2 FREQUENCY DIAG] trigger=${frequencyDiagnostic.trigger ?? "unknown"} | ` +
+        `formKey=${frequencyDiagnostic.formKey} | raw=${frequencyDiagnostic.raw ?? "null"} | ` +
+        `expanded=${expandedFrequency ?? "null"} | processed=${processedFrequency ?? "null"} | ` +
+        `sent=${sentFrequency ?? "null"} | stored=${readFrequencyDiagnosticValue(storedDefinition, frequencyDiagnostic) ?? "null"} | ` +
+        `prepared=${readFrequencyDiagnosticValue(preparedDefinition, frequencyDiagnostic) ?? "null"}`
+      );
+    }
+    return result;
   }
+}
+
+function captureFrequencyDiagnostic(event) {
+  const control = event?.target;
+  const formKey = String(control?.name ?? "");
+  if (!formKey.startsWith(`${ACTIVITY_DEFINITION_FIELD_KEY}.`) || !/\.(frequency|frequencyGroup)$/.test(formKey)) return null;
+  const definitionPath = formKey.slice(`${ACTIVITY_DEFINITION_FIELD_KEY}.`.length);
+  const triggerMatch = definitionPath.match(/triggers\.([^.]+)\.(?:frequency|frequencyGroup)$/);
+  return {
+    formKey,
+    definitionPath,
+    trigger: triggerMatch?.[1] ?? null,
+    raw: control?.value ?? null
+  };
+}
+
+function readFrequencyDiagnosticValue(definition, diagnostic) {
+  if (!definition || !diagnostic?.definitionPath) return null;
+  return foundry.utils.getProperty(definition, diagnostic.definitionPath);
 }
 
 export function mergeExistingRecoveryConfiguration(submittedDefinition, existingDefinition) {
   if (!submittedDefinition || typeof submittedDefinition !== "object") return submittedDefinition;
-  const triggerIds = ["enter", "move", "exit", "turnStart", "turnEnd"];
+  const triggerIds = ["onCreate", "enter", "move", "exit", "turnStart", "turnEnd"];
   for (const triggerId of triggerIds) {
     const submittedStatuses = submittedDefinition?.triggers?.[triggerId]?.simpleEffect?.statuses;
     if (!submittedStatuses || typeof submittedStatuses !== "object") continue;
@@ -879,6 +919,7 @@ function normalizeActivityPartTriggers(value, part) {
   const globalSave = normalizeActivityPartObject(part.save);
   const normalized = {};
   const mappings = [
+    ["onCreate", "create"],
     ["enter", "onEnter"],
     ["move", "onMove"],
     ["exit", "onExit"],
@@ -906,6 +947,7 @@ function normalizeActivityPartObject(value) {
 
 function normalizeActivityTriggers(triggers = {}, { globalDamage = {}, globalSave = {} } = {}) {
   return {
+    onCreate: normalizeActivityTrigger(triggers.onCreate ?? triggers.create, "onCreate", { globalDamage, globalSave }),
     enter: normalizeActivityTrigger(triggers.enter ?? triggers.onEnter, "enter", { globalDamage, globalSave, enabledDefault: true }),
     move: normalizeActivityTrigger(triggers.move ?? triggers.onMove, "move", { globalDamage, globalSave }),
     exit: normalizeActivityTrigger(triggers.exit ?? triggers.onExit, "exit", { globalDamage, globalSave }),
@@ -931,6 +973,8 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
   return {
     enabled: trigger.enabled ?? enabledDefault,
     mode,
+    frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
+    frequencyGroup: String(trigger.frequencyGroup ?? ""),
     simpleEffect: {
       damage: {
         enabled: Boolean(damage.enabled),
@@ -1074,6 +1118,10 @@ function buildActivityChoices() {
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.Centerline" },
       { value: "inner-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.InnerEdge" }
     ],
+    triggerFrequencies: [
+      { value: "unlimited", label: "PERSISTENT_ZONES.Activity.TriggerFrequencies.Unlimited" },
+      { value: "once-per-turn", label: "PERSISTENT_ZONES.Activity.TriggerFrequencies.OncePerTurn" }
+    ],
     statusRecoveryModes: [
       { value: "none", label: "PERSISTENT_ZONES.Activity.StatusRecovery.Modes.None" },
       { value: "save-end-turn", label: "PERSISTENT_ZONES.Activity.StatusRecovery.Modes.SaveEndTurn" }
@@ -1114,6 +1162,7 @@ function buildActivityChoices() {
 
 function buildTriggerRows(triggers = {}, activity = null) {
   return [
+    ["onCreate", "PERSISTENT_ZONES.Activity.Triggers.onCreate"],
     ["enter", "PERSISTENT_ZONES.Activity.Triggers.enter"],
     ["move", "PERSISTENT_ZONES.Activity.Triggers.move"],
     ["exit", "PERSISTENT_ZONES.Activity.Triggers.exit"],
@@ -1265,6 +1314,13 @@ function updateConditionalVisibility(root) {
     if (hiddenUuid) {
       hiddenUuid.value = selectedOption?.dataset?.uuid ?? "";
     }
+  });
+
+  root.querySelectorAll("[data-pz-frequency-source]").forEach((select) => {
+    const key = select.dataset.pzFrequencySource;
+    root.querySelectorAll(`[data-pz-frequency-group='${key}']`).forEach((groupField) => {
+      groupField.hidden = select.value !== "once-per-turn";
+    });
   });
 
   root.querySelectorAll("[data-pz-status-recovery]").forEach((section) => {

@@ -21,7 +21,9 @@
           "DifficultTerrain": { "Name": "Difficult terrain", "Description": "A circular zone with native difficult terrain enabled." },
           "Ring": { "Name": "Ring", "Description": "A native v2 ring with independent inner and outer widths." },
           "WallLine": { "Name": "Wall / line", "Description": "A simple linear Persistent Zone without linked walls or lights." },
-          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." }
+          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." },
+          "TestM2OncePerTurn": { "Name": "TEST — M2 Once per turn", "Description": "Temporary validation preset for a shared on-create and on-enter frequency group." },
+          "TestM2Multipart": { "Name": "TEST — M2 Multipart Frequency", "Description": "Temporary validation preset for one shared on-create frequency group across two overlapping parts." }
         }
       },
       "Help": {
@@ -48,6 +50,8 @@
         "RingSide": "Inner extends toward the center; Outer extends away from the center.",
         "PartTriggers": "These triggers apply only to this zone part.",
         "TriggersSingle": "Determines what happens when a token interacts with this zone.",
+        "TriggerCreate": "Occurs once for each token already inside the zone after its Region is fully created.",
+        "TriggerFrequencyGroup": "Triggers using the same group share the once-per-turn limit. The limit applies during an active combat; outside combat, the trigger remains unlimited.",
         "TriggerEnter": "Occurs when a token crosses from outside into the zone.",
         "TriggerMove": "Occurs while a movement remains within the zone, using the configured movement step rules; it is not necessarily applied once per grid space.",
         "TriggerExit": "Occurs when a token crosses from inside to outside the zone.",
@@ -95,6 +99,8 @@
         "ReferenceRadiusMode": "Reference radius mode",
         "WallLength": "Wall length",
         "WallThickness": "Wall thickness",
+        "TriggerFrequency": "Frequency",
+        "TriggerFrequencyGroup": "Shared frequency group",
         "DamageEnabled": "Apply damage",
         "HealingEnabled": "Apply healing",
         "HealingFormula": "Healing formula",
@@ -196,11 +202,17 @@
         "Centerline": "Centerline",
         "InnerEdge": "Inner edge"
       },
+      "TriggerFrequencies": {
+        "Unlimited": "Unlimited",
+        "OncePerTurn": "Once per turn"
+      },
       "LinkedWallGeometry": {
         "Centerline": "Centerline",
         "Perimeter": "Perimeter"
       },
       "Triggers": {
+        "create": "On create",
+        "onCreate": "On create",
         "enter": "On enter",
         "move": "On move",
         "exit": "On exit",

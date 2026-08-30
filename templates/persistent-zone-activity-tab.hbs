@@ -212,6 +212,7 @@
           <label>{{triggerRow.label}}</label>
           <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.enabled" {{#if triggerRow.state.enabled}}checked{{/if}}>
         </header>
+        {{#if (eq triggerRow.timing "create")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerCreate"}}</p>{{/if}}
         {{#if (eq triggerRow.timing "enter")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerEnter"}}</p>{{/if}}
         {{#if (eq triggerRow.timing "move")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerMove"}}</p>{{/if}}
         {{#if (eq triggerRow.timing "exit")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerExit"}}</p>{{/if}}
@@ -223,6 +224,17 @@
             <select name="persistentZone.triggers.{{triggerRow.timing}}.mode">
               {{selectOptions ../persistentZoneChoices.triggerModes selected=triggerRow.state.mode localize=true}}
             </select>
+          </div>
+          <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerFrequency"}}</label>
+            <select name="persistentZone.triggers.{{triggerRow.timing}}.frequency" data-pz-frequency-source="{{triggerRow.timing}}">
+              {{selectOptions ../persistentZoneChoices.triggerFrequencies selected=triggerRow.state.frequency localize=true}}
+            </select>
+          </div>
+          <div class="form-group" data-pz-frequency-group="{{triggerRow.timing}}">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerFrequencyGroup"}}</label>
+            <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.frequencyGroup" value="{{triggerRow.state.frequencyGroup}}">
+            <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerFrequencyGroup"}}</p>
           </div>
 
           <div data-pz-mode="simple-effect">
