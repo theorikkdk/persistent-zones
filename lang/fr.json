@@ -7,6 +7,23 @@
       "TypeHint": "Crée une Région persistante qui peut déclencher des effets tant qu'elle reste sur la scène.",
       "Title": "Zone persistante",
       "Hint": "Crée une Région persistante qui peut déclencher des effets tant qu'elle reste sur la scène.",
+      "Presets": {
+        "Section": "Presets",
+        "Label": "Preset intégré",
+        "Select": "Sélectionner un preset",
+        "SelectHint": "Choisissez un preset pour afficher son objectif. Son application remplace la configuration Persistent Zones de cette Activity.",
+        "Apply": "Appliquer le preset",
+        "ApplyConfirmTitle": "Appliquer un preset Persistent Zone",
+        "ApplyConfirm": "Appliquer {preset} ? La configuration Persistent Zones actuelle de cette Activity sera remplacée.",
+        "Applied": "Le preset {preset} a été appliqué.",
+        "Builtins": {
+          "SimpleCircle": { "Name": "Zone circulaire simple", "Description": "Une Zone persistante circulaire sans documents liés ni effets." },
+          "DifficultTerrain": { "Name": "Terrain difficile", "Description": "Une zone circulaire avec le terrain difficile natif activé." },
+          "Ring": { "Name": "Anneau", "Description": "Un anneau natif v2 avec largeurs intérieure et extérieure indépendantes." },
+          "WallLine": { "Name": "Mur / ligne", "Description": "Une Zone persistante linéaire simple sans murs ni lumières liés." },
+          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." }
+        }
+      },
       "Help": {
         "ActivityConfig": "Crée une zone persistante unique, ou active les parties pour créer plusieurs zones logiques depuis le même placement.",
         "Multipart": "En mode zone unique, les Déclenchements ci-dessous s'appliquent à cette zone. Avec les parties activées, chaque partie possède ses propres Déclenchements ; Mouvement, Murs liés et Lumières liées restent des réglages généraux du placement.",

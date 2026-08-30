@@ -804,6 +804,13 @@
   background: color-mix(in srgb, var(--color-bg-option, transparent) 28%, transparent);
 }
 
+.persistent-zone-activity__presets .form-fields {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .persistent-zone-activity__section-hint {
   margin: -0.15rem 0 0.65rem;
 }

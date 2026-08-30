@@ -1,5 +1,24 @@
 <section class="tab activity-{{ tab.id }} {{ tab.cssClass }}" data-tab="{{ tab.id }}" data-group="{{ tab.group }}">
 <div class="persistent-zone-activity">
+  <fieldset class="persistent-zone-activity__section persistent-zone-activity__presets">
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Presets.Section"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Presets.Label"}}</label>
+      <div class="form-fields">
+        <select data-pz-preset-select>
+          <option value="">{{localize "PERSISTENT_ZONES.Activity.Presets.Select"}}</option>
+          {{#each persistentZonePresets as |preset|}}
+            <option value="{{preset.id}}" {{#if preset.selected}}selected{{/if}}>{{preset.name}}</option>
+          {{/each}}
+        </select>
+        <button type="button" data-pz-apply-preset {{#unless persistentZoneSelectedPreset}}disabled{{/unless}}>
+          <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+          {{localize "PERSISTENT_ZONES.Activity.Presets.Apply"}}
+        </button>
+      </div>
+      <p class="hint" data-pz-preset-summary>{{#if persistentZoneSelectedPreset}}{{persistentZoneSelectedPreset.description}}{{else}}{{localize "PERSISTENT_ZONES.Activity.Presets.SelectHint"}}{{/if}}</p>
+    </div>
+  </fieldset>
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Configuration"}}</legend>
     <div class="form-group">

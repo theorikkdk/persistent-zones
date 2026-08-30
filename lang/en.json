@@ -7,6 +7,23 @@
       "TypeHint": "Create a persistent Region that can trigger effects while it remains on the scene.",
       "Title": "Persistent Zone",
       "Hint": "Create a persistent Region that can trigger effects while it remains on the scene.",
+      "Presets": {
+        "Section": "Presets",
+        "Label": "Built-in preset",
+        "Select": "Select a preset",
+        "SelectHint": "Choose a preset to preview its purpose. Applying it replaces the Persistent Zones configuration of this Activity.",
+        "Apply": "Apply Preset",
+        "ApplyConfirmTitle": "Apply Persistent Zone Preset",
+        "ApplyConfirm": "Apply {preset}? This will replace the current Persistent Zones configuration of this Activity.",
+        "Applied": "Applied the {preset} preset.",
+        "Builtins": {
+          "SimpleCircle": { "Name": "Simple circular zone", "Description": "A basic circular Persistent Zone without linked documents or effects." },
+          "DifficultTerrain": { "Name": "Difficult terrain", "Description": "A circular zone with native difficult terrain enabled." },
+          "Ring": { "Name": "Ring", "Description": "A native v2 ring with independent inner and outer widths." },
+          "WallLine": { "Name": "Wall / line", "Description": "A simple linear Persistent Zone without linked walls or lights." },
+          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." }
+        }
+      },
       "Help": {
         "ActivityConfig": "Create one persistent zone, or enable zone parts to create several logical zones from the same placement.",
         "Multipart": "In single-zone mode, the Triggers below apply to one zone. With zone parts enabled, each part has its own Triggers; Movement, Linked Walls, and Linked Lights remain general placement settings.",

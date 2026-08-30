@@ -4,6 +4,8 @@ import {
   MODULE_ID
 } from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
+import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../presets/preset-library.mjs";
+import { applyPresetToActivity } from "../presets/preset-utils.mjs";
 
 export class PersistentZoneActivitySheet extends dnd5e.applications.activity.ActivitySheet {
   static DEFAULT_OPTIONS = {
@@ -32,6 +34,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #pendingMultipartFieldPatch = null;
   #openMultipartTriggerPartIds = new Set();
   #multipartPartOpenState = new Map();
+  #selectedPresetId = "";
 
   async _preparePartContext(partId, context, options) {
     context = await super._preparePartContext(partId, context, options);
@@ -78,6 +81,19 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       this.activity,
       context.persistentZone?.triggers
     );
+    const presets = getBuiltinPersistentZonePresets();
+    const selectedPreset = getPersistentZonePreset(this.#selectedPresetId);
+    context.persistentZonePresets = presets.map((preset) => ({
+      id: preset.id,
+      name: localize(preset.name),
+      description: localize(preset.description),
+      selected: preset.id === selectedPreset?.id
+    }));
+    context.persistentZoneSelectedPreset = selectedPreset ? {
+      ...selectedPreset,
+      name: localize(selectedPreset.name),
+      description: localize(selectedPreset.description)
+    } : null;
     return context;
   }
 
@@ -136,6 +152,42 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
           };
           requestPersistentZoneFormSubmit(root, this);
         });
+      });
+      const presetSelect = root.querySelector("[data-pz-preset-select]");
+      presetSelect?.addEventListener("change", () => {
+        this.#selectedPresetId = String(presetSelect.value ?? "");
+        const preset = getPersistentZonePreset(this.#selectedPresetId);
+        const summary = root.querySelector("[data-pz-preset-summary]");
+        if (summary) summary.textContent = preset ? localize(preset.description) : localize("PERSISTENT_ZONES.Activity.Presets.SelectHint");
+        const applyButton = root.querySelector("[data-pz-apply-preset]");
+        if (applyButton) applyButton.disabled = !preset;
+      });
+      root.querySelector("[data-pz-apply-preset]")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const preset = getPersistentZonePreset(presetSelect?.value);
+        if (!preset) return;
+        this.#selectedPresetId = preset.id;
+        const confirmed = await confirmPersistentZoneAction(
+          "PERSISTENT_ZONES.Activity.Presets.ApplyConfirmTitle",
+          "PERSISTENT_ZONES.Activity.Presets.ApplyConfirm",
+          { preset: localize(preset.name) }
+        );
+        if (!confirmed) return;
+        const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(preset.persistentZone, this.activity);
+        await applyPresetToActivity(this.activity, preset, {
+          activityUpdates: {
+            target: {
+              ...foundry.utils.deepClone(this.activity?.target ?? {}),
+              override: true,
+              prompt: true,
+              template: targetTemplate
+            }
+          }
+        });
+        ui.notifications?.info?.(game.i18n?.format?.("PERSISTENT_ZONES.Activity.Presets.Applied", {
+          preset: localize(preset.name)
+        }) ?? localize("PERSISTENT_ZONES.Activity.Presets.Applied"));
+        await this.render({ force: true });
       });
     });
     restorePersistentZoneViewportState(this.element, this.#persistentZoneViewportState);
