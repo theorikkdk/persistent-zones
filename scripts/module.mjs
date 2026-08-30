@@ -6,7 +6,6 @@ import {
   migrateLegacyMovementStopGlobalSetting,
   registerPersistentZoneModuleSettings
 } from "./settings.mjs";
-import { registerPersistentZonesItemConfigUi } from "./ui/item-config-app.mjs";
 import {
   cleanupSceneRegions,
   registerConcentrationCleanupHooks
@@ -61,8 +60,6 @@ function onInit() {
   registerStatusStateHooks();
   registerStatusRecoveryArbitrationHooks();
   registerTurnRuntimeHooks();
-  registerPersistentZonesItemConfigUi();
-  console.warn(`[${MODULE_ID}] itemSheetHookRegistered`);
 
   debug("Module initialized.");
   console.warn(`[${MODULE_ID}] moduleInitSuccess`);

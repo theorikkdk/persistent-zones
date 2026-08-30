@@ -2,7 +2,6 @@ import {
   DEFINITION_FLAG_KEY,
   MODULE_ID
 } from "./constants.mjs";
-import { openPersistentZonesItemConfig } from "./ui/item-config-app.mjs";
 import {
   cleanupRegionsForItem,
   cleanupSceneRegions,
@@ -370,10 +369,6 @@ export function createPersistentZonesApi() {
         effectiveVariant: normalizedDefinition.selectedVariant ?? null,
         variantResolution: normalizedDefinition.variantResolution ?? null
       };
-    },
-
-    async openItemConfig(itemOrUuid, options = {}) {
-      return openPersistentZonesItemConfig(itemOrUuid, options);
     },
 
     async createRegionFromTemplate(templateDocument, options = {}) {

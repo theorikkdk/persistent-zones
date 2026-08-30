@@ -60,8 +60,8 @@ The module preserves legacy local movement-stop flags for migration awareness, b
 
 ## Installation And Compatibility
 
-- Foundry VTT: minimum v13, verified v13.
-- System: dnd5e minimum v4, verified v4.
+- Foundry VTT: minimum v14, verified v14.
+- System: dnd5e minimum v5, verified v5.
 - Languages: English and French.
 
 For local installation, place this module folder in your Foundry `Data/modules` directory and enable **Persistent Zones** from the Manage Modules screen.
@@ -71,12 +71,10 @@ Publication manifest and download URLs should be added once the release artifact
 ## Quick Usage
 
 1. Enable the module in a dnd5e world.
-2. Open an Item that uses a measured template.
-3. Click the Persistent Zones header button.
-4. Choose a built-in profile or configure a zone type manually.
-5. Configure triggers, targeting, terrain, linked walls, or linked light as needed.
-6. Save the definition.
-7. Place the Item template in a scene to create managed persistent Regions.
+2. Open an Item and create or edit a Persistent Zone Activity.
+3. Configure its geometry, triggers, terrain, linked walls, or linked lights.
+4. Save the Activity.
+5. Use the Activity and place its template to create managed persistent Regions.
 
 Use the module settings to choose whether supported zone triggers should interrupt token movement globally.
 
@@ -90,7 +88,6 @@ game.persistentZones
 
 Common helpers:
 
-- `openItemConfig(itemOrUuid)`
 - `getZoneDefinitionFromItem(itemOrUuid)`
 - `getNormalizedZoneDefinitionFromItem(itemOrUuid, options?)`
 - `setZoneDefinitionOnItem(itemOrUuid, definition)`

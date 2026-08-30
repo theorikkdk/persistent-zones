@@ -667,13 +667,7 @@ function buildPreservingChoiceOptions(values, currentValue, localizationRoot) {
 async function confirmPersistentZoneAction(titleKey, contentKey, data = {}) {
   const title = localize(titleKey);
   const content = game.i18n?.format?.(contentKey, data) ?? localize(contentKey);
-  if (globalThis.foundry?.applications?.api?.DialogV2?.confirm) {
-    return foundry.applications.api.DialogV2.confirm({ window: { title }, content });
-  }
-  if (globalThis.Dialog?.confirm) {
-    return Dialog.confirm({ title, content });
-  }
-  return globalThis.confirm?.(content) ?? false;
+  return foundry.applications.api.DialogV2.confirm({ window: { title }, content });
 }
 
 function notifyMultipartError(key, data = {}) {
