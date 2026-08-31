@@ -27,6 +27,7 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
   }
 
   async use(usage = {}, dialog = {}, message = {}) {
+    const targetTemplateType = this.target?.template?.type ?? this._source?.target?.template?.type ?? null;
     registerPersistentZonePlacementContext({
       userId: game.user?.id ?? null,
       sceneId: canvas?.scene?.id ?? null,
@@ -34,11 +35,20 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
       activityId: this.id ?? null,
       activityUuid: this.uuid ?? null,
       activityType: this.type ?? PERSISTENT_ZONE_ACTIVITY_TYPE,
-      geometryType: this.persistentZone?.geometry?.type ?? this._source?.persistentZone?.geometry?.type ?? null
+      geometryType: this.persistentZone?.geometry?.type ?? this._source?.persistentZone?.geometry?.type ?? null,
+      targetTemplateType,
+      nativeTemplateType: normalizeNativeTemplateType(targetTemplateType)
     });
     console.warn(
       `[${MODULE_ID}][activity] PZ ACTIVITY USE | activityId=${this.id ?? "null"} | activityUuid=${this.uuid ?? "null"} | itemUuid=${this.item?.uuid ?? "null"} | activityType=${PERSISTENT_ZONE_ACTIVITY_TYPE}`
     );
     return super.use(usage, dialog, message);
   }
+}
+
+function normalizeNativeTemplateType(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "square" || normalized === "rectangle") return "rect";
+  if (normalized === "wall" || normalized === "line") return "ray";
+  return normalized || null;
 }

@@ -6,6 +6,7 @@ import {
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
 import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../presets/preset-library.mjs";
 import { applyPresetToActivity } from "../presets/preset-utils.mjs";
+import { convertCanonicalDistanceToSceneUnits, normalizeCanonicalDistanceUnit } from "./activity-distance.mjs";
 
 export class PersistentZoneActivitySheet extends dnd5e.applications.activity.ActivitySheet {
   static DEFAULT_OPTIONS = {
@@ -89,6 +90,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       description: localize(preset.description),
       selected: preset.id === selectedPreset?.id
     }));
+    context.persistentZonePresetGroups = buildPresetGroups(context.persistentZonePresets);
     context.persistentZoneSelectedPreset = selectedPreset ? {
       ...selectedPreset,
       name: localize(selectedPreset.name),
@@ -200,6 +202,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     this.#pendingMultipartFieldPatch = null;
     const existingDefinition = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
       this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY];
+    submitData[ACTIVITY_DEFINITION_FIELD_KEY] = mergePersistentZoneActivitySubmitData(
+      existingDefinition,
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY]
+    );
     await processMultipartEditorSubmit({
       submittedDefinition: submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       existingDefinition,
@@ -230,6 +236,28 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     const result = await super._processSubmitData(event, submitData);
     return result;
   }
+}
+
+export function mergePersistentZoneActivitySubmitData(existingDefinition, submittedDefinition) {
+  return mergeSubmittedValue(
+    foundry.utils.deepClone(existingDefinition ?? {}),
+    submittedDefinition ?? {}
+  );
+}
+
+function mergeSubmittedValue(existingValue, submittedValue) {
+  if (Array.isArray(submittedValue)) {
+    const existingArray = Array.isArray(existingValue) ? existingValue : [];
+    return submittedValue.map((value, index) => mergeSubmittedValue(existingArray[index], value));
+  }
+  if (!submittedValue || typeof submittedValue !== "object") return submittedValue;
+  const result = existingValue && typeof existingValue === "object" && !Array.isArray(existingValue)
+    ? foundry.utils.deepClone(existingValue)
+    : {};
+  for (const [key, value] of Object.entries(submittedValue)) {
+    result[key] = mergeSubmittedValue(result[key], value);
+  }
+  return result;
 }
 
 export function mergeExistingRecoveryConfiguration(submittedDefinition, existingDefinition) {
@@ -735,6 +763,10 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.schemaVersion = Number(config.schemaVersion || 1);
   config.enabled = Boolean(config.enabled);
   config.geometry ??= {};
+  const geometryType = String(config.geometry.type ?? "circle").trim().toLowerCase();
+  config.geometry.type = ["rect", "square"].includes(geometryType) ? "rectangle" : geometryType;
+  config.geometry.units = normalizeCanonicalDistanceUnit(config.geometry.units);
+  config.geometry.placement = "center";
   config.damage ??= {};
   config.save ??= {};
   config.triggers = normalizeActivityTriggers(config.triggers ?? {}, {
@@ -896,7 +928,8 @@ function normalizeActivityPartObject(value) {
 }
 
 function normalizeActivityTriggers(triggers = {}, { globalDamage = {}, globalSave = {} } = {}) {
-  return {
+  const normalized = {
+    ...foundry.utils.deepClone(triggers),
     onCreate: normalizeActivityTrigger(triggers.onCreate ?? triggers.create, "onCreate", { globalDamage, globalSave }),
     enter: normalizeActivityTrigger(triggers.enter ?? triggers.onEnter, "enter", { globalDamage, globalSave, enabledDefault: true }),
     move: normalizeActivityTrigger(triggers.move ?? triggers.onMove, "move", { globalDamage, globalSave }),
@@ -904,6 +937,10 @@ function normalizeActivityTriggers(triggers = {}, { globalDamage = {}, globalSav
     turnStart: normalizeActivityTrigger(triggers.turnStart ?? triggers.onStartTurn, "turnStart", { globalDamage, globalSave }),
     turnEnd: normalizeActivityTrigger(triggers.turnEnd ?? triggers.onEndTurn, "turnEnd", { globalDamage, globalSave })
   };
+  for (const alias of ["create", "onEnter", "onMove", "onExit", "onStartTurn", "onEndTurn"]) {
+    delete normalized[alias];
+  }
+  return normalized;
 }
 
 function normalizeActivityTrigger(trigger = {}, triggerId, {
@@ -921,32 +958,40 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
   const linkedActivity = trigger.linkedActivity ?? trigger.activity ?? {};
 
   return {
+    ...foundry.utils.deepClone(trigger),
     enabled: trigger.enabled ?? enabledDefault,
     mode,
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? ""),
+    requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
     simpleEffect: {
+      ...foundry.utils.deepClone(simpleEffect),
       damage: {
+        ...foundry.utils.deepClone(damage),
         enabled: Boolean(damage.enabled),
         formula: String(damage.formula ?? "1d6"),
         type: String(damage.type ?? "fire")
       },
       healing: {
+        ...foundry.utils.deepClone(healing),
         enabled: Boolean(healing.enabled),
         formula: String(healing.formula ?? "1d6")
       },
       temporaryHitPoints: {
+        ...foundry.utils.deepClone(temporaryHitPoints),
         enabled: Boolean(temporaryHitPoints.enabled),
         formula: String(temporaryHitPoints.formula ?? "1d6")
       },
       save: {
+        ...foundry.utils.deepClone(save),
         enabled: Boolean(save.enabled),
         ability: String(save.ability ?? "dex"),
-        dcMode: String(save.dcMode ?? "auto"),
+        dcMode: String(save.dcMode ?? "inherit").trim().toLowerCase() === "manual" ? "manual" : "inherit",
         dc: save.dc ?? 13,
         onSave: String(save.onSave ?? "half")
       },
       statuses: {
+        ...foundry.utils.deepClone(statuses),
         enabled: Boolean(statuses.enabled),
         statusId: String(statuses.statusId ?? ""),
         persistenceMode: triggerId === "exit"
@@ -956,6 +1001,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
       }
     },
     linkedActivity: {
+      ...foundry.utils.deepClone(linkedActivity),
       id: String(linkedActivity.id ?? linkedActivity.activityId ?? ""),
       uuid: String(linkedActivity.uuid ?? linkedActivity.activityUuid ?? "")
     }
@@ -976,6 +1022,18 @@ function normalizeUiTriggerMode(value, fallback = "none") {
 function normalizeChoice(value, choices, fallback) {
   const normalized = String(value ?? fallback).trim().toLowerCase();
   return choices.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeStatusIdList(value) {
+  const values = Array.isArray(value) ? value : value == null || value === "" ? [] : [value];
+  return Array.from(new Set(values.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)));
+}
+
+function buildPresetGroups(presets = []) {
+  return [
+    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.SrdSpells", presets: presets.filter((preset) => preset.source === "srd-5.2.1") },
+    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.Generic", presets: presets.filter((preset) => preset.source !== "srd-5.2.1") }
+  ].filter((group) => group.presets.length > 0);
 }
 
 function normalizePositiveNumberOrNull(value) {
@@ -1001,7 +1059,7 @@ function normalizeUiStatusRecovery(value) {
   };
 }
 
-function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
+export function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
   const geometry = config?.geometry ?? {};
   const geometryType = String(geometry.type ?? "circle").trim().toLowerCase();
   const existingTemplate = activity?._source?.target?.template ?? activity?.target?.template ?? {};
@@ -1014,6 +1072,19 @@ function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
       size: String(coercePositiveNumber(geometry.wallLength, 30)),
       width: String(coercePositiveNumber(geometry.wallThickness, 5)),
       units
+    };
+  }
+
+  if (geometryType === "rectangle") {
+    const width = convertCanonicalDistanceToSceneUnits(geometry.width, geometry.units, globalThis.canvas?.scene);
+    const height = convertCanonicalDistanceToSceneUnits(geometry.height, geometry.units, globalThis.canvas?.scene);
+    return {
+      ...existingTemplate,
+      type: "square",
+      size: String(coercePositiveNumber(width, 10)),
+      width: String(coercePositiveNumber(width, 10)),
+      height: String(coercePositiveNumber(height, coercePositiveNumber(width, 10))),
+      units: String(globalThis.canvas?.scene?.grid?.units ?? units)
     };
   }
 
@@ -1033,6 +1104,7 @@ function buildActivityChoices() {
   return {
     geometryTypes: [
       { value: "circle", label: "PERSISTENT_ZONES.Activity.Geometry.Circle" },
+      { value: "rectangle", label: "PERSISTENT_ZONES.Activity.Geometry.Rectangle" },
       { value: "ring", label: "PERSISTENT_ZONES.Activity.Geometry.Ring" },
       { value: "wall", label: "PERSISTENT_ZONES.Activity.Geometry.Wall" }
     ],
@@ -1042,7 +1114,7 @@ function buildActivityChoices() {
       { value: "linked-activity", label: "PERSISTENT_ZONES.Activity.TriggerModes.LinkedActivity" }
     ],
     saveDcModes: [
-      { value: "auto", label: "PERSISTENT_ZONES.UI.Fields.SaveDcModeAuto" },
+      { value: "inherit", label: "PERSISTENT_ZONES.UI.Fields.SaveDcModeAuto" },
       { value: "manual", label: "PERSISTENT_ZONES.UI.Fields.SaveDcModeManual" }
     ],
     saveResults: [

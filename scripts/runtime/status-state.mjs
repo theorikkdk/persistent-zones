@@ -135,7 +135,7 @@ export async function reconcileAggregateStatus(actor, statusId, {
   });
 }
 
-async function handleDeletedStatusEffect(effect, options = {}) {
+export async function handleDeletedStatusEffect(effect, options = {}) {
   const actor = effect?.parent ?? null;
   const flags = effect?.flags?.[MODULE_ID] ?? {};
   if (!actor) return;
@@ -147,9 +147,15 @@ async function handleDeletedStatusEffect(effect, options = {}) {
     const deferActivation = Boolean(
       recoveryGroupKey && isRecoveryPromotionPending(actor, recoveryGroupKey)
     );
-    const result = await reconcileAggregateStatus(actor, flags.statusId, {
-      missingAction: "recreate"
-    });
+    const canonicalRemovalCascade = options?.persistentZonesCanonicalStatusRemoval === true;
+    const result = canonicalRemovalCascade
+      ? {
+          sourceCount: getManagedStatusSources(actor, flags.statusId).length,
+          action: "suppress-recreate-after-canonical-removal"
+        }
+      : await reconcileAggregateStatus(actor, flags.statusId, {
+          missingAction: "recreate"
+        });
     if (recoveryGroupKey) {
       await reconcileRecoveryArbitration(actor, recoveryGroupKey, {
         deferActivation,
@@ -169,10 +175,12 @@ async function handleDeletedStatusEffect(effect, options = {}) {
 
   const canonicalStatusId = getCanonicalStatusId(effect);
   if (!canonicalStatusId) return;
-  const remainingSources = getManagedStatusSources(actor, canonicalStatusId);
-  if (remainingSources.length > 0) {
-    await reconcileAggregateStatus(actor, canonicalStatusId, {
-      missingAction: "recreate"
+  const matchedSources = getManagedStatusSources(actor, canonicalStatusId);
+  const matchedSourceIds = matchedSources.map((source) => source?.id).filter(Boolean);
+  if (matchedSourceIds.length > 0) {
+    await actor.deleteEmbeddedDocuments("ActiveEffect", matchedSourceIds, {
+      persistentZonesCanonicalStatusRemoval: true,
+      persistentZonesStatusId: canonicalStatusId
     });
   }
 }

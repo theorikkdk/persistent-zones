@@ -15,6 +15,7 @@ export function resolveTriggerActionConfiguration({
     mode,
     frequency: normalizeTriggerFrequency(config.frequency),
     frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
+    requiredAbsentStatuses: normalizeStatusIdList(config.requiredAbsentStatuses ?? config.excludedStatuses),
     damage: config.damage ?? simpleEffect.damage ?? {},
     save: config.save ?? simpleEffect.save ?? {},
     statuses,
@@ -64,6 +65,11 @@ function getTriggerFromZoneConfiguration(zoneConfiguration, triggerId) {
 
 function normalizeTriggerFrequency(value) {
   return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited";
+}
+
+function normalizeStatusIdList(value) {
+  const values = Array.isArray(value) ? value : value == null || value === "" ? [] : [value];
+  return Array.from(new Set(values.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)));
 }
 
 function normalizeTriggerMode(value) {

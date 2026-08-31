@@ -2,6 +2,7 @@ import { PERSISTENT_ZONE_ACTIVITY_TYPE } from "../constants.mjs";
 
 const PLACEMENT_CONTEXT_TTL_MS = 30_000;
 const placementContexts = [];
+let placementSequence = 0;
 
 export function registerPersistentZonePlacementContext({
   userId = null,
@@ -10,7 +11,9 @@ export function registerPersistentZonePlacementContext({
   activityId = null,
   activityUuid = null,
   activityType = null,
-  geometryType = null
+  geometryType = null,
+  targetTemplateType = null,
+  nativeTemplateType = null
 } = {}) {
   pruneExpiredPlacementContexts();
 
@@ -22,6 +25,9 @@ export function registerPersistentZonePlacementContext({
     activityUuid: normalizeIdentifier(activityUuid),
     activityType: normalizeIdentifier(activityType),
     geometryType: normalizeGeometryType(geometryType),
+    targetTemplateType: normalizeIdentifier(targetTemplateType)?.toLowerCase() ?? null,
+    nativeTemplateType: normalizeIdentifier(nativeTemplateType)?.toLowerCase() ?? null,
+    placementSequence: ++placementSequence,
     createdAt: Date.now()
   };
 
@@ -57,13 +63,22 @@ export function findPersistentZonePlacementContext({
   regionShapeType = null
 } = {}) {
   pruneExpiredPlacementContexts();
-  const match = [...placementContexts].reverse().find((context) =>
+  const requestedItemUuid = normalizeIdentifier(itemUuid);
+  const scopedContexts = [...placementContexts].reverse().filter((context) =>
     context.userId === normalizeIdentifier(userId) &&
     context.sceneId === normalizeIdentifier(sceneId) &&
-    context.itemUuid === normalizeIdentifier(itemUuid) &&
-    context.activityType === PERSISTENT_ZONE_ACTIVITY_TYPE &&
-    isGeometryCompatibleWithRegionShape(context.geometryType, regionShapeType)
+    (!requestedItemUuid || context.itemUuid === requestedItemUuid) &&
+    context.activityType === PERSISTENT_ZONE_ACTIVITY_TYPE
   );
+  const exactMatch = scopedContexts.find((context) =>
+    isGeometryCompatibleWithRegionShape(context.geometryType, regionShapeType)
+  ) ?? null;
+  const activeContext = scopedContexts[0] ?? null;
+  const rectangleLineHandoff =
+    String(regionShapeType ?? "").trim().toLowerCase() === "line" &&
+    activeContext?.geometryType === "rectangle" &&
+    activeContext?.nativeTemplateType === "rect";
+  const match = rectangleLineHandoff ? activeContext : exactMatch;
   return match ? { ...match } : null;
 }
 
@@ -107,12 +122,16 @@ function isGeometryCompatibleWithRegionShape(geometryType, regionShapeType) {
   if (geometry === "ring") {
     return shape === "ellipse" || shape === "circle" || shape === "ring";
   }
+  if (geometry === "rectangle") {
+    return shape === "rectangle" || shape === "rect" || shape === "polygon";
+  }
   return false;
 }
 
 function normalizeGeometryType(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
-  return ["circle", "wall", "ring"].includes(normalized) ? normalized : null;
+  if (normalized === "rect" || normalized === "square") return "rectangle";
+  return ["circle", "rectangle", "wall", "ring"].includes(normalized) ? normalized : null;
 }
 
 function normalizeIdentifier(value) {

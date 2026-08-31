@@ -1,3 +1,8 @@
+import {
+  convertCanonicalDistanceToSceneUnits,
+  normalizeCanonicalDistanceUnit
+} from "../activity/activity-distance.mjs";
+
 export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
@@ -64,17 +69,40 @@ export function extractPresetDataFromActivity(activity, metadata = {}) {
   });
 }
 
-export async function applyPresetToActivity(activity, presetOrData, { activityUpdates = {} } = {}) {
+export async function applyPresetToActivity(activity, presetOrData, {
+  activityUpdates = {},
+  scene = globalThis.canvas?.scene ?? null
+} = {}) {
   const preset = normalizePreset(presetOrData);
   if (!preset) throw new Error("Invalid Persistent Zones preset.");
   const item = activity?.item ?? activity?.parent ?? null;
   if (!item || typeof item.updateActivity !== "function" || !activity?.id) {
     throw new Error("The Persistent Zone Activity is not embedded in an updateable Item.");
   }
-  const persistentZone = clone(preset.persistentZone);
+  const persistentZone = resolvePresetPersistentZoneForScene(preset.persistentZone, scene);
   await item.updateActivity(activity.id, { "-=persistentZone": null });
   await item.updateActivity(activity.id, { ...clone(activityUpdates), persistentZone });
   return { preset, persistentZone };
+}
+
+export function resolvePresetPersistentZoneForScene(persistentZone, scene = globalThis.canvas?.scene ?? null) {
+  const resolved = clone(persistentZone ?? {});
+  const geometry = resolved.geometry;
+  if (!isObject(geometry)) return resolved;
+
+  const sourceUnits = normalizeCanonicalDistanceUnit(geometry.units);
+  const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
+  if (sourceUnits === "scene" || sceneUnits === "scene") return resolved;
+
+  for (const field of [
+    "width", "height", "radius", "ringReferenceRadius", "ringInnerWidth", "ringOuterWidth",
+    "wallLength", "wallThickness"
+  ]) {
+    if (geometry[field] === undefined || geometry[field] === null) continue;
+    geometry[field] = convertCanonicalDistanceToSceneUnits(geometry[field], sourceUnits, scene);
+  }
+  geometry.units = sceneUnits;
+  return resolved;
 }
 
 export function sanitizePersistentZoneConfiguration(value) {
@@ -107,7 +135,7 @@ function isValidPersistentZoneConfiguration(config) {
   const schemaVersion = Number(config.schemaVersion);
   if (!Number.isInteger(schemaVersion) || schemaVersion < 1) return false;
   const geometryType = String(config.geometry?.type ?? "").trim();
-  if (!geometryType || !["circle", "ring", "wall"].includes(geometryType)) return false;
+  if (!geometryType || !["circle", "rectangle", "ring", "wall"].includes(geometryType)) return false;
   if (config.parts !== undefined && !Array.isArray(config.parts)) return false;
   if (Array.isArray(config.parts)) {
     const ids = new Set();

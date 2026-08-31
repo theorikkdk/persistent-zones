@@ -24,6 +24,7 @@ const { buildManagedRegionFlags, getRegionRuntime } = await import("../runtime/u
 const {
   buildInitialMultipartPart,
   buildSecondaryMultipartPart,
+  buildTargetTemplateFromPersistentZoneConfig,
   normalizePersistentZoneActivitySubmitData,
   preserveExistingActivitySchemaVersion
 } = await import("../activity/persistent-zone-activity-sheet.mjs");
@@ -64,6 +65,26 @@ function convert(config) {
 
 function normalize(config) {
   return normalizeZoneDefinition(convert(config));
+}
+
+{
+  globalThis.canvas.scene = { grid: { units: "m", distance: 1.5, size: 100 } };
+  const rectangle = normalizePersistentZoneActivitySubmitData({
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "rectangle", width: 10, height: 10, units: "ft" }
+  });
+  const target = buildTargetTemplateFromPersistentZoneConfig(rectangle, { target: { template: { units: "ft" } } });
+  assert.equal(target.type, "square");
+  assert.equal(target.size, "3");
+  assert.equal(target.width, "3");
+  assert.equal(target.height, "3");
+  const runtime = normalize(rectangle);
+  assert.equal(runtime.geometry.type, "rectangle");
+  assert.equal(runtime.geometry.width, 10);
+  assert.equal(runtime.geometry.height, 10);
+  assert.equal(runtime.geometry.units, "ft");
+  globalThis.canvas.scene = null;
 }
 
 {

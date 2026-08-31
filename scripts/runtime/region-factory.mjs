@@ -1053,6 +1053,13 @@ export async function createManagedRegionFromRegion(regionDocument, {
     regionDocument,
     sourceDocumentType: regionDocument?.documentName ?? "Region"
   });
+  registerNonConcentrationCastForGenericCleanupSuppression({
+    regionDocument,
+    runtime: runtimeFlags,
+    sourceContext: resolved.sourceContext,
+    operationId,
+    stage: "before-native-region-adoption-finalization"
+  });
   const ensuredRuntimeFlags = await ensureManagedRegionRuntimeFlags(regionDocument, runtimeFlags, {
     templateDocument: resolved.templateDocument,
     scene: regionDocument?.parent ?? null,
@@ -1061,6 +1068,28 @@ export async function createManagedRegionFromRegion(regionDocument, {
     partId: runtimeFlags.partId,
     partIndex: runtimeFlags.partIndex
   });
+  await ensureNativeTerrainBehaviorsForAdoptedRegion(
+    regionDocument,
+    (ensuredRuntimeFlags ?? runtimeFlags).normalizedDefinition,
+    resolved.sourceContext
+  );
+  const dedicatedOwnerEffect = await ensureDedicatedOwnerEffectForNonConcentrationRegion(
+    regionDocument,
+    ensuredRuntimeFlags ?? runtimeFlags,
+    { sourceContext: resolved.sourceContext, operationId }
+  );
+  if (dedicatedOwnerEffect) {
+    runtimeFlags.ownerEffectUuid = dedicatedOwnerEffect.uuid;
+    runtimeFlags.activeEffectUuid = dedicatedOwnerEffect.uuid;
+    runtimeFlags.concentrationEffectUuid = null;
+    registerNonConcentrationCastForGenericCleanupSuppression({
+      regionDocument,
+      runtime: runtimeFlags,
+      sourceContext: resolved.sourceContext,
+      operationId,
+      stage: "native-region-adoption-dedicated-owner-created"
+    });
+  }
   await applyAuthenticRegionHighlightMode(regionDocument, {
     entryPoint: "createManagedRegionFromRegion",
     templateDocument: resolved.templateDocument,
@@ -1103,6 +1132,25 @@ export async function createManagedRegionFromRegion(regionDocument, {
     templateDocument: resolved.templateDocument,
     sourceContext: resolved.sourceContext
   };
+}
+
+export async function ensureNativeTerrainBehaviorsForAdoptedRegion(regionDocument, normalizedDefinition, sourceContext) {
+  const requested = buildNativeRegionBehaviors({ normalizedDefinition, sourceContext });
+  const existing = Array.from(regionDocument?.behaviors?.contents ?? regionDocument?.behaviors ?? []);
+  const existingTypes = new Set(existing.map((behavior) => String(behavior?.type ?? "")));
+  const missing = requested.filter((behavior) => !existingTypes.has(String(behavior?.type ?? "")));
+
+  if (missing.length && typeof regionDocument?.createEmbeddedDocuments === "function") {
+    await regionDocument.createEmbeddedDocuments("RegionBehavior", missing, {
+      persistentZonesNativeTerrainSync: true
+    });
+  }
+
+  const finalBehaviors = Array.from(regionDocument?.behaviors?.contents ?? regionDocument?.behaviors ?? []);
+  const terrainBehavior = finalBehaviors.find((behavior) =>
+    String(behavior?.type ?? "") === String(normalizedDefinition?.terrain?.behaviorType ?? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE)
+  ) ?? null;
+  return terrainBehavior;
 }
 
 async function createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
@@ -7950,6 +7998,92 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       : "scene-template-candidates-with-shape-compatibility"
   });
 
+  const directPlacementContext = findPersistentZonePlacementContext({
+    userId: userId ?? userIdForRegionCreation(regionDocument),
+    sceneId: scene.id,
+    itemUuid: sourceHints.itemUuid ?? null,
+    regionShapeType: sourceShapeKind
+  });
+  if (directPlacementContext) {
+    const contextItem = await fromUuidSafe(directPlacementContext.itemUuid);
+    const contextActivity = contextItem
+      ? findPersistentZoneActivityOnItem(contextItem, {
+        activityId: directPlacementContext.activityId,
+        activityUuid: directPlacementContext.activityUuid,
+        fallbackToSinglePersistentZoneActivity: false
+      })
+      : null;
+    const nativeTemplateType = normalizePlacementContextTemplateType(
+      directPlacementContext.nativeTemplateType ?? directPlacementContext.targetTemplateType
+    );
+    const contextTemplateDocument = {
+      id: regionDocument?.id ?? null,
+      uuid: regionDocument?.uuid ?? null,
+      documentName: "Region",
+      parent: scene,
+      t: nativeTemplateType,
+      x: estimateRegionCenter(regionDocument).x,
+      y: estimateRegionCenter(regionDocument).y
+    };
+    const sourceContext = {
+      item: contextItem ?? null,
+      actor: contextItem?.actor ?? null,
+      caster: contextItem?.actor ?? null,
+      activity: contextActivity ?? null
+    };
+    const configuration = resolvePersistentZoneConfiguration({
+      actor: sourceContext.actor,
+      item: sourceContext.item,
+      activity: sourceContext.activity,
+      templateDocument: contextTemplateDocument,
+      regionDocument,
+      entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion:placement-context-direct"
+    });
+    const normalizedDefinition = configuration.normalizedDefinition;
+    if (configuration.hasConfiguration && normalizedDefinition?.enabled !== false && normalizedDefinition?.validation?.valid !== false) {
+      const summary = buildV14SourceCandidateSummary({
+        templateDocument: contextTemplateDocument,
+        sourceContext,
+        normalizedDefinition,
+        regionDocument,
+        sourceShapeKind
+      });
+      const rectangleLineIdentityHandoff =
+        directPlacementContext.geometryType === "rectangle" &&
+        directPlacementContext.nativeTemplateType === "rect" &&
+        sourceShapeKind === "line";
+      const accepted = summary.sourceShapeCompatible || rectangleLineIdentityHandoff;
+      const finalSummary = {
+        ...summary,
+        score: 1_000_000,
+        directPlacementContext: true,
+        rectangleLineIdentityHandoff,
+        v14SourceCandidateRejected: !accepted,
+        v14SourceCandidateRejectedReason: accepted ? null : "source-shape-template-type-mismatch"
+      };
+      candidates.push({
+        templateDocument: contextTemplateDocument,
+        sourceContext,
+        normalizedDefinition,
+        identityHandoff: buildActivityIdentityHandoff({ placementContext: directPlacementContext, placementActivity: contextActivity }),
+        score: accepted ? 1_000_000 : -1,
+        sourceRejected: !accepted,
+        summary: finalSummary
+      });
+      logV14RegionDiagnostic(accepted ? "v14SourceCandidateFound" : "v14SourceCandidateRejected", finalSummary);
+    } else {
+      logV14RegionDiagnostic("v14SourceCandidateRejected", {
+        directPlacementContext: true,
+        v14SourceCandidateRejected: true,
+        v14SourceCandidateRejectedReason: !contextItem ? "placement-context-item-not-resolved" : !contextActivity ? "placement-context-activity-not-resolved" : "placement-context-configuration-invalid",
+        itemUuid: directPlacementContext.itemUuid,
+        activityId: directPlacementContext.activityId,
+        sourceShapeKind,
+        nativeTemplateType
+      });
+    }
+  }
+
   for (const templateDocument of templates) {
     const resolvedContext = await resolveTemplateSourceContext(templateDocument, { emitDebug: false });
     const nativeActivity = resolvedContext.activity ?? findPersistentZoneActivityOnItem(resolvedContext.item, {
@@ -8857,6 +8991,13 @@ function isV14SourceShapeCompatibleWithTemplateType(sourceShapeKind, templateTyp
     return type === "cone" || type === "ray" || type === "rect" || type === "circle";
   }
   return true;
+}
+
+function normalizePlacementContextTemplateType(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "square" || normalized === "rectangle") return "rect";
+  if (normalized === "wall" || normalized === "line") return "ray";
+  return normalized || null;
 }
 
 function classifyV14NativeRingCandidate(normalizedDefinition) {

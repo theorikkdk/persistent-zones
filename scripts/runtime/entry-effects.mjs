@@ -57,6 +57,7 @@ export async function applyConfiguredTriggerEffect({
     mode: actionConfig.mode,
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
+    requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
     damage: actionConfig.damage,
     save: actionConfig.save,
     statuses: actionConfig.statuses,
@@ -159,6 +160,17 @@ export async function applyConfiguredTriggerEffect({
       timing: normalizedTiming,
       partId,
       triggerMode
+    });
+  }
+
+  const absentStatusConflict = findRequiredAbsentStatusConflict(actor, resolvedTrigger.requiredAbsentStatuses);
+  if (absentStatusConflict) {
+    return buildSkippedResult(`${normalizedTiming} requires status ${absentStatusConflict} to be absent.`, {
+      ...baseDiagnostic,
+      timing: normalizedTiming,
+      partId,
+      triggerMode,
+      requiredAbsentStatus: absentStatusConflict
     });
   }
 
@@ -963,17 +975,18 @@ async function applyTriggeredStatuses({
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const triggerId = normalizeStatusTriggerId(timing);
   const saveEnabled = Boolean(triggerConfig?.save?.enabled);
-  const requiresFailedSave = ["enter", "create"].includes(triggerId) && saveEnabled;
+  const requiresFailedSave = saveEnabled;
   const saveSuccess = requiresFailedSave ? saveResult?.success === true : false;
   const saveFailed = requiresFailedSave ? saveResult?.success === false : false;
   const statusesConfigured = Boolean(actor && statusConfig?.enabled && statusId);
-  const shouldApplyStatuses = statusesConfigured && (!requiresFailedSave || saveFailed);
+  const shouldApplyStatuses = shouldApplyTriggeredStatus({ statusesConfigured, saveEnabled, saveResult });
   const identity = {
     managedTriggeredEffect: true,
     persistenceMode,
     sceneId,
     regionId,
     groupId: runtime.groupId ?? null,
+    partId: runtime.partId ?? runtime.part?.id ?? runtime.normalizedDefinition?.part?.id ?? null,
     tokenUuid,
     triggerId,
     statusId,
@@ -1017,7 +1030,17 @@ async function applyTriggeredStatuses({
     };
   }
 
-  const existing = findExactTriggeredStatusEffect(actor, identity);
+  const equivalentSources = findEquivalentTriggeredStatusSources(actor, identity);
+  const existing = equivalentSources[0] ?? null;
+  const duplicateSourceIds = equivalentSources.slice(1).map((effect) => effect?.id).filter(Boolean);
+  if (duplicateSourceIds.length > 0) {
+    await actor.deleteEmbeddedDocuments("ActiveEffect", duplicateSourceIds, {
+      persistentZonesDuplicateStatusSourceCleanup: true,
+      persistentZonesStatusId: statusId,
+      persistentZonesRegionId: regionId,
+      persistentZonesPartId: identity.partId
+    });
+  }
   if (existing) {
     logTriggeredStatusDecision({
       ...baseDiagnostic,
@@ -1629,7 +1652,6 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
     roll,
     onSuccess: saveConfig.onSuccess
   });
-
   debug(`Calculated ${timingLabel} save.`, {
     regionId: regionDocument?.id ?? null,
     tokenId: tokenDocument?.id ?? null,
@@ -1912,17 +1934,16 @@ function resolveSimpleEffectConfig(triggerConfig = {}) {
   };
 }
 
-function findExactTriggeredStatusEffect(actor, identity) {
-  return Array.from(actor?.effects ?? []).find((effect) => {
+export function findEquivalentTriggeredStatusSources(actor, identity) {
+  return Array.from(actor?.effects ?? []).filter((effect) => {
     const flags = effect?.flags?.[MODULE_ID] ?? {};
     return flags.managedTriggeredEffect === true &&
-      flags.persistenceMode === identity.persistenceMode &&
-      flags.sceneId === identity.sceneId &&
       flags.regionId === identity.regionId &&
       flags.tokenUuid === identity.tokenUuid &&
-      flags.triggerId === identity.triggerId &&
-      flags.statusId === identity.statusId;
-  }) ?? null;
+      (flags.partId ?? identity.partId ?? null) === (identity.partId ?? null) &&
+      flags.statusId === identity.statusId &&
+      effect?.active !== false;
+  });
 }
 
 function resolveStatusEffectData(statusId) {
@@ -1937,6 +1958,19 @@ function normalizeStatusPersistenceMode(value) {
   return String(value ?? "persistent").trim().toLowerCase() === "while-inside-region"
     ? "while-inside-region"
     : "persistent";
+}
+
+export function findRequiredAbsentStatusConflict(actor, requiredAbsentStatuses = []) {
+  if (!Array.isArray(requiredAbsentStatuses) || requiredAbsentStatuses.length === 0) return null;
+  const actorStatuses = new Set(Array.from(actor?.statuses ?? []).map((status) => String(status?.id ?? status ?? "").trim().toLowerCase()).filter(Boolean));
+  for (const effect of Array.from(actor?.effects ?? [])) {
+    for (const status of Array.from(effect?.statuses ?? [])) actorStatuses.add(String(status).trim().toLowerCase());
+  }
+  return requiredAbsentStatuses.find((status) => actorStatuses.has(String(status).trim().toLowerCase())) ?? null;
+}
+
+export function shouldApplyTriggeredStatus({ statusesConfigured = false, saveEnabled = false, saveResult = null } = {}) {
+  return Boolean(statusesConfigured && (!saveEnabled || saveResult?.success === false));
 }
 
 function normalizeStatusTriggerId(timing) {

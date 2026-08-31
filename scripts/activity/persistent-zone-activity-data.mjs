@@ -28,13 +28,35 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           type: new fields.StringField({
             required: false,
             initial: "circle",
-            choices: ["circle", "ring", "wall"]
+            choices: ["circle", "rectangle", "ring", "wall"]
           }),
           radius: new fields.NumberField({
             required: false,
             nullable: true,
             initial: 10,
             min: 0
+          }),
+          width: new fields.NumberField({
+            required: false,
+            nullable: true,
+            initial: 10,
+            min: 0
+          }),
+          height: new fields.NumberField({
+            required: false,
+            nullable: true,
+            initial: 10,
+            min: 0
+          }),
+          units: new fields.StringField({
+            required: false,
+            initial: "scene",
+            choices: ["scene", "ft", "m"]
+          }),
+          placement: new fields.StringField({
+            required: false,
+            initial: "center",
+            choices: ["center"]
           }),
           ringReferenceRadius: new fields.NumberField({
             required: false,
@@ -254,6 +276,10 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       required: false,
       initial: ""
     }),
+    requiredAbsentStatuses: new fields.ArrayField(new fields.StringField(), {
+      required: false,
+      initial: []
+    }),
     simpleEffect: new fields.SchemaField({
       damage: createDamageSchema(fields),
       healing: createHealingSchema(fields),
@@ -331,8 +357,8 @@ function createSaveSchema(fields) {
     }),
     dcMode: new fields.StringField({
       required: false,
-      initial: "auto",
-      choices: ["auto", "manual"]
+      initial: "inherit",
+      choices: ["auto", "inherit", "manual"]
     }),
     dc: new fields.NumberField({
       required: false,

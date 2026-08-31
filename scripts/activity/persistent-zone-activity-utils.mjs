@@ -3,6 +3,7 @@ import {
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
+import { convertCanonicalDistanceToSceneUnits, normalizeCanonicalDistanceUnit } from "./activity-distance.mjs";
 
 export function isPersistentZoneActivity(activity) {
   return String(
@@ -212,6 +213,17 @@ function buildTemplateDefinition(activity, geometryType, geometry) {
     };
   }
 
+  if (geometryType === "rectangle") {
+    return {
+      typeSource: "manual",
+      type: "rect",
+      distance: convertCanonicalDistanceToSceneUnits(geometry.width, geometry.units, globalThis.canvas?.scene),
+      width: convertCanonicalDistanceToSceneUnits(geometry.width, geometry.units, globalThis.canvas?.scene),
+      height: convertCanonicalDistanceToSceneUnits(geometry.height, geometry.units, globalThis.canvas?.scene),
+      units: globalThis.canvas?.scene?.grid?.units ?? units
+    };
+  }
+
   const radius = geometryType === "ring"
     ? numberOrNull(geometry.ringReferenceRadius) ?? numberOrNull(geometry.radius) ?? numberOrNull(template.size)
     : numberOrNull(geometry.radius) ?? numberOrNull(template.size);
@@ -264,6 +276,16 @@ export function buildGeometryDefinition(geometryType, geometry, {
       type: "template",
       wallLength: numberOrNull(geometry.wallLength),
       wallThickness: numberOrNull(geometry.wallThickness)
+    };
+  }
+
+  if (geometryType === "rectangle") {
+    return {
+      type: "rectangle",
+      width: numberOrNull(geometry.width),
+      height: numberOrNull(geometry.height),
+      units: normalizeCanonicalDistanceUnit(geometry.units),
+      placement: "center"
     };
   }
 
@@ -380,6 +402,7 @@ function buildTriggerConfig(triggerSource = {}, {
     triggerId,
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
+    requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
     movementMode: movement.movementMode ?? "any",
     stepMode: movement.stepMode ?? "distance",
     distanceStep: numberOrNull(movement.distanceStep) ?? 5,
@@ -487,7 +510,13 @@ function logTriggerEffectConfigurationDecision(data = {}) {
 
 function normalizeGeometryType(value) {
   const normalized = String(value ?? "circle").trim().toLowerCase();
-  return ["circle", "ring", "wall"].includes(normalized) ? normalized : "circle";
+  if (normalized === "rect" || normalized === "square") return "rectangle";
+  return ["circle", "rectangle", "ring", "wall"].includes(normalized) ? normalized : "circle";
+}
+
+function normalizeStatusIdList(value) {
+  const values = Array.isArray(value) ? value : value == null || value === "" ? [] : [value];
+  return Array.from(new Set(values.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)));
 }
 
 function normalizeLinkedWallGeometry(value) {

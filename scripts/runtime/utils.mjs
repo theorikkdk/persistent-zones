@@ -599,6 +599,7 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime, shapes);
   const fallbackInside = sampleTokenRegionPoints(membership)
     .some((point) => pointInManagedRegion(regionDocument, point));
+  const coverageResult = calculateTokenRegionGridCoverage(membership, regionDocument, shapes);
   const ringRuntimeResult = isRegionNativeRingSegment
     ? null
     : testTokenInsideRuntimeRing(membership, runtime, nativeRingGeometry);
@@ -618,9 +619,10 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     }
   }
 
-  const result = isManagedV14Region
+  const legacyResult = isManagedV14Region
     ? (isRegionNativeRingSegment ? fallbackInside : (ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside))
     : (nativeInside ?? fallbackInside);
+  const result = coverageResult?.inside ?? legacyResult;
   const diagnostic = {
     tokenId: tokenDocument?.id ?? null,
     regionId: regionDocument?.id ?? null,
@@ -632,6 +634,8 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     shapeCount: shapes.length,
     nativeInside,
     fallbackInside,
+    gridCoverageInside: coverageResult?.inside ?? null,
+    maxCoverageRatio: coverageResult?.maxCoverageRatio ?? null,
     ringRuntimeInside: ringRuntimeResult?.tokenInsideRingBand ?? null,
     tokenInsideRegion: result,
     nativeError,
@@ -640,7 +644,9 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
       : isManagedV14Region && ringRuntimeResult
       ? "managed-ring-runtime-geometry"
       : isManagedV14Region
-        ? "managed-shape-sampled-fallback"
+        ? coverageResult
+          ? "managed-shape-grid-cell-coverage"
+          : "managed-shape-sampled-fallback"
         : "native-or-fallback"
   };
 
@@ -673,6 +679,209 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   }
 
   return result;
+}
+
+const TOKEN_CELL_COVERAGE_THRESHOLD = 0.5;
+const TOKEN_CELL_COVERAGE_EPSILON = 1e-9;
+
+export function calculateTokenRegionGridCoverage(membership, regionDocument, shapes = null) {
+  const scene = regionDocument?.parent ?? globalThis.canvas?.scene ?? null;
+  const gridType = scene?.grid?.type ?? globalThis.canvas?.grid?.type;
+  const squareGridType = globalThis.CONST?.GRID_TYPES?.SQUARE ?? 1;
+  const gridlessType = globalThis.CONST?.GRID_TYPES?.GRIDLESS ?? 0;
+  if (gridType === gridlessType || (gridType !== undefined && gridType !== null && gridType !== squareGridType && String(gridType).toLowerCase() !== "square")) {
+    return null;
+  }
+  const gridSize = coerceNumber(
+    globalThis.canvas?.grid?.size,
+    coerceNumber(scene?.grid?.size, coerceNumber(scene?.dimensions?.size, null))
+  );
+  if (!gridSize || gridSize <= 0) return null;
+  const regionShapes = Array.isArray(shapes) ? shapes : getRegionShapeData(regionDocument);
+  if (!regionShapes.length) return null;
+
+  const tokenWidth = Math.max(coerceNumber(membership?.width, 1), 0.1);
+  const tokenHeight = Math.max(coerceNumber(membership?.height, 1), 0.1);
+  const columns = Math.max(1, Math.ceil(tokenWidth));
+  const rows = Math.max(1, Math.ceil(tokenHeight));
+  const left = coerceNumber(membership?.x, 0);
+  const top = coerceNumber(membership?.y, 0);
+  let affectedCellCount = 0;
+  let maxCoverageRatio = 0;
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const cell = {
+        x: left + column * gridSize,
+        y: top + row * gridSize,
+        width: Math.min(1, Math.max(0, tokenWidth - column)) * gridSize,
+        height: Math.min(1, Math.max(0, tokenHeight - row)) * gridSize
+      };
+      const ratio = calculateRegionCoverageRatioForRectangle(regionShapes, cell);
+      maxCoverageRatio = Math.max(maxCoverageRatio, ratio);
+      if (ratio + TOKEN_CELL_COVERAGE_EPSILON >= TOKEN_CELL_COVERAGE_THRESHOLD) affectedCellCount += 1;
+    }
+  }
+
+  return {
+    testedCellCount: rows * columns,
+    affectedCellCount,
+    maxCoverageRatio,
+    inside: affectedCellCount > 0
+  };
+}
+
+function calculateRegionCoverageRatioForRectangle(shapes, rectangle) {
+  const cellArea = rectangle.width * rectangle.height;
+  if (!(cellArea > 0)) return 0;
+  let coveredArea = 0;
+  for (const shape of shapes) {
+    for (const polygon of buildShapeAreaPolygons(shape)) {
+      const clipped = clipPolygonToRectangle(polygon.points, rectangle);
+      const area = polygonArea(clipped);
+      coveredArea += polygon.hole ? -area : area;
+    }
+  }
+  return Math.max(0, Math.min(1, coveredArea / cellArea));
+}
+
+function buildShapeAreaPolygons(shape) {
+  const type = String(shape?.type ?? "").toLowerCase();
+  if (shape?.polygonMode === "annulus") return buildAnnulusAreaPolygons(shape);
+  if (type === "polygon") return [{ points: normalizePolygonPoints(shape.points), hole: shape?.hole === true }];
+  if (type === "rectangle") return [{ points: buildRectanglePolygon(shape), hole: shape?.hole === true }];
+  if (type === "line") return [{ points: buildLinePolygon(shape), hole: shape?.hole === true }];
+  if (type === "circle") return [{ points: buildEllipsePolygon({ x: shape.x, y: shape.y, radiusX: shape.radius, radiusY: shape.radius }), hole: shape?.hole === true }];
+  if (type === "ellipse") return [{ points: buildEllipsePolygon(shape), hole: shape?.hole === true }];
+  if (type === "ring") {
+    const radius = coerceNumber(shape.radius, 0);
+    const innerRadius = Math.max(0, radius - Math.max(0, coerceNumber(shape.innerWidth, 0)));
+    const outerRadius = radius + Math.max(0, coerceNumber(shape.outerWidth, 0));
+    return [
+      { points: buildRadialPolygon(shape.x, shape.y, outerRadius), hole: false },
+      ...(innerRadius > 0 ? [{ points: buildRadialPolygon(shape.x, shape.y, innerRadius), hole: true }] : [])
+    ];
+  }
+  if (type === "cone") return [{ points: buildConePolygon(shape), hole: shape?.hole === true }];
+  if (type === "emanation") {
+    const center = findEmanationCenter(shape);
+    return [{ points: buildRadialPolygon(center.x, center.y, coerceNumber(shape.radius, 0)), hole: shape?.hole === true }];
+  }
+  return [];
+}
+
+function buildRectanglePolygon(shape) {
+  const origin = { x: coerceNumber(shape.x, 0), y: coerceNumber(shape.y, 0) };
+  const width = coerceNumber(shape.width, 0);
+  const height = coerceNumber(shape.height, 0);
+  const radians = coerceNumber(shape.rotation, 0) * Math.PI / 180;
+  return [[0, 0], [width, 0], [width, height], [0, height]]
+    .map(([dx, dy]) => rotatePoint({ x: origin.x + dx, y: origin.y + dy }, origin, radians));
+}
+
+function buildLinePolygon(shape) {
+  const origin = { x: coerceNumber(shape.x, 0), y: coerceNumber(shape.y, 0) };
+  const length = coerceNumber(shape.length ?? shape.distance, 0);
+  const halfWidth = coerceNumber(shape.width, 0) / 2;
+  const radians = coerceNumber(shape.rotation ?? shape.direction, 0) * Math.PI / 180;
+  return [[0, -halfWidth], [length, -halfWidth], [length, halfWidth], [0, halfWidth]]
+    .map(([dx, dy]) => rotatePoint({ x: origin.x + dx, y: origin.y + dy }, origin, radians));
+}
+
+function buildEllipsePolygon(shape) {
+  const width = coerceNumber(shape.width, null);
+  const height = coerceNumber(shape.height, null);
+  const radiusX = coerceNumber(shape.radiusX, width !== null ? width / 2 : 0);
+  const radiusY = coerceNumber(shape.radiusY, height !== null ? height / 2 : 0);
+  const centerX = shape.cx !== undefined ? coerceNumber(shape.cx, 0) : width !== null && shape.radiusX === undefined ? coerceNumber(shape.x, 0) + radiusX : coerceNumber(shape.x, 0);
+  const centerY = shape.cy !== undefined ? coerceNumber(shape.cy, 0) : height !== null && shape.radiusY === undefined ? coerceNumber(shape.y, 0) + radiusY : coerceNumber(shape.y, 0);
+  return buildRadialPolygon(centerX, centerY, 1, 96).map((point) => ({ x: centerX + (point.x - centerX) * radiusX, y: centerY + (point.y - centerY) * radiusY }));
+}
+
+function buildRadialPolygon(x, y, radius, segments = 96) {
+  const centerX = coerceNumber(x, 0);
+  const centerY = coerceNumber(y, 0);
+  const resolvedRadius = Math.max(0, coerceNumber(radius, 0));
+  return Array.from({ length: segments }, (_entry, index) => {
+    const angle = index * Math.PI * 2 / segments;
+    return { x: centerX + Math.cos(angle) * resolvedRadius, y: centerY + Math.sin(angle) * resolvedRadius };
+  });
+}
+
+function buildConePolygon(shape) {
+  const x = coerceNumber(shape.x, 0);
+  const y = coerceNumber(shape.y, 0);
+  const radius = Math.max(0, coerceNumber(shape.radius, 0));
+  const angle = Math.max(0, Math.min(360, coerceNumber(shape.angle, 0)));
+  const rotation = coerceNumber(shape.rotation, 0) * Math.PI / 180;
+  if (angle >= 360) return buildRadialPolygon(x, y, radius);
+  const half = angle * Math.PI / 360;
+  const segments = Math.max(2, Math.ceil(96 * angle / 360));
+  return [{ x, y }, ...Array.from({ length: segments + 1 }, (_entry, index) => {
+    const theta = rotation - half + (index / segments) * half * 2;
+    return { x: x + Math.cos(theta) * radius, y: y + Math.sin(theta) * radius };
+  })];
+}
+
+function buildAnnulusAreaPolygons(shape) {
+  const points = normalizePolygonPoints(shape.points);
+  if (points.length < 6) return [];
+  const bounds = calculatePointBounds(points);
+  const x = (bounds.minX + bounds.maxX) / 2;
+  const y = (bounds.minY + bounds.maxY) / 2;
+  const radii = points.map((point) => Math.hypot(point.x - x, point.y - y)).filter((radius) => radius > 0);
+  const inner = Math.min(...radii);
+  const outer = Math.max(...radii);
+  return [
+    { points: buildRadialPolygon(x, y, outer), hole: false },
+    { points: buildRadialPolygon(x, y, inner), hole: true }
+  ];
+}
+
+function clipPolygonToRectangle(points, rectangle) {
+  let output = Array.from(points ?? []);
+  const edges = [
+    [(point) => point.x >= rectangle.x, (a, b) => intersectVertical(a, b, rectangle.x)],
+    [(point) => point.x <= rectangle.x + rectangle.width, (a, b) => intersectVertical(a, b, rectangle.x + rectangle.width)],
+    [(point) => point.y >= rectangle.y, (a, b) => intersectHorizontal(a, b, rectangle.y)],
+    [(point) => point.y <= rectangle.y + rectangle.height, (a, b) => intersectHorizontal(a, b, rectangle.y + rectangle.height)]
+  ];
+  for (const [inside, intersection] of edges) {
+    const input = output;
+    output = [];
+    for (let index = 0; index < input.length; index += 1) {
+      const current = input[index];
+      const previous = input[(index + input.length - 1) % input.length];
+      const currentInside = inside(current);
+      const previousInside = inside(previous);
+      if (currentInside && !previousInside) output.push(intersection(previous, current));
+      if (currentInside) output.push(current);
+      else if (previousInside) output.push(intersection(previous, current));
+    }
+    if (!output.length) break;
+  }
+  return output;
+}
+
+function intersectVertical(a, b, x) {
+  const factor = (x - a.x) / ((b.x - a.x) || Number.EPSILON);
+  return { x, y: a.y + (b.y - a.y) * factor };
+}
+
+function intersectHorizontal(a, b, y) {
+  const factor = (y - a.y) / ((b.y - a.y) || Number.EPSILON);
+  return { x: a.x + (b.x - a.x) * factor, y };
+}
+
+function polygonArea(points) {
+  if (!Array.isArray(points) || points.length < 3) return 0;
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    sum += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(sum) / 2;
 }
 
 export function pointInManagedRegion(regionDocument, point) {

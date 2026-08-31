@@ -7,11 +7,12 @@ import {
   PRESET_SCHEMA_VERSION,
   applyPresetToActivity,
   extractPresetDataFromActivity,
-  normalizePreset
+  normalizePreset,
+  resolvePresetPersistentZoneForScene
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 5);
+  assert.equal(BUILTIN_PRESETS.length, 6);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -206,6 +207,83 @@ test("library returns independent copies", () => {
   const first = getBuiltinPersistentZonePresets();
   first[0].persistentZone.geometry.radius = 999;
   assert.notEqual(getBuiltinPersistentZonePresets()[0].persistentZone.geometry.radius, 999);
+});
+
+test("SRD 5.2.1 Grease preset is RAW-oriented and fully replaces stale actions", async () => {
+  const preset = getPersistentZonePreset("srd-5.2.1.grease");
+  assert.equal(preset.source, "srd-5.2.1");
+  assert.equal(preset.rulesVersion, "2024");
+  assert.equal(preset.spell, true);
+  assert.deepEqual(preset.persistentZone.geometry, { type: "rectangle", width: 10, height: 10, units: "ft", placement: "center" });
+  assert.equal(preset.persistentZone.terrain.enabled, true);
+  for (const triggerId of ["onCreate", "enter", "turnEnd"]) {
+    const trigger = preset.persistentZone.triggers[triggerId];
+    assert.equal(trigger.enabled, true);
+    assert.equal(trigger.frequency, "unlimited");
+    assert.equal(trigger.frequencyGroup, "");
+    assert.equal(trigger.simpleEffect.damage.enabled, false);
+    assert.equal(trigger.simpleEffect.healing.enabled, false);
+    assert.equal(trigger.simpleEffect.temporaryHitPoints.enabled, false);
+    assert.equal(trigger.simpleEffect.save.enabled, true);
+    assert.equal(trigger.simpleEffect.save.ability, "dex");
+    assert.equal(trigger.simpleEffect.save.dcMode, "inherit");
+    assert.equal(trigger.simpleEffect.save.onSave, "none");
+    assert.equal(trigger.simpleEffect.statuses.statusId, "prone");
+    assert.equal(trigger.simpleEffect.statuses.persistenceMode, "persistent");
+    assert.equal(trigger.simpleEffect.statuses.recovery.mode, "none");
+  }
+  for (const triggerId of ["onCreate", "enter", "turnEnd"]) {
+    assert.deepEqual(preset.persistentZone.triggers[triggerId].requiredAbsentStatuses, ["prone"]);
+  }
+  for (const triggerId of ["exit", "move", "turnStart"]) assert.equal(preset.persistentZone.triggers[triggerId].enabled, false);
+  assert.equal(JSON.stringify(preset.persistentZone).includes("concentration"), false);
+  const state = { persistentZone: buildStalePersistentZoneConfiguration() };
+  await applyPresetToActivity({
+    id: "grease-activity",
+    item: { async updateActivity(_id, updates) {
+      if (Object.hasOwn(updates, "-=persistentZone")) delete state.persistentZone;
+      if (updates.persistentZone) state.persistentZone = structuredClone(updates.persistentZone);
+    } }
+  }, preset);
+  assert.equal(state.persistentZone.geometry.type, "rectangle");
+  assert.equal(JSON.stringify(state.persistentZone).includes("9d9"), false);
+  assert.equal(JSON.stringify(state.persistentZone).includes("poisoned"), false);
+});
+
+test("Grease is converted once to scene units when explicitly applied", async () => {
+  const preset = getPersistentZonePreset("srd-5.2.1.grease");
+  const imperial = { grid: { units: "ft", distance: 5, size: 100 } };
+  const metric = { grid: { units: "m", distance: 1.5, size: 100 } };
+  assert.deepEqual(resolvePresetPersistentZoneForScene(preset.persistentZone, imperial).geometry, {
+    type: "rectangle", width: 10, height: 10, units: "ft", placement: "center"
+  });
+  assert.deepEqual(resolvePresetPersistentZoneForScene(preset.persistentZone, metric).geometry, {
+    type: "rectangle", width: 3, height: 3, units: "m", placement: "center"
+  });
+  assert.deepEqual(preset.persistentZone.geometry, {
+    type: "rectangle", width: 10, height: 10, units: "ft", placement: "center"
+  }, "the canonical builtin must remain RAW and immutable");
+
+  const state = {};
+  const activity = {
+    id: "metric-grease",
+    item: { async updateActivity(_id, updates) {
+      if (Object.hasOwn(updates, "-=persistentZone")) delete state.persistentZone;
+      if (updates.persistentZone) state.persistentZone = structuredClone(updates.persistentZone);
+    } }
+  };
+  await applyPresetToActivity(activity, preset, { scene: metric });
+  assert.deepEqual(state.persistentZone.geometry, {
+    type: "rectangle", width: 3, height: 3, units: "m", placement: "center"
+  });
+  state.persistentZone.geometry.width = 6;
+  assert.deepEqual(state.persistentZone.geometry, {
+    type: "rectangle", width: 6, height: 3, units: "m", placement: "center"
+  }, "manual metric edits must remain ordinary Activity data");
+  await applyPresetToActivity(activity, preset, { scene: metric });
+  assert.deepEqual(state.persistentZone.geometry, {
+    type: "rectangle", width: 3, height: 3, units: "m", placement: "center"
+  }, "only explicit preset reapplication may restore the converted preset dimensions");
 });
 
 function deepMerge(target, source) {

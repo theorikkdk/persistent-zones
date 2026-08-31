@@ -7,8 +7,12 @@
       <div class="form-fields">
         <select data-pz-preset-select>
           <option value="">{{localize "PERSISTENT_ZONES.Activity.Presets.Select"}}</option>
-          {{#each persistentZonePresets as |preset|}}
-            <option value="{{preset.id}}" {{#if preset.selected}}selected{{/if}}>{{preset.name}}</option>
+          {{#each persistentZonePresetGroups as |group|}}
+          <optgroup label="{{localize group.label}}">
+            {{#each group.presets as |preset|}}
+              <option value="{{preset.id}}" {{#if preset.selected}}selected{{/if}}>{{preset.name}}</option>
+            {{/each}}
+          </optgroup>
           {{/each}}
         </select>
         <button type="button" data-pz-apply-preset {{#unless persistentZoneSelectedPreset}}disabled{{/unless}}>
@@ -152,6 +156,25 @@
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
         <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.CircleRadius"}}</p>
+      </div>
+    </div>
+    <div data-pz-geometry="rectangle">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RectangleWidth"}}</label>
+        <input type="number" name="persistentZone.geometry.width" value="{{persistentZone.geometry.width}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RectangleHeight"}}</label>
+        <input type="number" name="persistentZone.geometry.height" value="{{persistentZone.geometry.height}}" min="0" step="any">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RectangleUnits"}}</label>
+        <select name="persistentZone.geometry.units">
+          <option value="scene" {{#if (eq persistentZone.geometry.units "scene")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Scene"}}</option>
+          <option value="ft" {{#if (eq persistentZone.geometry.units "ft")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Feet"}}</option>
+          <option value="m" {{#if (eq persistentZone.geometry.units "m")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Meters"}}</option>
+        </select>
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.RectangleDimensions"}}</p>
       </div>
     </div>
     <div data-pz-geometry="ring">

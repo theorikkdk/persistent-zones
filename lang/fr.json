@@ -16,12 +16,14 @@
         "ApplyConfirmTitle": "Appliquer un preset Persistent Zone",
         "ApplyConfirm": "Appliquer {preset} ? La configuration Persistent Zones actuelle de cette Activity sera remplacée.",
         "Applied": "Le preset {preset} a été appliqué.",
+        "Categories": { "SrdSpells": "Sorts SRD 5.2.1", "Generic": "Presets génériques" },
         "Builtins": {
           "SimpleCircle": { "Name": "Zone circulaire simple", "Description": "Une Zone persistante circulaire sans documents liés ni effets." },
           "DifficultTerrain": { "Name": "Terrain difficile", "Description": "Une zone circulaire avec le terrain difficile natif activé." },
           "Ring": { "Name": "Anneau", "Description": "Un anneau natif v2 avec largeurs intérieure et extérieure indépendantes." },
           "WallLine": { "Name": "Mur / ligne", "Description": "Une Zone persistante linéaire simple sans murs ni lumières liés." },
-          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." }
+          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." },
+          "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." }
         }
       },
       "Help": {
@@ -29,6 +31,7 @@
         "Multipart": "En mode zone unique, les Déclenchements ci-dessous s'appliquent à cette zone. Avec les parties activées, chaque partie possède ses propres Déclenchements ; Mouvement, Murs liés et Lumières liées restent des réglages généraux du placement.",
         "MainGeometry": "Définit la forme créée par le placement principal. Les distances utilisent l'unité de distance de la scène.",
         "CircleRadius": "Distance entre le centre et le bord de la zone, dans l'unité de la scène.",
+        "RectangleDimensions": "La largeur et la hauteur sont stockées dans l’unité choisie puis converties pour la scène courante au placement. Le point choisi est le centre du rectangle.",
         "RingReferenceRadius": "Distance entre le centre et la ligne de référence qui sert à positionner l'anneau, dans l'unité de la scène.",
         "RingInnerWidth": "Distance sur laquelle l'anneau s'étend vers le centre depuis le rayon de référence, dans l'unité de la scène.",
         "RingOuterWidth": "Distance sur laquelle l'anneau s'étend vers l'extérieur depuis le rayon de référence, dans l'unité de la scène.",
@@ -91,6 +94,9 @@
       "Fields": {
         "Shape": "Forme de zone",
         "CircleRadius": "Rayon du cercle",
+        "RectangleWidth": "Largeur",
+        "RectangleHeight": "Hauteur",
+        "RectangleUnits": "Unité des dimensions",
         "RingReferenceRadius": "Rayon de référence de l'anneau",
         "RingInnerWidth": "Largeur intérieure de la bande",
         "RingOuterWidth": "Largeur extérieure de la bande",
@@ -132,9 +138,11 @@
       },
       "Geometry": {
         "Circle": "Cercle",
+        "Rectangle": "Rectangle",
         "Ring": "Anneau",
         "Wall": "Mur"
       },
+      "DistanceUnits": { "Scene": "Unités de la scène", "Feet": "Pieds", "Meters": "Mètres" },
       "Parts": {
         "ZoneParts": "Parties de zone",
         "UseMultiple": "Utiliser plusieurs parties de zone",

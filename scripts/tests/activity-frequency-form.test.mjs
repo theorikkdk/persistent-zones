@@ -27,7 +27,10 @@ globalThis.dnd5e = {
 };
 
 const { PersistentZoneActivityData } = await import("../activity/persistent-zone-activity-data.mjs");
-const { normalizePersistentZoneActivitySubmitData } = await import("../activity/persistent-zone-activity-sheet.mjs");
+const {
+  mergePersistentZoneActivitySubmitData,
+  normalizePersistentZoneActivitySubmitData
+} = await import("../activity/persistent-zone-activity-sheet.mjs");
 
 test("frequency fields belong to every trigger schema and not to statuses", () => {
   const schema = PersistentZoneActivityData.defineSchema();
@@ -36,6 +39,11 @@ test("frequency fields belong to every trigger schema and not to statuses", () =
   assert.equal(onCreate.fields.frequency.options.initial, "unlimited");
   assert.equal(onCreate.fields.frequencyGroup.options.initial, "");
   assert.equal(Object.hasOwn(onCreate.fields.simpleEffect.fields.statuses.fields, "frequency"), false);
+  const geometry = schema.persistentZone.fields.geometry.fields;
+  assert.equal(geometry.width.options.initial, 10);
+  assert.equal(geometry.height.options.initial, 10);
+  assert.deepEqual(geometry.units.options.choices, ["scene", "ft", "m"]);
+  assert.deepEqual(geometry.placement.options.choices, ["center"]);
 });
 
 test("expanded mono and multipart form fields survive custom PZ processing", () => {
@@ -66,6 +74,66 @@ test("expanded mono and multipart form fields survive custom PZ processing", () 
   assert.equal(processed.triggers.enter.frequency, "once-per-turn");
   assert.equal(processed.parts[0].triggers.onCreate.frequency, "once-per-turn");
   assert.equal(processed.parts[1].triggers.onCreate.frequencyGroup, "part-test");
+});
+
+test("an unrelated manual DC edit preserves hidden Rectangle and trigger configuration", () => {
+  const existing = {
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "rectangle", width: 20, height: 10, units: "ft", placement: "center" },
+    triggers: {
+      onCreate: {
+        enabled: true,
+        mode: "simple-effect",
+        frequency: "once-per-turn",
+        frequencyGroup: "grease-shared",
+        requiredAbsentStatuses: ["prone"],
+        simpleEffect: {
+          save: { enabled: true, ability: "dex", dcMode: "inherit", dc: 13, onSave: "none" },
+          statuses: { enabled: true, statusId: "prone", recovery: { mode: "none", hiddenProviderData: "keep" } }
+        }
+      },
+      turnEnd: { enabled: true, mode: "simple-effect", frequencyGroup: "grease-shared", hiddenTriggerData: "keep" }
+    },
+    parts: [{ id: "primary", geometry: { type: "template", hiddenOffset: 2 }, hiddenPartData: "keep" }],
+    terrain: { enabled: true, multiplier: 2 },
+    linkedWalls: { enabled: false, hiddenWallData: "keep" },
+    linkedLights: { enabled: false, hiddenLightData: "keep" },
+    lifecycle: { deleteOnConcentrationEnd: true, hiddenLifecycleData: "keep" }
+  };
+  const submitted = {
+    triggers: { onCreate: { simpleEffect: { save: { dcMode: "manual", dc: 13 } } } }
+  };
+
+  const processed = normalizePersistentZoneActivitySubmitData(
+    mergePersistentZoneActivitySubmitData(existing, submitted)
+  );
+
+  assert.deepEqual(processed.geometry, existing.geometry);
+  assert.deepEqual(processed.triggers.onCreate.requiredAbsentStatuses, ["prone"]);
+  assert.equal(processed.triggers.onCreate.simpleEffect.save.dcMode, "manual");
+  assert.equal(processed.triggers.onCreate.simpleEffect.save.dc, 13);
+  assert.equal(processed.triggers.onCreate.simpleEffect.statuses.recovery.hiddenProviderData, "keep");
+  assert.equal(processed.triggers.turnEnd.hiddenTriggerData, "keep");
+  assert.equal(processed.parts[0].geometry.hiddenOffset, 2);
+  assert.equal(processed.parts[0].hiddenPartData, "keep");
+  assert.deepEqual(processed.terrain, existing.terrain);
+  assert.equal(processed.linkedWalls.hiddenWallData, "keep");
+  assert.equal(processed.linkedLights.hiddenLightData, "keep");
+  assert.equal(processed.lifecycle.hiddenLifecycleData, "keep");
+});
+
+test("Rectangle dimensions remain editable across an unrelated second submit", () => {
+  const first = normalizePersistentZoneActivitySubmitData(mergePersistentZoneActivitySubmitData({
+    geometry: { type: "rectangle", width: 10, height: 10, units: "ft", placement: "center" }
+  }, {
+    geometry: { width: 20, height: 10, units: "ft" }
+  }));
+  const second = normalizePersistentZoneActivitySubmitData(mergePersistentZoneActivitySubmitData(first, {
+    triggers: { onCreate: { simpleEffect: { save: { dcMode: "manual", dc: 13 } } } }
+  }));
+  assert.deepEqual(first.geometry, { type: "rectangle", width: 20, height: 10, units: "ft", placement: "center" });
+  assert.deepEqual(second.geometry, first.geometry);
 });
 
 function setProperty(object, path, value) {

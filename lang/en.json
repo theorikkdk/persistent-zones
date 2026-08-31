@@ -16,12 +16,14 @@
         "ApplyConfirmTitle": "Apply Persistent Zone Preset",
         "ApplyConfirm": "Apply {preset}? This will replace the current Persistent Zones configuration of this Activity.",
         "Applied": "Applied the {preset} preset.",
+        "Categories": { "SrdSpells": "SRD 5.2.1 Spells", "Generic": "Generic presets" },
         "Builtins": {
           "SimpleCircle": { "Name": "Simple circular zone", "Description": "A basic circular Persistent Zone without linked documents or effects." },
           "DifficultTerrain": { "Name": "Difficult terrain", "Description": "A circular zone with native difficult terrain enabled." },
           "Ring": { "Name": "Ring", "Description": "A native v2 ring with independent inner and outer widths." },
           "WallLine": { "Name": "Wall / line", "Description": "A simple linear Persistent Zone without linked walls or lights." },
-          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." }
+          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." },
+          "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." }
         }
       },
       "Help": {
@@ -29,6 +31,7 @@
         "Multipart": "In single-zone mode, the Triggers below apply to one zone. With zone parts enabled, each part has its own Triggers; Movement, Linked Walls, and Linked Lights remain general placement settings.",
         "MainGeometry": "Defines the shape created by the main placement. Distances use the scene's distance units.",
         "CircleRadius": "Distance from the center to the edge of the zone, in scene units.",
+        "RectangleDimensions": "Width and height are stored with the selected unit and converted to the current scene when placed. The chosen point is the rectangle's center.",
         "RingReferenceRadius": "Distance from the center to the reference line used to position the ring, in scene units.",
         "RingInnerWidth": "Distance the ring extends inward from the reference radius, in scene units.",
         "RingOuterWidth": "Distance the ring extends outward from the reference radius, in scene units.",
@@ -91,6 +94,9 @@
       "Fields": {
         "Shape": "Zone shape",
         "CircleRadius": "Circle radius",
+        "RectangleWidth": "Width",
+        "RectangleHeight": "Height",
+        "RectangleUnits": "Dimension unit",
         "RingReferenceRadius": "Ring reference radius",
         "RingInnerWidth": "Inner band width",
         "RingOuterWidth": "Outer band width",
@@ -132,9 +138,11 @@
       },
       "Geometry": {
         "Circle": "Circle",
+        "Rectangle": "Rectangle",
         "Ring": "Ring",
         "Wall": "Wall"
       },
+      "DistanceUnits": { "Scene": "Scene units", "Feet": "Feet", "Meters": "Meters" },
       "Parts": {
         "ZoneParts": "Zone Parts",
         "UseMultiple": "Use multiple zone parts",

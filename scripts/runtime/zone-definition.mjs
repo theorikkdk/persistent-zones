@@ -1477,6 +1477,16 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
     };
   }
 
+  if (geometryType === "rectangle" || geometryType === "rect" || geometryType === "square") {
+    return {
+      type: "rectangle",
+      width: coerceNumber(geometryDefinition.width, null),
+      height: coerceNumber(geometryDefinition.height, coerceNumber(geometryDefinition.width, null)),
+      units: String(geometryDefinition.units ?? "scene").trim().toLowerCase() || "scene",
+      placement: "center"
+    };
+  }
+
   if (geometryType === "side-of-line" || geometryType === "sideofline") {
     const templateDistance = coerceNumber(
       pickFirstDefined(
@@ -1743,6 +1753,7 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     mode: enabled ? mode : "none",
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
+    requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
     stepMode,
     cellStep: stepMode === "grid-cell"
       ? normalizeMoveCellStep(
@@ -1834,6 +1845,11 @@ function normalizeTriggerFrequency(value) {
   return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn"
     ? "once-per-turn"
     : "unlimited";
+}
+
+function normalizeStatusIdList(value) {
+  const values = Array.isArray(value) ? value : value == null || value === "" ? [] : [value];
+  return Array.from(new Set(values.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)));
 }
 
 function collectValidationReasons({ sourceDefinition, normalizedDefinition }) {

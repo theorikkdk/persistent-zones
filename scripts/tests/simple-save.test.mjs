@@ -69,6 +69,20 @@ const { buildSimpleSaveResult, rollSimpleActorSave } = await import("../runtime/
 }
 
 {
+  const nativeTargets = [];
+  const actor = {
+    async rollSavingThrow(config) {
+      nativeTargets.push(config);
+      return [{ total: 12 }];
+    }
+  };
+  const failedRoll = await rollSimpleActorSave({ actor, ability: "dex", dc: 13, flavor: "Grease manual save" });
+  assert.deepEqual(nativeTargets, [{ ability: "dex", target: 13 }], "a manual DC must use the native D&D5e target");
+  assert.equal(buildSimpleSaveResult({ ability: "dex", dc: 13, roll: failedRoll }).success, false);
+  assert.equal(buildSimpleSaveResult({ ability: "dex", dc: 13, roll: { total: 13 } }).success, true);
+}
+
+{
   const messages = [];
   globalThis.Roll = class {
     constructor(formula, data) {
