@@ -7096,6 +7096,8 @@ function buildManagedRegionRuntimeFlags({
     itemUuid: normalizedDefinition?.itemUuid ?? sourceContext?.item?.uuid ?? null,
     actorUuid: normalizedDefinition?.actorUuid ?? sourceContext?.actor?.uuid ?? null,
     casterUuid: normalizedDefinition?.casterUuid ?? sourceContext?.caster?.uuid ?? null,
+    sourceTokenUuid: existingRuntime?.sourceTokenUuid ?? sourceContext?.sourceTokenUuid ?? null,
+    sourceDisposition: existingRuntime?.sourceDisposition ?? sourceContext?.sourceDisposition ?? null,
     activityId: normalizedDefinition?.activityId ?? sourceContext?.activity?.id ?? null,
     activityUuid: normalizedDefinition?.activityUuid ?? sourceContext?.activity?.uuid ?? null,
     activityType: normalizedDefinition?.activityType ?? sourceContext?.activity?.type ?? null,
@@ -8091,7 +8093,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       activityUuid: sourceHints.activityUuid,
       fallbackToSinglePersistentZoneActivity: false
     });
-    const placementContext = nativeActivity ? null : findPersistentZonePlacementContext({
+    const placementContext = findPersistentZonePlacementContext({
       userId: userId ?? userIdForRegionCreation(regionDocument),
       sceneId: scene.id,
       itemUuid: resolvedContext.item?.uuid ?? null,
@@ -8282,9 +8284,15 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       candidates: candidates.map((candidate) => candidate.summary)
     };
   }
-  const consumedPlacementContext = selected.identityHandoff?.selectionSource === "persistent-zone-placement-context"
+  const consumedPlacementContext = selected.identityHandoff?.placementContext
     ? consumePersistentZonePlacementContext(selected.identityHandoff.placementContext)
     : null;
+  const sourcePlacementContext = consumedPlacementContext ?? selected.identityHandoff?.placementContext ?? null;
+  selected.sourceContext = {
+    ...selected.sourceContext,
+    sourceTokenUuid: sourcePlacementContext?.sourceTokenUuid ?? selected.sourceContext?.sourceTokenUuid ?? null,
+    sourceDisposition: sourcePlacementContext?.sourceDisposition ?? selected.sourceContext?.sourceDisposition ?? null
+  };
   logActivityIdentityHandoff({
     ...selected.identityHandoff,
     contextConsumed: Boolean(consumedPlacementContext),

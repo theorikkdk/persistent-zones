@@ -104,6 +104,7 @@
         "WallLength": "Wall length",
         "WallThickness": "Wall thickness",
         "TriggerFrequency": "Frequency",
+        "TriggerTargets": "Targets",
         "TriggerFrequencyGroup": "Shared frequency group",
         "DamageEnabled": "Apply damage",
         "HealingEnabled": "Apply healing",
@@ -211,6 +212,13 @@
       "TriggerFrequencies": {
         "Unlimited": "Unlimited",
         "OncePerTurn": "Once per turn"
+      },
+      "TargetFilters": {
+        "All": "Everyone",
+        "Allies": "Allies",
+        "Enemies": "Enemies",
+        "Self": "Self",
+        "Others": "Others"
       },
       "LinkedWallGeometry": {
         "Centerline": "Centerline",

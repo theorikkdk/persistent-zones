@@ -155,7 +155,7 @@ test("all technical built-ins replace stale effects with explicit disabled trigg
     ["builtin.multipart-simple", "circle"]
   ]);
 
-  for (const preset of getBuiltinPersistentZonePresets().filter((candidate) => candidate.id.startsWith("builtin."))) {
+  for (const preset of getBuiltinPersistentZonePresets().filter((candidate) => candidate.id.startsWith("builtin.") && candidate.category !== "test")) {
     const state = { persistentZone: buildStalePersistentZoneConfiguration() };
     const item = {
       async updateActivity(_id, updates) {
@@ -183,14 +183,16 @@ test("preset extraction and application preserve frequency configuration", async
     enabled: true,
     geometry: { type: "circle", radius: 10 },
     triggers: {
-      onCreate: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "shared" },
-      enter: { enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: "shared" },
+      onCreate: { enabled: true, mode: "simple-effect", targetFilter: { mode: "enemies" }, frequency: "once-per-turn", frequencyGroup: "shared" },
+      enter: { enabled: true, mode: "simple-effect", targetFilter: { mode: "allies" }, frequency: "once-per-turn", frequencyGroup: "shared" },
       exit: { enabled: false, mode: "none", frequency: "unlimited", frequencyGroup: "" }
     }
   };
   const extracted = extractPresetDataFromActivity({ name: "Frequency", persistentZone }, { id: "user.frequency" });
   assert.equal(extracted.persistentZone.triggers.onCreate.frequency, "once-per-turn");
   assert.equal(extracted.persistentZone.triggers.onCreate.frequencyGroup, "shared");
+  assert.equal(extracted.persistentZone.triggers.onCreate.targetFilter.mode, "enemies");
+  assert.equal(extracted.persistentZone.triggers.enter.targetFilter.mode, "allies");
   assert.equal(extracted.persistentZone.triggers.enter.frequencyGroup, "shared");
   assert.equal(extracted.persistentZone.triggers.exit.frequency, "unlimited");
 
@@ -201,12 +203,44 @@ test("preset extraction and application preserve frequency configuration", async
   }, extracted);
   assert.equal(captured[1].persistentZone.triggers.onCreate.frequency, "once-per-turn");
   assert.equal(captured[1].persistentZone.triggers.onCreate.frequencyGroup, "shared");
+  assert.equal(captured[1].persistentZone.triggers.onCreate.targetFilter.mode, "enemies");
 });
 
 test("library returns independent copies", () => {
   const first = getBuiltinPersistentZonePresets();
   first[0].persistentZone.geometry.radius = 999;
   assert.notEqual(getBuiltinPersistentZonePresets()[0].persistentZone.geometry.radius, 999);
+});
+
+test("preset normalization preserves target filters and healing from an internal fixture", () => {
+  const fixture = structuredClone(BUILTIN_PRESETS[0]);
+  fixture.id = "fixture.target-filters";
+  fixture.source = "user";
+  fixture.name = "Target filter fixture";
+  fixture.persistentZone.triggers.enter = {
+    ...fixture.persistentZone.triggers.enter,
+    enabled: true,
+    mode: "simple-effect",
+    targetFilter: { mode: "enemies" },
+    simpleEffect: {
+      ...fixture.persistentZone.triggers.enter.simpleEffect,
+      damage: { enabled: true, formula: "1", type: "fire" }
+    }
+  };
+  fixture.persistentZone.triggers.turnEnd = {
+    ...fixture.persistentZone.triggers.turnEnd,
+    enabled: true,
+    mode: "simple-effect",
+    targetFilter: { mode: "allies" },
+    simpleEffect: {
+      ...fixture.persistentZone.triggers.turnEnd.simpleEffect,
+      healing: { enabled: true, formula: "1" }
+    }
+  };
+  const preset = normalizePreset(fixture);
+  assert.deepEqual(preset.persistentZone.triggers.enter.targetFilter, { mode: "enemies" });
+  assert.deepEqual(preset.persistentZone.triggers.turnEnd.targetFilter, { mode: "allies" });
+  assert.deepEqual(preset.persistentZone.triggers.turnEnd.simpleEffect.healing, { enabled: true, formula: "1" });
 });
 
 test("SRD 5.2.1 Grease preset is RAW-oriented and fully replaces stale actions", async () => {
@@ -218,6 +252,7 @@ test("SRD 5.2.1 Grease preset is RAW-oriented and fully replaces stale actions",
   assert.equal(preset.persistentZone.terrain.enabled, true);
   for (const triggerId of ["onCreate", "enter", "turnEnd"]) {
     const trigger = preset.persistentZone.triggers[triggerId];
+    assert.equal(trigger.targetFilter.mode, "all");
     assert.equal(trigger.enabled, true);
     assert.equal(trigger.frequency, "unlimited");
     assert.equal(trigger.frequencyGroup, "");

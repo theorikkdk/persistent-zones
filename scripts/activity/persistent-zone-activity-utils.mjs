@@ -400,6 +400,7 @@ function buildTriggerConfig(triggerSource = {}, {
     enabled,
     mode,
     triggerId,
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(trigger.targetFilter?.mode) },
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
@@ -512,6 +513,11 @@ function normalizeGeometryType(value) {
   const normalized = String(value ?? "circle").trim().toLowerCase();
   if (normalized === "rect" || normalized === "square") return "rectangle";
   return ["circle", "rectangle", "ring", "wall"].includes(normalized) ? normalized : "circle";
+}
+
+function normalizeTriggerTargetFilterMode(value) {
+  const mode = String(value ?? "all").trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
 function normalizeStatusIdList(value) {

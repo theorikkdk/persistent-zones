@@ -4,6 +4,7 @@ import { PRESET_SCHEMA_VERSION } from "./preset-utils.mjs";
 const buildDisabledTrigger = () => ({
   enabled: false,
   mode: "none",
+  targetFilter: { mode: "all" },
   frequency: "unlimited",
   frequencyGroup: "",
   simpleEffect: {

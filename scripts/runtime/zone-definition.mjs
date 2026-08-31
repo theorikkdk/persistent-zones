@@ -1049,11 +1049,13 @@ function normalizeTriggers(triggerDefinition, dc, {
   );
   const startTurnDefinition = pickFirstDefined(
     triggerDefinition.onStartTurn,
-    triggerDefinition.onTurnStart
+    triggerDefinition.onTurnStart,
+    triggerDefinition.turnStart
   );
   const endTurnDefinition = pickFirstDefined(
     triggerDefinition.onEndTurn,
-    triggerDefinition.onTurnEnd
+    triggerDefinition.onTurnEnd,
+    triggerDefinition.turnEnd
   );
   const moveDefinition = pickFirstDefined(
     triggerDefinition.onMove,
@@ -1673,6 +1675,16 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       ? definition.statuses
       : {};
   const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
+  const healingDefinition = isPlainObject(definition.healing)
+    ? definition.healing
+    : isPlainObject(simpleEffectDefinition.healing)
+      ? simpleEffectDefinition.healing
+      : {};
+  const temporaryHitPointsDefinition = isPlainObject(definition.temporaryHitPoints)
+    ? definition.temporaryHitPoints
+    : isPlainObject(simpleEffectDefinition.temporaryHitPoints)
+      ? simpleEffectDefinition.temporaryHitPoints
+      : {};
   const saveDefinition = isPlainObject(definition.save) ? definition.save : {};
   const activityDefinition = isPlainObject(definition.activity) ? definition.activity : {};
   const saveDcMode = normalizeSaveDcMode(
@@ -1751,6 +1763,7 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
   return {
     enabled,
     mode: enabled ? mode : "none",
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(definition.targetFilter?.mode) },
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
@@ -1831,6 +1844,14 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       dc: coerceNumber(pickFirstDefined(saveDefinition.dc, dc), null),
       onSuccess: String(pickFirstDefined(saveDefinition.onSuccess, "half")).toLowerCase()
     },
+    healing: {
+      enabled: coerceBoolean(healingDefinition.enabled, false) && mode === "simple",
+      formula: String(healingDefinition.formula ?? "").trim()
+    },
+    temporaryHitPoints: {
+      enabled: coerceBoolean(temporaryHitPointsDefinition.enabled, false) && mode === "simple",
+      formula: String(temporaryHitPointsDefinition.formula ?? "").trim()
+    },
     statuses: {
       enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
       statusId: String(statusesDefinition.statusId ?? "").trim() || null,
@@ -1845,6 +1866,11 @@ function normalizeTriggerFrequency(value) {
   return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn"
     ? "once-per-turn"
     : "unlimited";
+}
+
+function normalizeTriggerTargetFilterMode(value) {
+  const mode = String(value ?? "all").trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
 function normalizeStatusIdList(value) {

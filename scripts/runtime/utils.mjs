@@ -288,9 +288,14 @@ export function evaluateManagedRegionTargetFilter(tokenDocument, regionDocument,
     definition?.actorUuid ??
     null;
   const targetActorUuid = tokenDocument.actor?.uuid ?? null;
-  const sourceToken = resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid);
+  const sourceToken = resolveManagedRegionSourceToken(
+    regionDocument,
+    tokenDocument,
+    sourceActorUuid,
+    runtime?.sourceTokenUuid ?? runtime?.casterTokenUuid ?? null
+  );
   const sourceDisposition = coerceNumber(
-    pickFirstDefined(sourceToken?.disposition, sourceToken?.document?.disposition),
+    pickFirstDefined(sourceToken?.disposition, sourceToken?.document?.disposition, runtime?.sourceDisposition),
     null
   );
   const targetDisposition = coerceNumber(
@@ -679,6 +684,86 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   }
 
   return result;
+}
+
+export function evaluateTriggerTargetFilter({
+  regionDocument,
+  runtime = null,
+  triggerConfig = null,
+  triggerId = null,
+  tokenDocument
+} = {}) {
+  const resolvedRuntime = runtime ?? getRegionRuntimeFlags(regionDocument) ?? {};
+  const globalResult = evaluateManagedRegionTargetFilter(
+    tokenDocument,
+    regionDocument,
+    resolvedRuntime.normalizedDefinition
+  );
+  const mode = normalizeTriggerTargetFilterMode(triggerConfig?.targetFilter?.mode);
+  const sourceTokenUuid = String(
+    resolvedRuntime.sourceTokenUuid ??
+    resolvedRuntime.casterTokenUuid ??
+    resolvedRuntime.normalizedDefinition?.sourceTokenUuid ??
+    ""
+  ).trim() || null;
+  const targetTokenUuid = String(tokenDocument?.uuid ?? "").trim() || null;
+  const sourceToken = resolveManagedRegionSourceTokenByUuid(regionDocument, tokenDocument, sourceTokenUuid);
+  const sourceDisposition = coerceNumber(
+    pickFirstDefined(
+      sourceToken?.disposition,
+      sourceToken?.document?.disposition,
+      resolvedRuntime.sourceDisposition,
+      resolvedRuntime.normalizedDefinition?.sourceDisposition
+    ),
+    null
+  );
+  const targetDisposition = coerceNumber(
+    pickFirstDefined(tokenDocument?.disposition, tokenDocument?.document?.disposition),
+    null
+  );
+  const baseResult = {
+    allowed: false,
+    mode,
+    sourceTokenUuid,
+    targetTokenUuid,
+    sourceDisposition,
+    targetDisposition,
+    reason: "target-filter-not-matched",
+    globalResult
+  };
+
+  if (!globalResult.allowed) return { ...baseResult, reason: "global-target-filter-rejected" };
+  if (mode === "all") return { ...baseResult, allowed: true, reason: "all-targets" };
+  if (!sourceTokenUuid) return { ...baseResult, reason: "source-token-identity-unavailable" };
+
+  const sameToken = Boolean(targetTokenUuid && targetTokenUuid === sourceTokenUuid);
+  if (mode === "self") {
+    return { ...baseResult, allowed: sameToken, reason: sameToken ? "source-token" : "different-token" };
+  }
+  if (mode === "others") {
+    return { ...baseResult, allowed: !sameToken, reason: sameToken ? "source-token-excluded" : "different-token" };
+  }
+  if (sourceDisposition === null) return { ...baseResult, reason: "source-disposition-unavailable" };
+
+  const dispositions = globalThis.CONST?.TOKEN_DISPOSITIONS ?? {};
+  const friendly = Number(dispositions.FRIENDLY ?? 1);
+  const hostile = Number(dispositions.HOSTILE ?? -1);
+  const sourceCamp = sourceDisposition === friendly ? "friendly" : sourceDisposition === hostile ? "hostile" : null;
+  const targetCamp = targetDisposition === friendly ? "friendly" : targetDisposition === hostile ? "hostile" : null;
+  if (!sourceCamp || !targetCamp) {
+    return { ...baseResult, reason: targetCamp ? "source-disposition-unsupported" : "neutral-not-matched" };
+  }
+  if (mode === "allies") {
+    const allowed = sourceCamp === targetCamp;
+    return { ...baseResult, allowed, reason: allowed ? "same-disposition" : "opposite-disposition" };
+  }
+  const allowed = sourceCamp !== targetCamp;
+  return { ...baseResult, allowed, reason: allowed ? "opposite-disposition" : "same-disposition" };
+}
+
+export function normalizeTriggerTargetFilterMode(value) {
+  const mode = String(value ?? "all").trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
 const TOKEN_CELL_COVERAGE_THRESHOLD = 0.5;
@@ -1414,7 +1499,7 @@ function collectManagedRegionTargetSelectionLabels(targeting = {}) {
   ].filter(Boolean);
 }
 
-function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid) {
+function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceActorUuid, sourceTokenUuid = null) {
   const scene =
     regionDocument?.parent ??
     tokenDocument?.parent ??
@@ -1424,11 +1509,20 @@ function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceAc
     scene?.tokens?.contents ??
     Array.from(scene?.tokens?.values?.() ?? []);
 
-  if (!sourceActorUuid || !tokenDocuments.length) {
-    return null;
+  if (!tokenDocuments.length) return null;
+  if (sourceTokenUuid) {
+    return tokenDocuments.find((candidate) => candidate?.uuid === sourceTokenUuid) ?? null;
   }
+  if (!sourceActorUuid) return null;
+  const actorTokens = tokenDocuments.filter((candidate) => candidate?.actor?.uuid === sourceActorUuid);
+  return actorTokens.length === 1 ? actorTokens[0] : null;
+}
 
-  return tokenDocuments.find((candidate) => candidate?.actor?.uuid === sourceActorUuid) ?? null;
+function resolveManagedRegionSourceTokenByUuid(regionDocument, tokenDocument, sourceTokenUuid) {
+  if (!sourceTokenUuid) return null;
+  const scene = regionDocument?.parent ?? tokenDocument?.parent ?? globalThis.canvas?.scene ?? null;
+  const tokenDocuments = scene?.tokens?.contents ?? Array.from(scene?.tokens?.values?.() ?? []);
+  return tokenDocuments.find((candidate) => candidate?.uuid === sourceTokenUuid) ?? null;
 }
 
 function sampleTokenRegionPoints({ x, y, width, height }) {

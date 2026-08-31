@@ -18,6 +18,12 @@
         </select>
       </div>
       <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerTargets"}}</label>
+        <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.targetFilter.mode" data-pz-part-field="triggers.{{triggerRow.timing}}.targetFilter.mode">
+          {{selectOptions ../persistentZoneChoices.triggerTargetFilters selected=triggerRow.state.targetFilter.mode localize=true}}
+        </select>
+      </div>
+      <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerFrequency"}}</label>
         <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.frequency" data-pz-part-field="triggers.{{triggerRow.timing}}.frequency" data-pz-frequency-source="part-{{../partRow.id}}-{{triggerRow.timing}}">
           {{selectOptions ../persistentZoneChoices.triggerFrequencies selected=triggerRow.state.frequency localize=true}}

@@ -961,6 +961,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
     ...foundry.utils.deepClone(trigger),
     enabled: trigger.enabled ?? enabledDefault,
     mode,
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(trigger.targetFilter?.mode) },
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? ""),
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
@@ -1006,6 +1007,11 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
       uuid: String(linkedActivity.uuid ?? linkedActivity.activityUuid ?? "")
     }
   };
+}
+
+function normalizeTriggerTargetFilterMode(value) {
+  const mode = String(value ?? "all").trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
 function normalizeUiTriggerMode(value, fallback = "none") {
@@ -1139,6 +1145,13 @@ function buildActivityChoices() {
       { value: "outer-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.OuterEdge" },
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.Centerline" },
       { value: "inner-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.InnerEdge" }
+    ],
+    triggerTargetFilters: [
+      { value: "all", label: "PERSISTENT_ZONES.Activity.TargetFilters.All" },
+      { value: "allies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Allies" },
+      { value: "enemies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Enemies" },
+      { value: "self", label: "PERSISTENT_ZONES.Activity.TargetFilters.Self" },
+      { value: "others", label: "PERSISTENT_ZONES.Activity.TargetFilters.Others" }
     ],
     triggerFrequencies: [
       { value: "unlimited", label: "PERSISTENT_ZONES.Activity.TriggerFrequencies.Unlimited" },

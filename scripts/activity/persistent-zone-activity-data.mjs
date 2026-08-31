@@ -267,6 +267,13 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       initial: enabledInitial ? "simple-effect" : "none",
       choices: ["none", "simple-effect", "linked-activity", "simple", "activity"]
     }),
+    targetFilter: new fields.SchemaField({
+      mode: new fields.StringField({
+        required: false,
+        initial: "all",
+        choices: ["all", "allies", "enemies", "self", "others"]
+      })
+    }),
     frequency: new fields.StringField({
       required: false,
       initial: "unlimited",

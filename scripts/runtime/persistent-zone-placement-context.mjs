@@ -13,7 +13,9 @@ export function registerPersistentZonePlacementContext({
   activityType = null,
   geometryType = null,
   targetTemplateType = null,
-  nativeTemplateType = null
+  nativeTemplateType = null,
+  sourceTokenUuid = null,
+  sourceDisposition = null
 } = {}) {
   pruneExpiredPlacementContexts();
 
@@ -27,6 +29,8 @@ export function registerPersistentZonePlacementContext({
     geometryType: normalizeGeometryType(geometryType),
     targetTemplateType: normalizeIdentifier(targetTemplateType)?.toLowerCase() ?? null,
     nativeTemplateType: normalizeIdentifier(nativeTemplateType)?.toLowerCase() ?? null,
+    sourceTokenUuid: normalizeIdentifier(sourceTokenUuid),
+    sourceDisposition: normalizeDisposition(sourceDisposition),
     placementSequence: ++placementSequence,
     createdAt: Date.now()
   };
@@ -136,4 +140,10 @@ function normalizeGeometryType(value) {
 
 function normalizeIdentifier(value) {
   return String(value ?? "").trim() || null;
+}
+
+function normalizeDisposition(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }

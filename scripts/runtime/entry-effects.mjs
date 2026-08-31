@@ -2,6 +2,7 @@ import {
   debug,
   coerceNumber,
   error,
+  evaluateTriggerTargetFilter,
   fromUuidSafe,
   getRegionRuntimeFlags,
   pickFirstDefined
@@ -55,6 +56,7 @@ export async function applyConfiguredTriggerEffect({
   const resolvedTrigger = {
     ...configuredTrigger,
     mode: actionConfig.mode,
+    targetFilter: actionConfig.targetFilter,
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
     requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
@@ -93,6 +95,23 @@ export async function applyConfiguredTriggerEffect({
     previousInside: context.previousInside ?? null,
     currentInside: context.currentInside ?? null
   };
+
+  const targetFilterDecision = evaluateTriggerTargetFilter({
+    regionDocument,
+    runtime,
+    triggerConfig: resolvedTrigger,
+    triggerId: normalizedTiming,
+    tokenDocument
+  });
+  if (!targetFilterDecision.allowed) {
+    return buildSkippedResult(`Target filter rejected the ${normalizedTiming} trigger.`, {
+      ...baseDiagnostic,
+      timing: normalizedTiming,
+      partId,
+      triggerMode,
+      targetFilter: targetFilterDecision
+    });
+  }
 
   logV14RuntimeDiagnostic("triggerTiming", baseDiagnostic);
   logV14RuntimeDiagnostic("PZ EFFECT CONFIG RESOLVED", {

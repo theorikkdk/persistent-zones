@@ -13,6 +13,7 @@ export function resolveTriggerActionConfiguration({
 
   return {
     mode,
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(config.targetFilter?.mode) },
     frequency: normalizeTriggerFrequency(config.frequency),
     frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(config.requiredAbsentStatuses ?? config.excludedStatuses),
@@ -61,6 +62,11 @@ function getTriggerFromZoneConfiguration(zoneConfiguration, triggerId) {
     default:
       return null;
   }
+}
+
+function normalizeTriggerTargetFilterMode(value) {
+  const mode = String(value ?? "all").trim().toLowerCase();
+  return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
 function normalizeTriggerFrequency(value) {

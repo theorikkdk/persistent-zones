@@ -104,6 +104,7 @@
         "WallLength": "Longueur du mur",
         "WallThickness": "Épaisseur du mur",
         "TriggerFrequency": "Fréquence",
+        "TriggerTargets": "Cibles",
         "TriggerFrequencyGroup": "Groupe de fréquence partagé",
         "DamageEnabled": "Appliquer des dégâts",
         "HealingEnabled": "Appliquer un soin",
@@ -211,6 +212,13 @@
       "TriggerFrequencies": {
         "Unlimited": "Illimitée",
         "OncePerTurn": "Une fois par tour"
+      },
+      "TargetFilters": {
+        "All": "Tout le monde",
+        "Allies": "Alliés",
+        "Enemies": "Ennemis",
+        "Self": "Soi-même",
+        "Others": "Autres"
       },
       "LinkedWallGeometry": {
         "Centerline": "Axe central",
