@@ -1642,7 +1642,7 @@ function resolveLinkedLightAnchor(shapes, templateDocument, regionDocument) {
   };
 }
 
-function buildLinkedLightLayout({
+export function buildLinkedLightLayout({
   scene = null,
   regionDocument = null,
   templateDocument = null,

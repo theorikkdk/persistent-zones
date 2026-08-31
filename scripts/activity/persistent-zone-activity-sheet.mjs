@@ -1070,39 +1070,45 @@ export function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
   const geometryType = String(geometry.type ?? "circle").trim().toLowerCase();
   const existingTemplate = activity?._source?.target?.template ?? activity?.target?.template ?? {};
   const units = String(existingTemplate.units ?? "ft");
+  const scene = globalThis.canvas?.scene ?? null;
+  const sceneUnits = String(scene?.grid?.units ?? units);
+  const toSceneUnits = (value) => convertCanonicalDistanceToSceneUnits(value, geometry.units, scene);
 
   if (geometryType === "wall") {
+    const wallLength = toSceneUnits(geometry.wallLength);
+    const wallThickness = toSceneUnits(geometry.wallThickness);
     return {
       ...existingTemplate,
       type: "wall",
-      size: String(coercePositiveNumber(geometry.wallLength, 30)),
-      width: String(coercePositiveNumber(geometry.wallThickness, 5)),
-      units
+      size: String(coercePositiveNumber(wallLength, 30)),
+      width: String(coercePositiveNumber(wallThickness, 5)),
+      units: sceneUnits
     };
   }
 
   if (geometryType === "rectangle") {
-    const width = convertCanonicalDistanceToSceneUnits(geometry.width, geometry.units, globalThis.canvas?.scene);
-    const height = convertCanonicalDistanceToSceneUnits(geometry.height, geometry.units, globalThis.canvas?.scene);
+    const width = toSceneUnits(geometry.width);
+    const height = toSceneUnits(geometry.height);
     return {
       ...existingTemplate,
       type: "square",
       size: String(coercePositiveNumber(width, 10)),
       width: String(coercePositiveNumber(width, 10)),
       height: String(coercePositiveNumber(height, coercePositiveNumber(width, 10))),
-      units: String(globalThis.canvas?.scene?.grid?.units ?? units)
+      units: sceneUnits
     };
   }
 
-  const radius = geometryType === "ring"
+  const canonicalRadius = geometryType === "ring"
     ? coercePositiveNumber(geometry.ringReferenceRadius, coercePositiveNumber(geometry.radius, 10))
     : coercePositiveNumber(geometry.radius, 10);
+  const radius = toSceneUnits(canonicalRadius);
   return {
     ...existingTemplate,
     type: "circle",
     size: String(radius),
     width: "",
-    units
+    units: sceneUnits
   };
 }
 

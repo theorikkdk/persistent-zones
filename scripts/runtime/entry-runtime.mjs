@@ -17,6 +17,7 @@ import {
   pixelsToDistance,
   resolveNativeRingGeometryFromRegion,
   testTokenInsideManagedRegion,
+  testTokenTouchesManagedRegion,
   wait
 } from "./utils.mjs";
 
@@ -1086,7 +1087,7 @@ async function evaluateTokenEntry(tokenDocument, {
   };
 }
 
-function collectRegionEvaluations(tokenDocument, managedRegions, {
+export function collectRegionEvaluations(tokenDocument, managedRegions, {
   scene,
   moveSource,
   fromState,
@@ -1102,6 +1103,9 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
   return managedRegions.map((regionDocument) => {
     const runtime = getRegionRuntimeFlags(regionDocument);
     const normalizedDefinition = runtime?.normalizedDefinition ?? null;
+    const membershipTest = normalizedDefinition?.interaction?.mode === "thin-wall"
+      ? testTokenTouchesManagedRegion
+      : testTokenInsideManagedRegion;
     const onEnter = normalizedDefinition?.triggers?.onEnter ?? {};
     const onExit = normalizedDefinition?.triggers?.onExit ?? {};
     const onMove = normalizedDefinition?.triggers?.onMove ?? {};
@@ -1117,10 +1121,10 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
     const insideStateKey = buildInsideStateKey(tokenDocument, regionDocument);
     const cachedFromInside = regionInsideStates.get(insideStateKey) ?? null;
     const rawFromInside = firstPathState
-      ? testTokenInsideManagedRegion(tokenDocument, regionDocument, firstPathState)
+      ? membershipTest(tokenDocument, regionDocument, firstPathState)
       : Boolean(cachedFromInside);
     const rawToInside = lastPathState
-      ? testTokenInsideManagedRegion(tokenDocument, regionDocument, lastPathState)
+      ? membershipTest(tokenDocument, regionDocument, lastPathState)
       : false;
     const inferV14InitialEntry =
       isFoundryV14OrNewer() &&
@@ -1165,7 +1169,11 @@ function collectRegionEvaluations(tokenDocument, managedRegions, {
         fromInside,
         {
           stepDistancePixels,
-          gridCellStep: cellStep
+          gridCellStep: cellStep,
+          membershipTest,
+          sampleStepPixels: normalizedDefinition?.interaction?.mode === "thin-wall"
+            ? resolveThinWallSampleStepPixels(regionDocument)
+            : null
         }
       );
     const enterDetected = moveSource === "createToken"
@@ -4149,9 +4157,11 @@ function compactStatePath(states) {
   return result;
 }
 
-function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside, {
+export function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, fromInside, {
   stepDistancePixels = null,
-  gridCellStep = null
+  gridCellStep = null,
+  membershipTest = testTokenInsideManagedRegion,
+  sampleStepPixels = null
 } = {}) {
   const states = compactStatePath(pathStates);
   if (!states.length) {
@@ -4224,7 +4234,7 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
 
     for (const gridState of gridTraversalStates) {
       gridPathDistancePixels += measureStateDistance(previousGridState, gridState);
-      const gridInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, gridState);
+      const gridInside = membershipTest(tokenDocument, regionDocument, gridState);
 
       if (!firstInsideCellState && gridInside) {
         firstInsideCellState = gridState;
@@ -4257,11 +4267,11 @@ function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathStates, 
       previousGridState = gridState;
     }
 
-    const segmentSamples = sampleSegmentStates(states[index - 1], states[index]);
+    const segmentSamples = sampleSegmentStates(states[index - 1], states[index], { sampleStepPixels });
     let previousState = states[index - 1];
 
     for (const sampleState of segmentSamples) {
-      const sampleInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, sampleState);
+      const sampleInside = membershipTest(tokenDocument, regionDocument, sampleState);
       const segmentDistancePixels = measureStateDistance(previousState, sampleState);
       const previousInsideDistancePixels = insideDistancePixels;
       const previousRemainingInsideDistancePixels = remainingInsideDistancePixels;
@@ -4398,7 +4408,7 @@ function summarizeMovementTransitions(transitions = [], totalPathDistancePixels 
   });
 }
 
-function sampleSegmentStates(fromState, toState) {
+function sampleSegmentStates(fromState, toState, { sampleStepPixels = null } = {}) {
   if (!fromState || !toState) {
     return [];
   }
@@ -4407,7 +4417,11 @@ function sampleSegmentStates(fromState, toState) {
   const dy = toState.position.y - fromState.position.y;
   const distance = Math.hypot(dx, dy);
   const gridSize = Math.max(coerceNumber(canvas?.grid?.size, 100), 1);
-  const steps = Math.max(1, Math.ceil(distance / Math.max(gridSize / 2, 1)));
+  const requestedStep = coerceNumber(sampleStepPixels, null);
+  const effectiveStep = requestedStep !== null && requestedStep > 0
+    ? Math.min(gridSize / 2, requestedStep)
+    : gridSize / 2;
+  const steps = Math.max(1, Math.ceil(distance / Math.max(effectiveStep, 1)));
   const samples = [];
 
   for (let step = 1; step <= steps; step += 1) {
@@ -4428,6 +4442,21 @@ function sampleSegmentStates(fromState, toState) {
   }
 
   return samples;
+}
+
+function resolveThinWallSampleStepPixels(regionDocument) {
+  const shapes = Array.from(regionDocument?.shapes ?? regionDocument?._source?.shapes ?? []);
+  const thicknesses = shapes.flatMap((shape) => {
+    const type = String(shape?.type ?? "").toLowerCase();
+    if (type === "line") return [coerceNumber(shape?.width, null)];
+    if (type === "ring") {
+      return [Math.max(0, coerceNumber(shape?.innerWidth, 0)) + Math.max(0, coerceNumber(shape?.outerWidth, 0))];
+    }
+    return [];
+  }).filter((value) => value !== null && value > 0);
+  const gridSize = Math.max(coerceNumber(canvas?.grid?.size, 100), 1);
+  const minimumThickness = thicknesses.length ? Math.min(...thicknesses) : gridSize / 10;
+  return Math.max(1, Math.min(gridSize / 10, minimumThickness / 4));
 }
 
 function buildGridCellTraversalStates(fromState, toState) {

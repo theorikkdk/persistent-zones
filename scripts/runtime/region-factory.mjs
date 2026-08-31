@@ -9447,6 +9447,7 @@ function buildPartRuntimeDefinition(normalizedDefinition, zonePart, {
     ...duplicateData(normalizedDefinition),
     label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
     geometry: duplicateData(zonePart?.geometry ?? { type: "template" }),
+    interaction: duplicateData(zonePart?.interaction ?? normalizedDefinition?.interaction ?? { mode: "area" }),
     targeting: duplicateData(targetingEffective),
     targetingGlobal,
     targetingPart,

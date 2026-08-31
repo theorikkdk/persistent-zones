@@ -1,12 +1,18 @@
 import { MODULE_ID, RUNTIME_FLAG_KEY } from "../constants.mjs";
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
-import { evaluateManagedRegionTargetFilter, getRegionRuntimeFlags, testTokenInsideManagedRegion, wait } from "./utils.mjs";
+import {
+  evaluateManagedRegionTargetFilter,
+  getRegionRuntimeFlags,
+  testTokenInsideManagedRegion,
+  testTokenTouchesManagedRegion,
+  wait
+} from "./utils.mjs";
 
 const onCreateEvaluationsInFlight = new WeakSet();
 
 export async function applyRegionOnCreateTrigger(regionDocument, {
   collectCandidates = collectOnCreateCandidateTokens,
-  testInside = testTokenInsideManagedRegion,
+  testInside = null,
   applyEffect = applyConfiguredTriggerEffect,
   settle = settleOnCreateGeometry
 } = {}) {
@@ -21,17 +27,21 @@ export async function applyRegionOnCreateTrigger(regionDocument, {
   try {
     const normalizedDefinition = initialRuntime.normalizedDefinition ?? {};
     const triggerConfig = normalizedDefinition?.triggers?.onCreate ?? normalizedDefinition?.triggers?.create ?? {};
+    const interactionMode = normalizedDefinition?.interaction?.mode === "thin-wall" ? "thin-wall" : "area";
+    const occupancyTest = testInside ?? (interactionMode === "thin-wall"
+      ? testTokenTouchesManagedRegion
+      : testTokenInsideManagedRegion);
     if (!normalizedDefinition.enabled || !triggerConfig.enabled) {
       await markOnCreateCompleted(regionDocument);
       return { applied: false, reason: "trigger-disabled" };
     }
 
     let candidates = collectCandidates(regionDocument);
-    let insideTokens = candidates.filter((tokenDocument) => tokenDocument?.actor && testInside(tokenDocument, regionDocument));
+    let insideTokens = candidates.filter((tokenDocument) => tokenDocument?.actor && occupancyTest(tokenDocument, regionDocument));
     if (!insideTokens.length) {
       await settle();
       candidates = collectCandidates(regionDocument);
-      insideTokens = candidates.filter((tokenDocument) => tokenDocument?.actor && testInside(tokenDocument, regionDocument));
+      insideTokens = candidates.filter((tokenDocument) => tokenDocument?.actor && occupancyTest(tokenDocument, regionDocument));
     }
 
     const effectAttemptTokenIds = [];

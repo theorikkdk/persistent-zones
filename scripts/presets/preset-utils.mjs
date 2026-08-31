@@ -101,6 +101,23 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
     if (geometry[field] === undefined || geometry[field] === null) continue;
     geometry[field] = convertCanonicalDistanceToSceneUnits(geometry[field], sourceUnits, scene);
   }
+  for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
+    const partGeometry = part?.geometry;
+    if (!isObject(partGeometry)) continue;
+    for (const field of ["offsetStart", "offsetEnd", "axisLength", "width"]) {
+      if (partGeometry[field] === undefined || partGeometry[field] === null) continue;
+      partGeometry[field] = convertCanonicalDistanceToSceneUnits(partGeometry[field], sourceUnits, scene);
+    }
+  }
+  if (isObject(resolved.linkedWalls) && resolved.linkedWalls.height !== undefined && resolved.linkedWalls.height !== null) {
+    resolved.linkedWalls.height = convertCanonicalDistanceToSceneUnits(resolved.linkedWalls.height, sourceUnits, scene);
+  }
+  if (isObject(resolved.linkedLights)) {
+    for (const field of ["bright", "dim"]) {
+      if (resolved.linkedLights[field] === undefined || resolved.linkedLights[field] === null) continue;
+      resolved.linkedLights[field] = convertCanonicalDistanceToSceneUnits(resolved.linkedLights[field], sourceUnits, scene);
+    }
+  }
   geometry.units = sceneUnits;
   return resolved;
 }

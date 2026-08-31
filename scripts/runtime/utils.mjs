@@ -686,6 +686,15 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   return result;
 }
 
+export function testTokenTouchesManagedRegion(tokenDocument, regionDocument, state = null) {
+  if (!tokenDocument || !regionDocument) return false;
+  const membership = buildTokenRegionMembershipState(tokenDocument, state);
+  const shapes = getRegionShapeData(regionDocument);
+  const coverageResult = calculateTokenRegionGridCoverage(membership, regionDocument, shapes);
+  if (coverageResult) return coverageResult.maxCoverageRatio > TOKEN_CELL_COVERAGE_EPSILON;
+  return sampleTokenRegionPoints(membership).some((point) => pointInManagedRegion(regionDocument, point));
+}
+
 export function evaluateTriggerTargetFilter({
   regionDocument,
   runtime = null,

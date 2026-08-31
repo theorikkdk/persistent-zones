@@ -88,6 +88,21 @@ function normalize(config) {
 }
 
 {
+  globalThis.canvas.scene = { grid: { units: "m", distance: 1.5, size: 100 } };
+  const activity = { id: "placement", target: { template: { units: "ft" } } };
+  const line = buildTargetTemplateFromPersistentZoneConfig({ geometry: { type: "wall", wallLength: 60, wallThickness: 1, units: "ft" } }, activity);
+  assert.deepEqual({ type: line.type, size: line.size, width: line.width, units: line.units }, { type: "wall", size: "18", width: "0.3", units: "m" });
+  const ring = buildTargetTemplateFromPersistentZoneConfig({ geometry: { type: "ring", ringReferenceRadius: 10, units: "ft" } }, activity);
+  assert.deepEqual({ type: ring.type, size: ring.size, units: ring.units }, { type: "circle", size: "3", units: "m" });
+  const circle = buildTargetTemplateFromPersistentZoneConfig({ geometry: { type: "circle", radius: 5, units: "ft" } }, activity);
+  assert.deepEqual({ type: circle.type, size: circle.size, units: circle.units }, { type: "circle", size: "1.5", units: "m" });
+  globalThis.canvas.scene = { grid: { units: "ft", distance: 5, size: 100 } };
+  const imperial = buildTargetTemplateFromPersistentZoneConfig({ geometry: { type: "ring", ringReferenceRadius: 10, units: "ft" } }, activity);
+  assert.deepEqual({ size: imperial.size, units: imperial.units }, { size: "10", units: "ft" });
+  globalThis.canvas.scene = null;
+}
+
+{
   const migrated = normalizePersistentZoneActivitySubmitData({
     schemaVersion: 3,
     enabled: true,

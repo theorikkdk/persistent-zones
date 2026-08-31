@@ -202,14 +202,17 @@ function resolveExplicitPartTriggerSource(triggers, canonicalKey, legacyKey) {
 function buildTemplateDefinition(activity, geometryType, geometry) {
   const template = activity?._source?.target?.template ?? activity?.target?.template ?? {};
   const units = template.units ?? "ft";
+  const scene = globalThis.canvas?.scene ?? null;
+  const sceneUnits = scene?.grid?.units ?? units;
+  const toSceneUnits = (value) => convertCanonicalDistanceToSceneUnits(value, geometry.units, scene);
 
   if (geometryType === "wall") {
     return {
       typeSource: "manual",
       type: "ray",
-      distance: numberOrNull(geometry.wallLength) ?? numberOrNull(template.size),
-      width: numberOrNull(geometry.wallThickness) ?? numberOrNull(template.width),
-      units
+      distance: toSceneUnits(geometry.wallLength) ?? numberOrNull(template.size),
+      width: toSceneUnits(geometry.wallThickness) ?? numberOrNull(template.width),
+      units: sceneUnits
     };
   }
 
@@ -224,15 +227,16 @@ function buildTemplateDefinition(activity, geometryType, geometry) {
     };
   }
 
-  const radius = geometryType === "ring"
+  const canonicalRadius = geometryType === "ring"
     ? numberOrNull(geometry.ringReferenceRadius) ?? numberOrNull(geometry.radius) ?? numberOrNull(template.size)
     : numberOrNull(geometry.radius) ?? numberOrNull(template.size);
+  const radius = toSceneUnits(canonicalRadius);
 
   return {
     typeSource: "manual",
     type: "circle",
     distance: radius,
-    units
+    units: sceneUnits
   };
 }
 

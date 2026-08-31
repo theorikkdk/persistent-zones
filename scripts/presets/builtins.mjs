@@ -50,6 +50,77 @@ const buildGreaseTrigger = ({ standingOnly = false } = {}) => ({
   }
 });
 
+const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequency = "unlimited", frequencyGroup = "" }) => ({
+  ...buildDisabledTrigger(),
+  enabled: true,
+  mode: "simple-effect",
+  frequency,
+  frequencyGroup,
+  simpleEffect: {
+    ...buildDisabledTrigger().simpleEffect,
+    damage: { enabled: true, formula, type },
+    save: { enabled: Boolean(ability), ability: ability ?? "dex", dcMode: "inherit", dc: null, onSave: half ? "half" : "none" }
+  }
+});
+
+// SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
+const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers }),
+  source: "srd-5.2.1",
+  rulesVersion: "2024",
+  spell: true,
+  tags: ["srd-5.2.1", "spell", ...tags],
+  attribution: {
+    title: "System Reference Document 5.2.1",
+    url: "https://www.dndbeyond.com/srd",
+    license: "CC BY 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
+  },
+  persistentZone: {
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers }).persistentZone,
+    ...(linkedWalls ? { linkedWalls } : {}),
+    ...(linkedLights ? { linkedLights } : {})
+  }
+});
+
+const WALL_OF_FIRE_ENTER_FREQUENCY_GROUP = "wall-of-fire-enter";
+const WALL_OF_FIRE_TURN_END_FREQUENCY_GROUP = "wall-of-fire-turn-end";
+const MOONBEAM_FREQUENCY_GROUP = "moonbeam-damage";
+
+const buildWallOfFireBodyTriggers = () => ({
+  ...buildDisabledTriggers(),
+  onCreate: buildDamageTrigger({ formula: "5d8", type: "fire", ability: "dex", half: true }),
+  enter: buildDamageTrigger({ formula: "5d8", type: "fire", frequency: "once-per-turn", frequencyGroup: WALL_OF_FIRE_ENTER_FREQUENCY_GROUP }),
+  turnEnd: buildDamageTrigger({ formula: "5d8", type: "fire", frequency: "once-per-turn", frequencyGroup: WALL_OF_FIRE_TURN_END_FREQUENCY_GROUP })
+});
+
+const buildWallOfFireHotSideTriggers = () => ({
+  ...buildDisabledTriggers(),
+  turnEnd: buildDamageTrigger({ formula: "5d8", type: "fire", frequency: "once-per-turn", frequencyGroup: WALL_OF_FIRE_TURN_END_FREQUENCY_GROUP })
+});
+
+const wallOfFireLinkedWalls = {
+  enabled: true,
+  preset: "custom",
+  geometry: "perimeter",
+  move: "none",
+  sight: "limited",
+  light: "limited",
+  sound: "none",
+  dir: "both",
+  threshold: { sight: null, light: null, sound: null, attenuation: false },
+  height: 20
+};
+
+const wallOfFireLinkedLights = {
+  enabled: false,
+  preset: "fire",
+  bright: 1,
+  dim: 5,
+  max: 24,
+  color: "#ff9b42"
+};
+
 const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), terrain = { enabled: false, multiplier: 2 } }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
@@ -123,5 +194,46 @@ export const BUILTIN_PRESETS = Object.freeze([
       linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
       lifecycle: { useDedicatedOwnerEffect: true }
     }
-  }
+  },
+  buildSrdPreset({
+    id: "srd-5.2.1.wall-of-fire-line",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireLine.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireLine.Description",
+    geometry: { type: "wall", wallLength: 60, wallThickness: 1, units: "ft" },
+    tags: ["evocation", "fire", "multipart", "wall"],
+    linkedWalls: wallOfFireLinkedWalls,
+    linkedLights: wallOfFireLinkedLights,
+    parts: [
+      { id: "wall-body", label: "Wall Body", role: "wall", geometry: { type: "template" }, interaction: { mode: "thin-wall" }, terrain: { enabled: false }, triggers: buildWallOfFireBodyTriggers() },
+      { id: "hot-side", label: "Hot Side", role: "hot-side", geometry: { type: "side-of-line", referencePartId: "wall-body", side: "left", offsetReference: "body-edge", offsetStart: 0, offsetEnd: 10 }, terrain: { enabled: false }, triggers: buildWallOfFireHotSideTriggers() }
+    ]
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.wall-of-fire-ring",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireRing.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireRing.Description",
+    geometry: { type: "ring", ringReferenceRadius: 10, ringInnerWidth: 1, ringOuterWidth: 0, units: "ft" },
+    tags: ["evocation", "fire", "multipart", "ring"],
+    linkedWalls: wallOfFireLinkedWalls,
+    linkedLights: wallOfFireLinkedLights,
+    parts: [
+      { id: "wall-body", label: "Wall Body", role: "wall", geometry: { type: "template" }, interaction: { mode: "thin-wall" }, terrain: { enabled: false }, triggers: buildWallOfFireBodyTriggers() },
+      { id: "hot-side", label: "Hot Side", role: "hot-side", geometry: { type: "side-of-ring", referencePartId: "wall-body", side: "outer", offsetReference: "body-edge", offsetStart: 0, offsetEnd: 10 }, terrain: { enabled: false }, triggers: buildWallOfFireHotSideTriggers() }
+    ]
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.moonbeam",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.Moonbeam.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Moonbeam.Description",
+    geometry: { type: "circle", radius: 5, units: "ft" },
+    tags: ["evocation", "radiant", "light"],
+    linkedLights: { enabled: true, preset: "moonlight", bright: 0, dim: 5, max: 1, color: "#dbe7ff" },
+    parts: [],
+    triggers: {
+      ...buildDisabledTriggers(),
+      onCreate: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP }),
+      enter: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP }),
+      turnEnd: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP })
+    }
+  })
 ]);
