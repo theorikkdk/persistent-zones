@@ -694,6 +694,12 @@ function clearProcessedMovementExecutionsForToken(tokenDocument) {
   for (const key of processedMovementExecutions.keys()) {
     if (key.includes(`|${tokenKey}|`)) processedMovementExecutions.delete(key);
   }
+  if (Object.prototype.hasOwnProperty.call(changed ?? {}, "elevation") &&
+      !Object.prototype.hasOwnProperty.call(changed ?? {}, "x") &&
+      !Object.prototype.hasOwnProperty.call(changed ?? {}, "y") &&
+      !Object.prototype.hasOwnProperty.call(changed ?? {}, "width") &&
+      !Object.prototype.hasOwnProperty.call(changed ?? {}, "height")) {
+  }
 }
 
 function buildRegionNativeSegmentTriggerKey(evaluation) {
@@ -3890,7 +3896,8 @@ function hasPositionChange(changed) {
   return Object.prototype.hasOwnProperty.call(changed ?? {}, "x") ||
     Object.prototype.hasOwnProperty.call(changed ?? {}, "y") ||
     Object.prototype.hasOwnProperty.call(changed ?? {}, "width") ||
-    Object.prototype.hasOwnProperty.call(changed ?? {}, "height");
+    Object.prototype.hasOwnProperty.call(changed ?? {}, "height") ||
+    Object.prototype.hasOwnProperty.call(changed ?? {}, "elevation");
 }
 
 function hasTranslationChange(changed) {

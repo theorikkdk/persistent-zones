@@ -73,6 +73,9 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     activityUuid,
     activityType: PERSISTENT_ZONE_ACTIVITY_TYPE,
     placement: { mode: placementMode },
+    ...(source.elevation && typeof source.elevation === "object" ? {
+      elevation: duplicate(source.elevation)
+    } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {

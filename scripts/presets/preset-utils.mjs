@@ -7,7 +7,7 @@ export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
   "schemaVersion", "enabled", "geometry", "parts", "triggers", "damage", "save", "effects",
-  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle"
+  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation"
 ]);
 
 const RUNTIME_IDENTITY_KEYS = new Set([

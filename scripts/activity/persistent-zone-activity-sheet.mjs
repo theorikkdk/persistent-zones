@@ -89,6 +89,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZonePresets = presets.map((preset) => ({
       id: preset.id,
       source: preset.source,
+      category: preset.category,
       name: localize(preset.name),
       description: localize(preset.description),
       selected: preset.id === selectedPreset?.id
@@ -227,6 +228,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       submitData[ACTIVITY_DEFINITION_FIELD_KEY],
       existingDefinition
     );
+    mergeExistingElevationConfiguration(
+      submitData[ACTIVITY_DEFINITION_FIELD_KEY],
+      existingDefinition
+    );
     const persistentZone = normalizePersistentZoneActivitySubmitData(
       submitData[ACTIVITY_DEFINITION_FIELD_KEY]
     );
@@ -315,6 +320,23 @@ export function mergeExistingGeometryConfiguration(submittedDefinition, existing
     ...foundry.utils.deepClone(existingGeometry),
     ...(submittedDefinition.geometry ?? {})
   };
+  return submittedDefinition;
+}
+
+export function mergeExistingElevationConfiguration(submittedDefinition, existingDefinition) {
+  const existing = existingDefinition?.elevation;
+  const submitted = submittedDefinition?.elevation;
+  if (!existing || typeof existing !== "object" || !submittedDefinition ||
+      !submitted || typeof submitted !== "object") return submittedDefinition;
+  submittedDefinition.elevation = {
+    ...foundry.utils.deepClone(existing),
+    ...foundry.utils.deepClone(submitted)
+  };
+  for (const key of ["bottom", "top"]) {
+    if (submitted[key] === null && existing[key] !== null && existing[key] !== undefined) {
+      submittedDefinition.elevation[key] = existing[key];
+    }
+  }
   return submittedDefinition;
 }
 
@@ -772,6 +794,21 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.geometry.type = ["rect", "square"].includes(geometryType) ? "rectangle" : geometryType;
   config.geometry.units = normalizeCanonicalDistanceUnit(config.geometry.units);
   config.geometry.placement = "center";
+  if (config.elevation && typeof config.elevation === "object") {
+    const bottom = Number(config.elevation.bottom);
+    const top = Number(config.elevation.top);
+    if (Number.isFinite(bottom) || Number.isFinite(top)) {
+      config.elevation = {
+        bottom: Number.isFinite(bottom) ? bottom : null,
+        top: Number.isFinite(top) ? top : null,
+        topInclusive: Boolean(config.elevation.topInclusive)
+      };
+    } else {
+      delete config.elevation;
+    }
+  } else {
+    delete config.elevation;
+  }
   config.damage ??= {};
   config.save ??= {};
   config.triggers = normalizeActivityTriggers(config.triggers ?? {}, {

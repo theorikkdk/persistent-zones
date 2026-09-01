@@ -26,6 +26,7 @@ const {
   buildSecondaryMultipartPart,
   buildTargetTemplateFromPersistentZoneConfig,
   normalizePersistentZoneActivitySubmitData,
+  mergeExistingElevationConfiguration,
   preserveExistingActivitySchemaVersion
 } = await import("../activity/persistent-zone-activity-sheet.mjs");
 
@@ -300,6 +301,27 @@ function normalize(config) {
   assert.equal(definition.geometry.widthSemantics, "independent", "v3 Ring must retain v2 independent widths");
   assert.equal(definition.geometry.innerWidth, 2);
   assert.equal(definition.geometry.outerWidth, 3);
+}
+
+{
+  const submitted = normalizePersistentZoneActivitySubmitData({
+    ...buildConfig({ schemaVersion: 3 }),
+    elevation: { bottom: 0, top: 10, topInclusive: true }
+  });
+  assert.deepEqual(submitted.elevation, { bottom: 0, top: 10, topInclusive: true });
+  const normalized = normalize(submitted);
+  assert.deepEqual(normalized.elevation, { bottom: 0, top: 10, topInclusive: true });
+}
+
+{
+  const legacy = normalize(buildConfig({ schemaVersion: 3 }));
+  assert.equal(legacy.elevation, null, "legacy definitions without vertical bounds remain unchanged");
+}
+
+{
+  const submitted = { elevation: { bottom: 0, top: null, topInclusive: false } };
+  mergeExistingElevationConfiguration(submitted, { elevation: { bottom: 0, top: 10, topInclusive: false } });
+  assert.deepEqual(submitted.elevation, { bottom: 0, top: 10, topInclusive: false });
 }
 
 console.debug = originalDebug;

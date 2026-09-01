@@ -330,6 +330,7 @@ export function normalizeZoneDefinition(
       templateDefinition,
       definition
     }),
+    elevation: normalizeElevationDefinition(definition.elevation),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -1095,6 +1096,18 @@ function normalizeTriggers(triggerDefinition, dc, {
     })
   };
   return normalizedTriggers;
+}
+
+function normalizeElevationDefinition(value) {
+  if (!isPlainObject(value)) return null;
+  const bottom = coerceNumber(value.bottom, null);
+  const top = coerceNumber(value.top, null);
+  if (bottom === null && top === null) return null;
+  return {
+    bottom,
+    top,
+    topInclusive: Boolean(value.topInclusive)
+  };
 }
 
 function normalizeZoneParts({

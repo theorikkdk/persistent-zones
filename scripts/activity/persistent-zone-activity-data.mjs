@@ -101,6 +101,11 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             choices: ["outer-edge", "centerline", "inner-edge"]
           })
         }),
+        elevation: new fields.SchemaField({
+          bottom: new fields.NumberField({ required: false, nullable: true, initial: null }),
+          top: new fields.NumberField({ required: false, nullable: true, initial: null }),
+          topInclusive: new fields.BooleanField({ required: false, initial: false })
+        }, { required: false, nullable: true, initial: null }),
         parts: new fields.ArrayField(new fields.ObjectField(), {
           required: false
         }),
@@ -479,7 +484,7 @@ function createStatusesSchema(fields, exitTrigger) {
         })
       })
     }),
-    escape: new fields.SchemaField({
+      escape: new fields.SchemaField({
       enabled: new fields.BooleanField({ required: false, initial: false }),
       actionType: new fields.StringField({ required: false, initial: "action", choices: ["action"] }),
       checkType: new fields.StringField({ required: false, initial: "ability", choices: ["ability", "skill"] }),

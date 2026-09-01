@@ -600,6 +600,9 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   const runtime = getRegionRuntimeFlags(regionDocument);
   const shapes = getRegionShapeData(regionDocument);
   const isManagedV14Region = Boolean(runtime) && isFoundryV14OrNewer() && shapes.length > 0;
+  const configuredElevation = runtime?.normalizedDefinition?.elevation;
+  const hasVerticalBounds = Boolean(configuredElevation && typeof configuredElevation === "object" &&
+    (configuredElevation.bottom !== null || configuredElevation.top !== null));
   const isRegionNativeRingSegment = runtime?.regionSourceStrategy === "v14-region-native-segment-group";
   const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime, shapes);
   const fallbackInside = sampleTokenRegionPoints(membership)
@@ -624,10 +627,12 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     }
   }
 
-  const legacyResult = isManagedV14Region
+  const legacyResult = hasVerticalBounds
+    ? (nativeInside ?? fallbackInside)
+    : isManagedV14Region
     ? (isRegionNativeRingSegment ? fallbackInside : (ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside))
     : (nativeInside ?? fallbackInside);
-  const result = coverageResult?.inside ?? legacyResult;
+  const result = hasVerticalBounds ? legacyResult : (coverageResult?.inside ?? legacyResult);
   const diagnostic = {
     tokenId: tokenDocument?.id ?? null,
     regionId: regionDocument?.id ?? null,
@@ -644,6 +649,7 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     ringRuntimeInside: ringRuntimeResult?.tokenInsideRingBand ?? null,
     tokenInsideRegion: result,
     nativeError,
+    verticalBoundsNative: hasVerticalBounds,
     v14RuntimePath: isManagedV14Region && isRegionNativeRingSegment
       ? "managed-region-native-ring-segment"
       : isManagedV14Region && ringRuntimeResult

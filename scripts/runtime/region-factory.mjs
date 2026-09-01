@@ -1089,6 +1089,8 @@ export async function createManagedRegionFromRegion(regionDocument, {
     };
   }
 
+  await applyConfiguredRegionElevation(regionDocument, resolved.runtimeFlags.normalizedDefinition);
+
   if (resolved.multipartGroupPlan?.parts?.length > 1) {
     return createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
       source
@@ -1233,6 +1235,21 @@ export async function createManagedRegionFromRegion(regionDocument, {
     templateDocument: resolved.templateDocument,
     sourceContext: resolved.sourceContext
   };
+}
+
+async function applyConfiguredRegionElevation(regionDocument, normalizedDefinition) {
+  const configured = normalizedDefinition?.elevation;
+  if (!configured || typeof configured !== "object" ||
+      (configured.bottom === null && configured.top === null) ||
+      typeof regionDocument?.update !== "function") return false;
+  const elevation = {
+    bottom: configured.bottom,
+    top: configured.top,
+    topInclusive: Boolean(configured.topInclusive)
+  };
+  await regionDocument.update({ elevation }, { [MODULE_ID]: { internalElevationSync: true } });
+  const actual = regionDocument?.elevation ?? null;
+  return true;
 }
 
 export async function ensureNativeTerrainBehaviorsForAdoptedRegion(regionDocument, normalizedDefinition, sourceContext) {
@@ -7123,6 +7140,7 @@ function buildRegionCreateData({
   architecturePath = REGION_ARCHITECTURE_PATHS.LEGACY_TEMPLATE,
   sharedOwnerEffectUuid = null
 }) {
+  const finalElevation = resolveRegionElevation(normalizedDefinition, coerceNumber(templateDocument?.elevation, 0));
   const behaviors = buildNativeRegionBehaviors({
     normalizedDefinition,
     sourceContext
@@ -7166,12 +7184,25 @@ function buildRegionCreateData({
   return {
     name: buildRegionName(normalizedDefinition, sourceContext),
     color: DEFAULT_REGION_COLOR,
-    elevation: coerceNumber(templateDocument.elevation, 0),
+    elevation: finalElevation,
     shapes: buildFoundryRegionShapes(shapes),
     behaviors,
     flags: buildManagedRegionFlags(runtimeFlags),
     [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]: runtimeFlags
   };
+}
+
+function resolveRegionElevation(normalizedDefinition, fallback = 0) {
+  const configured = normalizedDefinition?.elevation;
+  if (configured && typeof configured === "object" &&
+      (configured.bottom !== null || configured.top !== null)) {
+    return {
+      bottom: configured.bottom,
+      top: configured.top,
+      topInclusive: Boolean(configured.topInclusive)
+    };
+  }
+  return fallback;
 }
 
 function buildManagedRegionRuntimeFlags({
