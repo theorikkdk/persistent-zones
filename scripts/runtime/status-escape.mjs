@@ -55,8 +55,16 @@ export function buildStatusEscapeEffectFlag(escapeLike, context = {}) {
 export function registerStatusEscapeHooks() {
   if (hooksRegistered) return;
   Hooks.on("updateCombat", onUpdateCombat);
+  Hooks.on("createActiveEffect", onCreateActiveEffect);
   Hooks.on("renderChatMessageHTML", onRenderChatMessageHTML);
   hooksRegistered = true;
+}
+
+async function onCreateActiveEffect(effect) {
+  if (effect?.flags?.[MODULE_ID]?.statusEscape?.enabled !== true) return;
+  const combat = globalThis.game?.combat ?? null;
+  if (!combat?.started) return;
+  await processStatusEscapeTurn(combat);
 }
 
 export function buildStatusEscapeTurnKey(combat, effect) {

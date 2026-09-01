@@ -17,6 +17,7 @@ export function resolveTriggerActionConfiguration({
     frequency: normalizeTriggerFrequency(config.frequency),
     frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(config.requiredAbsentStatuses ?? config.excludedStatuses),
+    requiredAbsentSourceStatuses: normalizeStatusIdList(config.requiredAbsentSourceStatuses),
     damage: config.damage ?? simpleEffect.damage ?? {},
     save: config.save ?? simpleEffect.save ?? {},
     statuses,

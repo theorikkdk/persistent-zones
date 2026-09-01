@@ -305,6 +305,10 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       required: false,
       initial: []
     }),
+    requiredAbsentSourceStatuses: new fields.ArrayField(new fields.StringField(), {
+      required: false,
+      initial: []
+    }),
     simpleEffect: new fields.SchemaField({
       damage: createDamageSchema(fields),
       healing: createHealingSchema(fields),

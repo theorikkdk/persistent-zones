@@ -23,7 +23,10 @@
           "WallOfFireRing": { "Name": "Mur de feu — Anneau", "Description": "Mur persistant en anneau avec un côté dangereux intérieur ou extérieur configurable." },
           "Moonbeam": { "Name": "Rayon de lune", "Description": "Rayon persistant de 1,5 m avec des dégâts radiants partagés une fois par tour." },
           "SpikeGrowth": { "Name": "Croissance d'épines", "Description": "Terrain difficile infligeant des dégâts perforants pour chaque intervalle de distance parcouru à l'intérieur." },
-          "InsectPlague": { "Name": "Fléau d'insectes", "Description": "Une sphère de 6 m de rayon en terrain difficile avec JDS de Constitution et dégâts perforants partagés une fois par tour." }
+          "InsectPlague": { "Name": "Fléau d'insectes", "Description": "Une sphère de 6 m de rayon en terrain difficile avec JDS de Constitution et dégâts perforants partagés une fois par tour." },
+          "Entangle": { "Name": "Enchevêtrement", "Description": "Un carré de 6 m de terrain difficile qui entrave à la création les créatures autres que le lanceur ; l'évasion utilise un test de Force (Athlétisme)." },
+          "BlackTentacles": { "Name": "Tentacules noirs", "Description": "Un carré de 6 m de terrain difficile avec JS de Force partagés une fois par tour, dégâts contondants, Entravé et évasion d'Athlétisme." },
+          "Web": { "Name": "Toile d'araignée", "Description": "PARTIEL-SÛR — Un carré de 6 m de terrain difficile avec JS de Dextérité, Entravé tant que la cible reste dedans et évasion d'Athlétisme. Ancrage, visibilité réduite et combustion restent manuels." }
         }
       },
       "Help": {

@@ -1768,6 +1768,7 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
+    requiredAbsentSourceStatuses: normalizeStatusIdList(definition.requiredAbsentSourceStatuses),
     interruptionMode: normalizeMovementInterruptionMode(definition.interruptionMode),
     stepMode,
     cellStep: stepMode === "grid-cell"

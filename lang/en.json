@@ -23,7 +23,10 @@
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
           "Moonbeam": { "Name": "Moonbeam", "Description": "Persistent 5-foot-radius beam with shared once-per-turn radiant damage triggers." },
           "SpikeGrowth": { "Name": "Spike Growth", "Description": "Difficult terrain that deals piercing damage for each distance interval traveled within it." },
-          "InsectPlague": { "Name": "Insect Plague", "Description": "A 20-foot-radius sphere of difficult terrain with shared once-per-turn Constitution saves and piercing damage." }
+          "InsectPlague": { "Name": "Insect Plague", "Description": "A 20-foot-radius sphere of difficult terrain with shared once-per-turn Constitution saves and piercing damage." },
+          "Entangle": { "Name": "Entangle", "Description": "A 20-foot square of difficult terrain that restrains creatures other than the caster at creation; escape uses a Strength (Athletics) check." },
+          "BlackTentacles": { "Name": "Black Tentacles", "Description": "A 20-foot square of difficult terrain with shared once-per-turn Strength saves, bludgeoning damage, Restrained, and Athletics escape." },
+          "Web": { "Name": "Web", "Description": "PARTIAL-SAFE — A 20-foot square of difficult terrain with Dexterity saves, Restrained while inside, and Athletics escape. Anchoring, reduced visibility, and combustion remain manual." }
         }
       },
       "Help": {

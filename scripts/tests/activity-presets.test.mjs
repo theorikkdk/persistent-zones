@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 6);
+  assert.equal(BUILTIN_PRESETS.length, 9);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -162,11 +162,12 @@ test("replacement removes every stale mono and multipart setting", async () => {
   assert.deepEqual(state.persistentZone.parts, []);
 });
 
-test("visible library contains only the six validated SRD spell presets", () => {
+test("visible library contains only validated SRD spell presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
-    "srd-5.2.1.grease", "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam",
-    "srd-5.2.1.spike-growth", "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring"
+    "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
+    "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth",
+    "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
 });

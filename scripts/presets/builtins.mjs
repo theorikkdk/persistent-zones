@@ -63,6 +63,39 @@ const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequ
   }
 });
 
+const buildEscapeStatus = ({ persistenceMode = "persistent" } = {}) => ({
+  enabled: true,
+  statusId: "restrained",
+  persistenceMode,
+  recovery: { mode: "none", ability: null, dcMode: "inherit", customDC: null, removeOnSuccess: false, provider: "auto" },
+  escape: {
+    enabled: true,
+    actionType: "action",
+    checkType: "skill",
+    ability: "str",
+    skill: "ath",
+    dcMode: "inherit",
+    customDC: null,
+    removeOnSuccess: true,
+    prompt: { enabled: true, title: null, message: null }
+  }
+});
+
+const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "all", persistenceMode = "persistent", frequency = "unlimited", frequencyGroup = "" }) => ({
+  ...buildDisabledTrigger(),
+  enabled: true,
+  mode: "simple-effect",
+  targetFilter: { mode: targetFilter },
+  frequency,
+  frequencyGroup,
+  simpleEffect: {
+    ...buildDisabledTrigger().simpleEffect,
+    damage: damage ? { enabled: true, formula: damage.formula, type: damage.type } : { ...buildDisabledTrigger().simpleEffect.damage, enabled: false },
+    save: { enabled: true, ability, dcMode: "inherit", dc: null, onSave: "none" },
+    statuses: buildEscapeStatus({ persistenceMode })
+  }
+});
+
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
 const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, movement, terrain, linkedWalls, linkedLights, tags = [] }) => ({
   ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers, movement, terrain }),
@@ -87,6 +120,8 @@ const WALL_OF_FIRE_ENTER_FREQUENCY_GROUP = "wall-of-fire-enter";
 const WALL_OF_FIRE_TURN_END_FREQUENCY_GROUP = "wall-of-fire-turn-end";
 const MOONBEAM_FREQUENCY_GROUP = "moonbeam-damage";
 const INSECT_PLAGUE_FREQUENCY_GROUP = "insect-plague-save";
+const BLACK_TENTACLES_FREQUENCY_GROUP = "black-tentacles-save";
+const WEB_FREQUENCY_GROUP = "web-restrain";
 
 const buildWallOfFireBodyTriggers = () => ({
   ...buildDisabledTriggers(),
@@ -252,6 +287,48 @@ export const BUILTIN_PRESETS = Object.freeze([
       onCreate: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP }),
       enter: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP }),
       turnEnd: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP })
+    }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.entangle",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.Entangle.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Entangle.Description",
+    geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
+    tags: ["conjuration", "control", "terrain", "concentration", "escape"],
+    terrain: { enabled: true, multiplier: 2 },
+    triggers: {
+      ...buildDisabledTriggers(),
+      onCreate: buildRestrainingSaveTrigger({ ability: "str", targetFilter: "others" })
+    }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.black-tentacles",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.BlackTentacles.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.BlackTentacles.Description",
+    geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
+    tags: ["conjuration", "control", "damage", "terrain", "concentration", "escape"],
+    terrain: { enabled: true, multiplier: 2 },
+    triggers: {
+      ...buildDisabledTriggers(),
+      onCreate: buildRestrainingSaveTrigger({ ability: "str", damage: { formula: "3d6", type: "bludgeoning" }, frequency: "once-per-turn", frequencyGroup: BLACK_TENTACLES_FREQUENCY_GROUP }),
+      enter: buildRestrainingSaveTrigger({ ability: "str", damage: { formula: "3d6", type: "bludgeoning" }, frequency: "once-per-turn", frequencyGroup: BLACK_TENTACLES_FREQUENCY_GROUP }),
+      turnEnd: buildRestrainingSaveTrigger({ ability: "str", damage: { formula: "3d6", type: "bludgeoning" }, frequency: "once-per-turn", frequencyGroup: BLACK_TENTACLES_FREQUENCY_GROUP })
+    }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.web",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.Web.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Web.Description",
+    geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
+    tags: ["conjuration", "control", "terrain", "concentration", "escape", "partial-safe"],
+    terrain: { enabled: true, multiplier: 2 },
+    triggers: {
+      ...buildDisabledTriggers(),
+      enter: buildRestrainingSaveTrigger({ ability: "dex", persistenceMode: "while-inside-region", frequency: "once-per-turn", frequencyGroup: WEB_FREQUENCY_GROUP }),
+      turnStart: {
+        ...buildRestrainingSaveTrigger({ ability: "dex", persistenceMode: "while-inside-region", frequency: "once-per-turn", frequencyGroup: WEB_FREQUENCY_GROUP }),
+        requiredAbsentSourceStatuses: ["restrained"]
+      }
     }
   })
 ]);

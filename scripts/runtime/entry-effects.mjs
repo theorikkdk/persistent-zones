@@ -61,6 +61,7 @@ export async function applyConfiguredTriggerEffect({
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
     requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
+    requiredAbsentSourceStatuses: actionConfig.requiredAbsentSourceStatuses,
     damage: actionConfig.damage,
     save: actionConfig.save,
     statuses: actionConfig.statuses,
@@ -191,6 +192,23 @@ export async function applyConfiguredTriggerEffect({
       partId,
       triggerMode,
       requiredAbsentStatus: absentStatusConflict
+    });
+  }
+
+  const absentSourceStatusConflict = findRequiredAbsentSourceStatusConflict({
+    actor,
+    regionDocument,
+    tokenDocument,
+    partId,
+    requiredAbsentSourceStatuses: resolvedTrigger.requiredAbsentSourceStatuses
+  });
+  if (absentSourceStatusConflict) {
+    return buildSkippedResult(`${normalizedTiming} requires source status ${absentSourceStatusConflict} to be absent.`, {
+      ...baseDiagnostic,
+      timing: normalizedTiming,
+      partId,
+      triggerMode,
+      requiredAbsentSourceStatus: absentSourceStatusConflict
     });
   }
 
@@ -2000,6 +2018,25 @@ export function findRequiredAbsentStatusConflict(actor, requiredAbsentStatuses =
     for (const status of Array.from(effect?.statuses ?? [])) actorStatuses.add(String(status).trim().toLowerCase());
   }
   return requiredAbsentStatuses.find((status) => actorStatuses.has(String(status).trim().toLowerCase())) ?? null;
+}
+
+export function findRequiredAbsentSourceStatusConflict({
+  actor,
+  regionDocument,
+  tokenDocument,
+  partId = null,
+  requiredAbsentSourceStatuses = []
+} = {}) {
+  if (!Array.isArray(requiredAbsentSourceStatuses) || requiredAbsentSourceStatuses.length === 0) return null;
+  const regionId = regionDocument?.id ?? null;
+  const tokenUuid = tokenDocument?.uuid ?? null;
+  if (!regionId || !tokenUuid) return null;
+  return requiredAbsentSourceStatuses.find((statusId) => findEquivalentTriggeredStatusSources(actor, {
+    regionId,
+    partId,
+    tokenUuid,
+    statusId: String(statusId ?? "").trim().toLowerCase()
+  }).length > 0) ?? null;
 }
 
 export function shouldApplyTriggeredStatus({ statusesConfigured = false, saveEnabled = false, saveResult = null } = {}) {

@@ -971,6 +971,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? ""),
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
+    requiredAbsentSourceStatuses: normalizeStatusIdList(trigger.requiredAbsentSourceStatuses),
     simpleEffect: {
       ...foundry.utils.deepClone(simpleEffect),
       damage: {

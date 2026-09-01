@@ -409,6 +409,7 @@ function buildTriggerConfig(triggerSource = {}, {
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
+    requiredAbsentSourceStatuses: normalizeStatusIdList(trigger.requiredAbsentSourceStatuses),
     interruptionMode: String(movement.interruptionMode ?? "inherit").trim().toLowerCase() || "inherit",
     movementMode: movement.movementMode ?? "any",
     stepMode: movement.stepMode ?? "distance",
