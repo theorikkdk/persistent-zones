@@ -86,6 +86,7 @@ const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, move
 const WALL_OF_FIRE_ENTER_FREQUENCY_GROUP = "wall-of-fire-enter";
 const WALL_OF_FIRE_TURN_END_FREQUENCY_GROUP = "wall-of-fire-turn-end";
 const MOONBEAM_FREQUENCY_GROUP = "moonbeam-damage";
+const INSECT_PLAGUE_FREQUENCY_GROUP = "insect-plague-save";
 
 const buildWallOfFireBodyTriggers = () => ({
   ...buildDisabledTriggers(),
@@ -249,6 +250,23 @@ export const BUILTIN_PRESETS = Object.freeze([
     triggers: {
       ...buildDisabledTriggers(),
       move: buildDamageTrigger({ formula: "2d4", type: "piercing", frequency: "unlimited" })
+    }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.insect-plague",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.InsectPlague.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.InsectPlague.Description",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    tags: ["conjuration", "piercing", "control", "terrain", "concentration"],
+    terrain: { enabled: true, multiplier: 2 },
+    linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
+    linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
+    parts: [],
+    triggers: {
+      ...buildDisabledTriggers(),
+      onCreate: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP }),
+      enter: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP }),
+      turnEnd: buildDamageTrigger({ formula: "4d10", type: "piercing", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: INSECT_PLAGUE_FREQUENCY_GROUP })
     }
   })
 ]);

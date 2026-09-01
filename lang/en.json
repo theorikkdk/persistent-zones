@@ -27,7 +27,8 @@
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
           "Moonbeam": { "Name": "Moonbeam", "Description": "Persistent 5-foot-radius beam with shared once-per-turn radiant damage triggers." },
-          "SpikeGrowth": { "Name": "Spike Growth", "Description": "Difficult terrain that deals piercing damage for each distance interval traveled within it." }
+          "SpikeGrowth": { "Name": "Spike Growth", "Description": "Difficult terrain that deals piercing damage for each distance interval traveled within it." },
+          "InsectPlague": { "Name": "Insect Plague", "Description": "A 20-foot-radius sphere of difficult terrain with shared once-per-turn Constitution saves and piercing damage." }
         }
       },
       "Help": {

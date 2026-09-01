@@ -27,7 +27,8 @@
           "WallOfFireLine": { "Name": "Mur de feu — Ligne", "Description": "Mur persistant en ligne avec un côté dangereux configurable." },
           "WallOfFireRing": { "Name": "Mur de feu — Anneau", "Description": "Mur persistant en anneau avec un côté dangereux intérieur ou extérieur configurable." },
           "Moonbeam": { "Name": "Rayon de lune", "Description": "Rayon persistant de 1,5 m avec des dégâts radiants partagés une fois par tour." },
-          "SpikeGrowth": { "Name": "Croissance d'épines", "Description": "Terrain difficile infligeant des dégâts perforants pour chaque intervalle de distance parcouru à l'intérieur." }
+          "SpikeGrowth": { "Name": "Croissance d'épines", "Description": "Terrain difficile infligeant des dégâts perforants pour chaque intervalle de distance parcouru à l'intérieur." },
+          "InsectPlague": { "Name": "Fléau d'insectes", "Description": "Une sphère de 6 m de rayon en terrain difficile avec JDS de Constitution et dégâts perforants partagés une fois par tour." }
         }
       },
       "Help": {
