@@ -13,6 +13,7 @@ import {
   getStatusRecoveryCapabilities,
   resolveStatusRecoveryProvider
 } from "./runtime/status-recovery.mjs";
+import { attemptStatusEscape, normalizeStatusEscape } from "./runtime/status-escape.mjs";
 import {
   getZoneDefinitionFromItem as readZoneDefinitionFromItem,
   normalizeZoneDefinition as normalizePersistentZoneDefinition,
@@ -44,6 +45,16 @@ export function createPersistentZonesApi() {
 
     resolveStatusRecoveryProvider(recovery, context = {}) {
       return resolveStatusRecoveryProvider(recovery, context);
+    },
+
+    normalizeStatusEscape(escape) {
+      return normalizeStatusEscape(escape);
+    },
+
+    async attemptStatusEscape(effectOrUuid, options = {}) {
+      const effect = typeof effectOrUuid === "object" ? effectOrUuid : null;
+      const effectUuid = typeof effectOrUuid === "string" ? effectOrUuid : null;
+      return attemptStatusEscape({ effect, effectUuid, allowOutsideCombat: true, ...options });
     },
 
     async getZoneDefinitionFromItem(itemOrUuid) {

@@ -14,6 +14,7 @@ import {
 } from "./activity-compatibility.mjs";
 import { resolveTriggerActionConfiguration } from "./trigger-action-config.mjs";
 import { buildStatusRecoveryPatch } from "./status-recovery.mjs";
+import { buildStatusEscapeEffectFlag, normalizeStatusEscape } from "./status-escape.mjs";
 import { ensureAggregateStatus } from "./status-state.mjs";
 import { buildSimpleSaveResult, rollSimpleActorSave } from "./simple-save.mjs";
 import {
@@ -1077,6 +1078,18 @@ async function applyTriggeredStatuses({
   }
 
   const statusData = resolveStatusEffectData(statusId);
+  const escapeConfig = normalizeStatusEscape(statusConfig?.escape);
+  const escapeSourceActor = escapeConfig.enabled && escapeConfig.dcMode === "inherit"
+    ? await resolveSaveSourceActor("caster", runtime)
+    : null;
+  const statusEscape = buildStatusEscapeEffectFlag(escapeConfig, {
+    resolvedDC: saveResult?.dc ?? null,
+    saveDC: getActorSaveDc(escapeSourceActor),
+    statusId,
+    statusName: statusData.name,
+    sourceName: runtime.normalizedDefinition?.label ?? runtime.label ?? null,
+    sourceActivityId: runtime.activityId ?? null
+  });
   const recoveryPatchResult = buildStatusRecoveryPatch(statusConfig?.recovery, {
     effectStatusId: statusId,
     persistenceMode,
@@ -1121,6 +1134,7 @@ async function applyTriggeredStatuses({
     flags: {
       [MODULE_ID]: {
         ...identity,
+        ...(statusEscape ? { statusEscape } : {}),
         ...(recoveryConfig
           ? {
               ...recoverySourceIdentity,

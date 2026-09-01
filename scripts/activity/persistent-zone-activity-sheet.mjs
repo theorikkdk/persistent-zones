@@ -4,6 +4,7 @@ import {
   MODULE_ID
 } from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
+import { normalizeStatusEscape } from "../runtime/status-escape.mjs";
 import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../presets/preset-library.mjs";
 import { applyPresetToActivity } from "../presets/preset-utils.mjs";
 import { convertCanonicalDistanceToSceneUnits, normalizeCanonicalDistanceUnit } from "./activity-distance.mjs";
@@ -1001,7 +1002,8 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
         persistenceMode: triggerId === "exit"
           ? "persistent"
           : String(statuses.persistenceMode ?? "persistent"),
-        recovery: normalizeUiStatusRecovery(statuses.recovery)
+        recovery: normalizeUiStatusRecovery(statuses.recovery),
+        escape: normalizeStatusEscape(statuses.escape)
       }
     },
     linkedActivity: {
@@ -1180,6 +1182,10 @@ function buildActivityChoices() {
     statusRecoveryDcModes: [
       { value: "inherit", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Inherit" },
       { value: "custom", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Custom" }
+    ],
+    statusEscapeDcModes: [
+      { value: "inherit", label: "PERSISTENT_ZONES.Activity.StatusEscape.DcModes.Inherit" },
+      { value: "custom", label: "PERSISTENT_ZONES.Activity.StatusEscape.DcModes.Custom" }
     ],
     linkedWallGeometries: [
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.LinkedWallGeometry.Centerline" },
@@ -1382,6 +1388,16 @@ function updateConditionalVisibility(root) {
     });
     section.querySelectorAll("[data-pz-status-recovery-custom-dc]").forEach((customDC) => {
       customDC.hidden = mode !== "save-end-turn" || dcMode !== "custom";
+    });
+  });
+  root.querySelectorAll("[data-pz-status-escape]").forEach((section) => {
+    const enabled = section.querySelector("[data-pz-status-escape-enabled]")?.checked === true;
+    const dcMode = section.querySelector("[data-pz-status-escape-dc-mode]")?.value ?? "inherit";
+    section.querySelectorAll("[data-pz-status-escape-options]").forEach((options) => {
+      options.hidden = !enabled;
+    });
+    section.querySelectorAll("[data-pz-status-escape-custom-dc]").forEach((customDC) => {
+      customDC.hidden = !enabled || dcMode !== "custom";
     });
   });
 }

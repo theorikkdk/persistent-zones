@@ -3,6 +3,7 @@ import {
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
+import { normalizeStatusEscape } from "../runtime/status-escape.mjs";
 import { convertCanonicalDistanceToSceneUnits, normalizeCanonicalDistanceUnit } from "./activity-distance.mjs";
 
 export function isPersistentZoneActivity(activity) {
@@ -450,14 +451,16 @@ function buildTriggerConfig(triggerSource = {}, {
         enabled: mode === "simple" && Boolean(perTriggerStatuses?.enabled),
         statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
         persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
-        recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery)
+        recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery),
+        escape: normalizeStatusEscape(perTriggerStatuses?.escape)
       }
     },
     statuses: {
       enabled: mode === "simple" && Boolean(perTriggerStatuses?.enabled),
       statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
       persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
-      recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery)
+      recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery),
+      escape: normalizeStatusEscape(perTriggerStatuses?.escape)
     },
     activity: {
       id: mode === "activity" ? String(linkedActivity?.id ?? linkedActivity?.activityId ?? "").trim() || null : null,

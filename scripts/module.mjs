@@ -13,6 +13,7 @@ import {
 import { registerEntryRuntimeHooks } from "./runtime/entry-runtime.mjs";
 import { registerStatusStateHooks } from "./runtime/status-state.mjs";
 import { registerStatusRecoveryArbitrationHooks } from "./runtime/status-recovery-arbitration.mjs";
+import { registerStatusEscapeHooks } from "./runtime/status-escape.mjs";
 import { registerRegionFactoryHooks } from "./runtime/region-factory.mjs";
 import {
   primeTurnRuntimeState,
@@ -59,6 +60,7 @@ function onInit() {
   registerEntryRuntimeHooks();
   registerStatusStateHooks();
   registerStatusRecoveryArbitrationHooks();
+  registerStatusEscapeHooks();
   registerTurnRuntimeHooks();
 
   debug("Module initialized.");

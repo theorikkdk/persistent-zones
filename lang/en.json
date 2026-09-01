@@ -67,6 +67,7 @@
         "SaveResult": "Choose whether a successful save halves damage or prevents the simple effect.",
         "Statuses": "Applies the selected status and controls whether it remains after the token leaves the zone.",
         "StatusRecovery": "Optionally allows a saving throw at the end of the affected creature's turn to remove the status.",
+        "StatusEscape": "Allows the affected creature to spend its action on its turn to make an ability check and remove this exact status source on a success.",
         "LinkedActivity": "Runs another activity from this item when this trigger occurs.",
         "Movement": "General placement setting: controls whether qualifying entry or movement can interrupt token movement across the Persistent Zone.",
         "LinkedWalls": "Creates Foundry walls from the main placement geometry. Preset, geometry, direction, proximity, and custom restrictions apply globally to this placement.",
@@ -85,6 +86,7 @@
         "TemporaryHitPoints": "Temporary HP",
         "Statuses": "Statuses",
         "StatusRecovery": "Status Recovery",
+        "StatusEscape": "Escape Action",
         "Effects": "Effects",
         "Movement": "Movement",
         "Terrain": "Terrain",
@@ -128,6 +130,14 @@
         "StatusRecoveryAbility": "Saving Throw Ability",
         "StatusRecoveryDcMode": "Save DC",
         "StatusRecoveryCustomDC": "Custom DC",
+        "StatusEscapeEnabled": "Enable escape action",
+        "StatusEscapeAbility": "Ability check",
+        "StatusEscapeDcMode": "Check DC",
+        "StatusEscapeCustomDC": "Custom DC",
+        "StatusEscapeRemove": "Remove this source on success",
+        "StatusEscapePrompt": "Prompt at turn start",
+        "StatusEscapePromptTitle": "Prompt title",
+        "StatusEscapePromptMessage": "Prompt message",
         "LinkedActivity": "Activity to execute",
         "StopMovement": "Stop movement",
         "MovementInterruption": "Movement interruption",
@@ -264,6 +274,12 @@
         },
         "DcModes": {
           "Inherit": "Use initial save DC",
+          "Custom": "Custom DC"
+        }
+      },
+      "StatusEscape": {
+        "DcModes": {
+          "Inherit": "Use source save DC",
           "Custom": "Custom DC"
         }
       },
@@ -638,6 +654,24 @@
       "ProfileRenamePrompt": "Enter a new name for this Persistent Zones profile.",
       "ProfileDeleteTitle": "Delete Persistent Zones Profile",
       "ProfileDeleteConfirm": "Delete the selected Persistent Zones profile?"
+    },
+    "Escape": {
+      "Title": "Attempt to Break Free",
+      "Message": "You are affected by {effect} from {source}.",
+      "UsesAction": "You can use your Action to attempt to break free. This attempt uses your Action.",
+      "Check": "Ability check",
+      "DC": "DC",
+      "SuccessRemoves": "Success removes {effect} from this source.",
+      "Yes": "Yes, attempt to break free",
+      "No": "No",
+      "ManualAction": "Attempt escape action",
+      "Success": "Success",
+      "Failure": "Failure",
+      "EffectRemoved": "The effect source is removed.",
+      "EffectRemains": "The effect remains.",
+      "AlreadyAttempted": "This escape action has already been attempted this turn.",
+      "EffectFallback": "Persistent effect",
+      "SourceFallback": "Persistent Zone"
     },
     "Settings": {
       "MovementStopGlobalLegacy": {

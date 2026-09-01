@@ -67,6 +67,7 @@
         "SaveResult": "Choisissez si une sauvegarde réussie réduit les dégâts de moitié ou empêche l'effet simple.",
         "Statuses": "Applique l'état choisi et détermine s'il persiste après la sortie de la zone.",
         "StatusRecovery": "Permet éventuellement un jet de sauvegarde à la fin du tour de la créature affectée pour retirer l'état.",
+        "StatusEscape": "Permet à la créature affectée de consacrer son action pendant son tour à un test de caractéristique afin de retirer cette source exacte de l'état en cas de réussite.",
         "LinkedActivity": "Exécute une autre activité de cet objet lorsque ce déclenchement se produit.",
         "Movement": "Réglage général du placement : détermine si une entrée ou un déplacement admissible peut interrompre le mouvement d'un token dans la Zone persistante.",
         "LinkedWalls": "Crée des murs Foundry depuis la géométrie du placement principal. Le preset, la géométrie, la direction, la proximité et les restrictions personnalisées s'appliquent globalement à ce placement.",
@@ -85,6 +86,7 @@
         "TemporaryHitPoints": "PV temporaires",
         "Statuses": "États",
         "StatusRecovery": "Récupération de l'état",
+        "StatusEscape": "Action pour se libérer",
         "Effects": "Effets",
         "Movement": "Mouvement",
         "Terrain": "Terrain",
@@ -128,6 +130,14 @@
         "StatusRecoveryAbility": "Caractéristique du jet de sauvegarde",
         "StatusRecoveryDcMode": "DD du jet de sauvegarde",
         "StatusRecoveryCustomDC": "DD personnalisé",
+        "StatusEscapeEnabled": "Activer l'action pour se libérer",
+        "StatusEscapeAbility": "Test de caractéristique",
+        "StatusEscapeDcMode": "DD du test",
+        "StatusEscapeCustomDC": "DD personnalisé",
+        "StatusEscapeRemove": "Retirer cette source en cas de réussite",
+        "StatusEscapePrompt": "Proposer au début du tour",
+        "StatusEscapePromptTitle": "Titre de la fenêtre",
+        "StatusEscapePromptMessage": "Message de la fenêtre",
         "LinkedActivity": "Activité à exécuter",
         "StopMovement": "Arrêter le mouvement",
         "MovementInterruption": "Interruption du mouvement",
@@ -264,6 +274,12 @@
         },
         "DcModes": {
           "Inherit": "Utiliser le DD initial",
+          "Custom": "DD personnalisé"
+        }
+      },
+      "StatusEscape": {
+        "DcModes": {
+          "Inherit": "Utiliser le DD de sauvegarde de la source",
           "Custom": "DD personnalisé"
         }
       },
@@ -638,6 +654,24 @@
       "ProfileRenamePrompt": "Saisissez un nouveau nom pour ce profil Persistent Zones.",
       "ProfileDeleteTitle": "Supprimer le profil Persistent Zones",
       "ProfileDeleteConfirm": "Supprimer le profil Persistent Zones s\u00e9lectionn\u00e9 ?"
+    },
+    "Escape": {
+      "Title": "Tentative pour se libérer",
+      "Message": "Vous êtes affecté par {effect}, produit par {source}.",
+      "UsesAction": "Vous pouvez utiliser votre Action pour tenter de vous libérer. Cette tentative utilise votre Action.",
+      "Check": "Test de caractéristique",
+      "DC": "DD",
+      "SuccessRemoves": "Une réussite retire {effect} provenant de cette source.",
+      "Yes": "Oui, tenter de se libérer",
+      "No": "Non",
+      "ManualAction": "Tenter de se libérer",
+      "Success": "Réussite",
+      "Failure": "Échec",
+      "EffectRemoved": "La source de l'effet est retirée.",
+      "EffectRemains": "L'effet persiste.",
+      "AlreadyAttempted": "Cette action a déjà été tentée pendant ce tour.",
+      "EffectFallback": "Effet persistant",
+      "SourceFallback": "Zone persistante"
     },
     "Settings": {
       "MovementStopGlobalLegacy": {

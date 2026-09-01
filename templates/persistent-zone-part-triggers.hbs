@@ -178,6 +178,52 @@
                   </div>
                 </div>
               </fieldset>
+              <fieldset data-pz-status-escape>
+                <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.StatusEscape"}}</legend>
+                <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.StatusEscape"}}</p>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapeEnabled"}}</label>
+                  <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.enabled" data-pz-status-escape-enabled {{#if triggerRow.state.simpleEffect.statuses.escape.enabled}}checked{{/if}}>
+                </div>
+                <div data-pz-status-escape-options>
+                  <input type="hidden" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.actionType" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.actionType" value="action">
+                  <input type="hidden" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.checkType" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.checkType" value="ability">
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapeAbility"}}</label>
+                    <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.ability" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.ability">
+                      {{#each ../persistentZoneAbilities as |option|}}
+                        <option value="{{option.value}}" {{#if (eq option.value triggerRow.state.simpleEffect.statuses.escape.ability)}}selected{{/if}}>{{option.label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapeDcMode"}}</label>
+                    <select name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.dcMode" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.dcMode" data-pz-status-escape-dc-mode>
+                      {{selectOptions ../persistentZoneChoices.statusEscapeDcModes selected=triggerRow.state.simpleEffect.statuses.escape.dcMode localize=true}}
+                    </select>
+                  </div>
+                  <div class="form-group" data-pz-status-escape-custom-dc>
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapeCustomDC"}}</label>
+                    <input type="number" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.customDC" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.customDC" value="{{triggerRow.state.simpleEffect.statuses.escape.customDC}}" min="1" step="1">
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapeRemove"}}</label>
+                    <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.removeOnSuccess" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.removeOnSuccess" {{#if triggerRow.state.simpleEffect.statuses.escape.removeOnSuccess}}checked{{/if}}>
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapePrompt"}}</label>
+                    <input type="checkbox" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.enabled" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.enabled" {{#if triggerRow.state.simpleEffect.statuses.escape.prompt.enabled}}checked{{/if}}>
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapePromptTitle"}}</label>
+                    <input type="text" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.title" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.title" value="{{triggerRow.state.simpleEffect.statuses.escape.prompt.title}}">
+                  </div>
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StatusEscapePromptMessage"}}</label>
+                    <input type="text" name="persistentZone.parts.{{../partRow.index}}.triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.message" data-pz-part-field="triggers.{{triggerRow.timing}}.simpleEffect.statuses.escape.prompt.message" value="{{triggerRow.state.simpleEffect.statuses.escape.prompt.message}}">
+                  </div>
+                </div>
+              </fieldset>
           </div>
         </fieldset>
       </div>

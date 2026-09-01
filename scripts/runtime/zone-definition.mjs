@@ -22,6 +22,7 @@ import {
   resolveLinkedWallConfig
 } from "./linked-presets.mjs";
 import { normalizeStatusRecovery } from "./status-recovery.mjs";
+import { normalizeStatusEscape } from "./status-escape.mjs";
 
 export function getZoneDefinitionFromItem(item) {
   if (!item) {
@@ -1814,7 +1815,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
         enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
         statusId: String(statusesDefinition.statusId ?? "").trim() || null,
         persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
-        recovery: normalizeStatusRecovery(statusesDefinition.recovery)
+        recovery: normalizeStatusRecovery(statusesDefinition.recovery),
+        escape: normalizeStatusEscape(statusesDefinition.escape)
       }
     },
     damage: {
@@ -1859,7 +1861,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
       statusId: String(statusesDefinition.statusId ?? "").trim() || null,
       persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
-      recovery: normalizeStatusRecovery(statusesDefinition.recovery)
+      recovery: normalizeStatusRecovery(statusesDefinition.recovery),
+      escape: normalizeStatusEscape(statusesDefinition.escape)
     },
     activity
   };
