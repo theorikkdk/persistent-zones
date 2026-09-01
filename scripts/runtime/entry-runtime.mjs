@@ -95,7 +95,7 @@ function buildV14RuntimePayload(data = {}) {
 }
 
 function findRuntimeManagedRegions(scene) {
-  const primaryRegions = findManagedRegions(scene);
+  const primaryRegions = findManagedRegions(scene).filter(isLegacyMovementRuntimeRegion);
   if (primaryRegions.length || !canvas?.scene || canvas.scene === scene) {
     return {
       regions: primaryRegions,
@@ -105,7 +105,7 @@ function findRuntimeManagedRegions(scene) {
     };
   }
 
-  const fallbackRegions = findManagedRegions(canvas.scene);
+  const fallbackRegions = findManagedRegions(canvas.scene).filter(isLegacyMovementRuntimeRegion);
   return {
     regions: fallbackRegions,
     source: fallbackRegions.length ? "canvas-scene-fallback" : "token-parent-scene",
@@ -682,6 +682,10 @@ function onDeleteToken(tokenDocument) {
   clearHandledMovementInterruptionsForToken(tokenDocument);
   clearInsideStateCacheForToken(tokenDocument);
   clearProcessedMovementExecutionsForToken(tokenDocument);
+}
+
+export function isLegacyMovementRuntimeRegion(regionDocument) {
+  return getRegionRuntimeFlags(regionDocument)?.normalizedDefinition?.placement?.mode !== "attached-source";
 }
 
 function clearProcessedMovementExecutionsForToken(tokenDocument) {
@@ -5066,6 +5070,17 @@ function measureStateDistance(fromState, toState) {
     coerceNumber(toPoint.x, 0) - coerceNumber(fromPoint.x, 0),
     coerceNumber(toPoint.y, 0) - coerceNumber(fromPoint.y, 0)
   );
+}
+
+export function consumeNativeRegionEventMovementMode(tokenDocument) {
+  return resolveMovementModeForEvaluation(tokenDocument, {
+    moveSource: "native-attached-region",
+    consume: true
+  });
+}
+
+export function managedMovementModeMatches(actualMovementMode, requiredMovementMode) {
+  return movementModeMatches(actualMovementMode, requiredMovementMode);
 }
 
 function getMovementInvocationId(tokenDocument, movement, hookSource) {

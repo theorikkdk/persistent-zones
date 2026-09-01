@@ -32,6 +32,11 @@ import {
 } from "./linked-documents.mjs";
 import { cleanupWhileInsideStatusesForRegion } from "./entry-effects.mjs";
 import { applyRegionGroupOnCreateTriggers, applyRegionOnCreateTrigger } from "./on-create-runtime.mjs";
+import {
+  buildAttachedEmanationBehaviorData,
+  finalizeAttachedEmanationCreation,
+  initializeAttachedEmanationTransitionState
+} from "./attached-emanation-runtime.mjs";
 import { resolveTemplateSourceContext } from "./template-source-context.mjs";
 import {
   findPersistentZoneActivityOnItem,
@@ -46,6 +51,9 @@ import {
   buildManagedRegionRuntimeContract,
   readManagedRegionContract
 } from "./v14-region-contract.mjs";
+import { normalizeZoneDefinition } from "./zone-definition.mjs";
+import { getPersistentZoneActivityDefinition } from "../activity/persistent-zone-activity-utils.mjs";
+import { convertCanonicalDistanceToSceneUnits } from "../activity/activity-distance.mjs";
 
 let hooksRegistered = false;
 const pendingTemplateSync = new Set();
@@ -198,6 +206,99 @@ export function registerRegionFactoryHooks() {
     selectedCompatibilityPath: "hooks-registered",
     registeredHooks: ["createMeasuredTemplate", "updateMeasuredTemplate", "preUpdateRegion", "createRegion", "updateRegion", "preCreateActiveEffect", "createActiveEffect", "updateActiveEffect", "updateCombat", "updateWorldTime", "preDeleteActiveEffect", "deleteActiveEffect", "preDeleteRegion", "deleteRegion"]
   });
+}
+
+export async function createAttachedEmanationFromActivity(activity, sourceToken) {
+  const scene = sourceToken?.parent ?? null;
+  const item = activity?.item ?? activity?.parent ?? null;
+  if (!scene || !sourceToken?.id || !sourceToken?.persisted || !item) {
+    globalThis.ui?.notifications?.warn?.("Persistent Zones: attached emanation requires a persisted source token on the current Scene.");
+    return null;
+  }
+  if (scene !== globalThis.canvas?.scene) {
+    globalThis.ui?.notifications?.warn?.("Persistent Zones: the source token is not on the active Scene.");
+    return null;
+  }
+
+  const rawDefinition = getPersistentZoneActivityDefinition(activity);
+  const normalizedDefinition = normalizeZoneDefinition(rawDefinition, {
+    item,
+    actor: activity?.actor ?? item?.actor ?? null,
+    caster: activity?.actor ?? item?.actor ?? null
+  });
+  if (normalizedDefinition?.placement?.mode !== "attached-source" ||
+      normalizedDefinition?.geometry?.type !== "emanation" ||
+      (Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length > 1)) {
+    globalThis.ui?.notifications?.warn?.("Persistent Zones: this definition is not a supported mono-part attached emanation.");
+    return null;
+  }
+
+  const sourceContext = {
+    item,
+    actor: activity?.actor ?? item?.actor ?? null,
+    caster: activity?.actor ?? item?.actor ?? null,
+    activity,
+    sourceTokenUuid: sourceToken.uuid ?? null,
+    sourceDisposition: sourceToken.disposition ?? null
+  };
+  const radius = Math.max(0, convertCanonicalDistanceToSceneUnits(
+    normalizedDefinition.geometry.radius,
+    normalizedDefinition.geometry.units,
+    scene
+  ) ?? 0);
+  const groupId = `attached:${activity?.uuid ?? item.uuid}:${foundry.utils.randomID()}`;
+  const runtimeFlags = buildManagedRegionRuntimeFlags({
+    templateDocument: null,
+    normalizedDefinition,
+    sourceContext,
+    groupId,
+    partId: "primary",
+    partIndex: 0,
+    partCount: 1,
+    geometryType: "emanation",
+    runtimeGeometry: { type: "emanation", radius, units: scene.grid?.units ?? null },
+    regionSourceStrategy: "v14-native-token-emanation",
+    architecturePath: REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE
+  });
+  initializeAttachedEmanationTransitionState(runtimeFlags);
+  const behaviorData = [buildAttachedEmanationBehaviorData()];
+  if (normalizedDefinition.terrain?.difficult) {
+    behaviorData.push(...buildNativeRegionBehaviors({ normalizedDefinition, sourceContext }));
+  }
+  const RegionClass = globalThis.CONFIG?.Region?.documentClass;
+  if (typeof RegionClass?.createTokenEmanation !== "function") {
+    globalThis.ui?.notifications?.warn?.("Persistent Zones: Foundry V14 token emanations are unavailable.");
+    return null;
+  }
+
+  const createdRegion = await RegionClass.createTokenEmanation(sourceToken, radius, {
+    name: buildRegionName(normalizedDefinition, sourceContext),
+    color: DEFAULT_REGION_COLOR,
+    behaviors: behaviorData,
+    flags: buildManagedRegionFlags(runtimeFlags),
+    [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]: runtimeFlags
+  }, { gridBased: false, excludeToken: false });
+  if (!createdRegion) return null;
+  const dedicatedOwnerEffect = await ensureDedicatedOwnerEffectForNonConcentrationRegion(createdRegion, runtimeFlags, {
+    sourceContext,
+    operationId: groupId
+  });
+  if (dedicatedOwnerEffect) {
+    runtimeFlags.ownerEffectUuid = dedicatedOwnerEffect.uuid;
+    runtimeFlags.activeEffectUuid = dedicatedOwnerEffect.uuid;
+    runtimeFlags.concentrationEffectUuid = null;
+  }
+  await applyAuthenticRegionHighlightMode(createdRegion, {
+    entryPoint: "createAttachedEmanationFromActivity",
+    operation: "create-attached-emanation",
+    scene,
+    partId: "primary",
+    partIndex: 1,
+    runtimeFlags
+  });
+  await applyRegionGroupOnCreateTriggers([createdRegion]);
+  await finalizeAttachedEmanationCreation(createdRegion);
+  return createdRegion;
 }
 
 export function inspectManagedRingRegions({ scene = canvas?.scene ?? null, groupId = null, log = true } = {}) {

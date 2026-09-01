@@ -765,6 +765,8 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   const config = foundry.utils.deepClone(value ?? {});
   config.schemaVersion = Number(config.schemaVersion || 1);
   config.enabled = Boolean(config.enabled);
+  config.placement ??= {};
+  config.placement.mode = normalizeChoice(config.placement.mode, ["fixed", "attached-source"], "fixed");
   config.geometry ??= {};
   const geometryType = String(config.geometry.type ?? "circle").trim().toLowerCase();
   config.geometry.type = ["rect", "square"].includes(geometryType) ? "rectangle" : geometryType;
@@ -803,6 +805,11 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   if (Array.isArray(config.parts)) {
     config.parts = normalizeActivityParts(config.parts);
   }
+  if (config.placement.mode === "attached-source") {
+    if (Array.isArray(config.parts) && config.parts.length > 1) config.placement.mode = "fixed";
+    else config.geometry.type = "emanation";
+  }
+  if (config.placement.mode === "fixed" && config.geometry.type === "emanation") config.geometry.type = "circle";
   return config;
 }
 
@@ -1123,6 +1130,7 @@ function buildActivityChoices() {
   return {
     geometryTypes: [
       { value: "circle", label: "PERSISTENT_ZONES.Activity.Geometry.Circle" },
+      { value: "emanation", label: "PERSISTENT_ZONES.Activity.Geometry.Emanation" },
       { value: "rectangle", label: "PERSISTENT_ZONES.Activity.Geometry.Rectangle" },
       { value: "ring", label: "PERSISTENT_ZONES.Activity.Geometry.Ring" },
       { value: "wall", label: "PERSISTENT_ZONES.Activity.Geometry.Wall" }
@@ -1317,7 +1325,20 @@ function buildStatusOptions() {
 }
 
 function updateConditionalVisibility(root) {
-  const geometry = root.querySelector("[name='persistentZone.geometry.type']")?.value ?? "circle";
+  let geometry = root.querySelector("[name='persistentZone.geometry.type']")?.value ?? "circle";
+  const placementMode = root.querySelector("[name='persistentZone.placement.mode']")?.value ?? "fixed";
+  const attached = placementMode === "attached-source";
+  if (attached && geometry !== "emanation") {
+    const geometrySelect = root.querySelector("[name='persistentZone.geometry.type']");
+    if (geometrySelect) geometrySelect.value = "emanation";
+    geometry = "emanation";
+  }
+  root.querySelectorAll("[data-pz-attached-unsupported]").forEach((element) => {
+    element.hidden = attached;
+    element.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = attached;
+    });
+  });
   root.querySelectorAll("[data-pz-geometry]").forEach((element) => {
     const applicable = element.dataset.pzGeometry === geometry;
     element.hidden = !applicable;

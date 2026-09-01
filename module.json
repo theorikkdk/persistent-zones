@@ -28,6 +28,11 @@
   "esmodules": [
     "scripts/main.mjs"
   ],
+  "documentTypes": {
+    "RegionBehavior": {
+      "attachedEmanation": {}
+    }
+  },
   "languages": [
     {
       "lang": "en",

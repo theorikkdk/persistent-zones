@@ -51,6 +51,12 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const terrain = source.terrain ?? {};
   const linkedWalls = source.linkedWalls ?? {};
   const linkedLights = source.linkedLights ?? source.linkedLight ?? {};
+  const requestedPlacementMode = String(source.placement?.mode ?? "fixed").trim().toLowerCase();
+  const placementMode = requestedPlacementMode === "attached-source" &&
+    normalizeGeometryType(geometry.type) === "emanation" &&
+    !(Array.isArray(source.parts) && source.parts.length > 1)
+    ? "attached-source"
+    : "fixed";
   const geometryType = normalizeGeometryType(geometry.type);
   const linkedWallPreset = String(linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   const activityId = getActivityId(activity);
@@ -66,6 +72,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     activityId,
     activityUuid,
     activityType: PERSISTENT_ZONE_ACTIVITY_TYPE,
+    placement: { mode: placementMode },
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {
@@ -82,7 +89,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
       activityId
     }),
     linkedWalls: {
-      enabled: Boolean(linkedWalls.enabled),
+      enabled: placementMode === "fixed" && Boolean(linkedWalls.enabled),
       preset: linkedWallPreset,
       geometry: normalizeLinkedWallGeometry(linkedWalls.geometry),
       height: linkedWalls.height ?? null,
@@ -103,7 +110,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
       } : {})
     },
     linkedLight: {
-      enabled: Boolean(linkedLights.enabled),
+      enabled: placementMode === "fixed" && Boolean(linkedLights.enabled),
       preset: linkedLights.preset ?? "glow",
       bright: linkedLights.bright ?? null,
       dim: linkedLights.dim ?? null,
@@ -248,6 +255,13 @@ function getActivityItem(activity) {
 export function buildGeometryDefinition(geometryType, geometry, {
   activitySchemaVersion = 1
 } = {}) {
+  if (geometryType === "emanation") {
+    return {
+      type: "emanation",
+      radius: numberOrNull(geometry.radius),
+      units: normalizeCanonicalDistanceUnit(geometry.units)
+    };
+  }
   if (geometryType === "ring") {
     const referenceRadius = numberOrNull(geometry.ringReferenceRadius) ?? numberOrNull(geometry.radius);
     const resolvedReferenceRadius = Math.max(0, referenceRadius ?? 0);
@@ -523,7 +537,7 @@ function logTriggerEffectConfigurationDecision(data = {}) {
 function normalizeGeometryType(value) {
   const normalized = String(value ?? "circle").trim().toLowerCase();
   if (normalized === "rect" || normalized === "square") return "rectangle";
-  return ["circle", "rectangle", "ring", "wall"].includes(normalized) ? normalized : "circle";
+  return ["circle", "rectangle", "ring", "wall", "emanation"].includes(normalized) ? normalized : "circle";
 }
 
 function normalizeTriggerTargetFilterMode(value) {

@@ -266,6 +266,11 @@ export function normalizeZoneDefinition(
     casterUuid: casterUuid ?? null,
     dc,
     castLevel,
+    placement: {
+      mode: String(definition?.placement?.mode ?? "fixed").trim().toLowerCase() === "attached-source"
+        ? "attached-source"
+        : "fixed"
+    },
     shapeMode: String(
       pickFirstDefined(definition.shapeMode, "template")
     ).toLowerCase(),
@@ -1477,6 +1482,14 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
         ),
         null
       )
+    };
+  }
+
+  if (geometryType === "emanation") {
+    return {
+      type: "emanation",
+      radius: coerceNumber(geometryDefinition.radius, null),
+      units: String(geometryDefinition.units ?? "scene").trim().toLowerCase() || "scene"
     };
   }
 

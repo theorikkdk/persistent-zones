@@ -162,7 +162,7 @@ test("replacement removes every stale mono and multipart setting", async () => {
   assert.deepEqual(state.persistentZone.parts, []);
 });
 
-test("visible library contains only validated SRD spell presets", () => {
+test("visible library contains the validated SRD spell presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",

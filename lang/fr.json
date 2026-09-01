@@ -34,6 +34,8 @@
         "Multipart": "En mode zone unique, les Déclenchements ci-dessous s'appliquent à cette zone. Avec les parties activées, chaque partie possède ses propres Déclenchements ; Mouvement, Murs liés et Lumières liées restent des réglages généraux du placement.",
         "MainGeometry": "Définit la forme créée par le placement principal. Les distances utilisent l'unité de distance de la scène.",
         "CircleRadius": "Distance entre le centre et le bord de la zone, dans l'unité de la scène.",
+        "EmanationRadius": "Distance au-delà de l'espace occupé par le token source, convertie dans l'unité de la scène.",
+        "ZonePlacement": "Le placement attaché est réservé à une Émanation mono-part et utilise l'attachement natif de Foundry.",
         "RectangleDimensions": "La largeur et la hauteur sont stockées dans l’unité choisie puis converties pour la scène courante au placement. Le point choisi est le centre du rectangle.",
         "RingReferenceRadius": "Distance entre le centre et la ligne de référence qui sert à positionner l'anneau, dans l'unité de la scène.",
         "RingInnerWidth": "Distance sur laquelle l'anneau s'étend vers le centre depuis le rayon de référence, dans l'unité de la scène.",
@@ -76,6 +78,7 @@
       },
       "Sections": {
         "Configuration": "Utilisation",
+        "Placement": "Placement",
         "Geometry": "Géométrie",
         "Triggers": "Déclenchements",
         "Save": "Sauvegarde",
@@ -98,6 +101,8 @@
       },
       "Fields": {
         "Shape": "Forme de zone",
+        "ZonePlacement": "Placement de la zone",
+        "EmanationRadius": "Rayon de l'émanation",
         "CircleRadius": "Rayon du cercle",
         "RectangleWidth": "Largeur",
         "RectangleHeight": "Hauteur",
@@ -158,10 +163,12 @@
       },
       "Geometry": {
         "Circle": "Cercle",
+        "Emanation": "Émanation",
         "Rectangle": "Rectangle",
         "Ring": "Anneau",
         "Wall": "Mur"
       },
+      "PlacementModes": { "Fixed": "Fixe", "AttachedSource": "Attachée au lanceur" },
       "DistanceUnits": { "Scene": "Unités de la scène", "Feet": "Pieds", "Meters": "Mètres" },
       "Parts": {
         "ZoneParts": "Parties de zone",

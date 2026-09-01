@@ -34,6 +34,8 @@
         "Multipart": "In single-zone mode, the Triggers below apply to one zone. With zone parts enabled, each part has its own Triggers; Movement, Linked Walls, and Linked Lights remain general placement settings.",
         "MainGeometry": "Defines the shape created by the main placement. Distances use the scene's distance units.",
         "CircleRadius": "Distance from the center to the edge of the zone, in scene units.",
+        "EmanationRadius": "Distance beyond the source token's occupied space, converted to the current scene unit.",
+        "ZonePlacement": "Attached placement is available only for a single Emanation and uses Foundry's native token attachment.",
         "RectangleDimensions": "Width and height are stored with the selected unit and converted to the current scene when placed. The chosen point is the rectangle's center.",
         "RingReferenceRadius": "Distance from the center to the reference line used to position the ring, in scene units.",
         "RingInnerWidth": "Distance the ring extends inward from the reference radius, in scene units.",
@@ -76,6 +78,7 @@
       },
       "Sections": {
         "Configuration": "Usage",
+        "Placement": "Placement",
         "Geometry": "Geometry",
         "Triggers": "Triggers",
         "Save": "Save",
@@ -98,6 +101,8 @@
       },
       "Fields": {
         "Shape": "Zone shape",
+        "ZonePlacement": "Zone placement",
+        "EmanationRadius": "Emanation radius",
         "CircleRadius": "Circle radius",
         "RectangleWidth": "Width",
         "RectangleHeight": "Height",
@@ -158,10 +163,12 @@
       },
       "Geometry": {
         "Circle": "Circle",
+        "Emanation": "Emanation",
         "Rectangle": "Rectangle",
         "Ring": "Ring",
         "Wall": "Wall"
       },
+      "PlacementModes": { "Fixed": "Fixed", "AttachedSource": "Attached to caster" },
       "DistanceUnits": { "Scene": "Scene units", "Feet": "Feet", "Meters": "Meters" },
       "Parts": {
         "ZoneParts": "Zone Parts",

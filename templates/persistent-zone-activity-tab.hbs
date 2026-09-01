@@ -33,6 +33,18 @@
   </fieldset>
 
   <div data-pz-toggle-target="pz-enabled">
+  <fieldset class="persistent-zone-activity__section">
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Placement"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ZonePlacement"}}</label>
+      <select name="persistentZone.placement.mode">
+        <option value="fixed" {{#if (eq persistentZone.placement.mode "fixed")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.PlacementModes.Fixed"}}</option>
+        <option value="attached-source" {{#if (eq persistentZone.placement.mode "attached-source")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.PlacementModes.AttachedSource"}}</option>
+      </select>
+      <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.ZonePlacement"}}</p>
+    </div>
+  </fieldset>
+  <div data-pz-attached-unsupported>
   <fieldset class="persistent-zone-activity__section persistent-zone-activity__parts">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Parts.ZoneParts"}}</legend>
     <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.Multipart"}}</p>
@@ -141,6 +153,7 @@
       </div>
     </div>
   </fieldset>
+  </div>
 
   <fieldset class="persistent-zone-activity__section persistent-zone-activity__geometry">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Geometry"}}</legend>
@@ -156,6 +169,13 @@
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
         <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.CircleRadius"}}</p>
+      </div>
+    </div>
+    <div data-pz-geometry="emanation">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.EmanationRadius"}}</label>
+        <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.EmanationRadius"}}</p>
       </div>
     </div>
     <div data-pz-geometry="rectangle">
@@ -544,7 +564,7 @@
     </div>
   </fieldset>
 
-  <fieldset class="persistent-zone-activity__section">
+  <fieldset class="persistent-zone-activity__section" data-pz-attached-unsupported>
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedWalls"}}</legend>
     <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.LinkedWalls"}}</p>
     <div class="form-group">
@@ -617,7 +637,7 @@
     </div>
   </fieldset>
 
-  <fieldset class="persistent-zone-activity__section">
+  <fieldset class="persistent-zone-activity__section" data-pz-attached-unsupported>
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.LinkedLights"}}</legend>
     <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.LinkedLights"}}</p>
     <div class="form-group">

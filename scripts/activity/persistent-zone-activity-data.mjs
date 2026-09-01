@@ -24,11 +24,18 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           required: false,
           initial: true
         }),
+        placement: new fields.SchemaField({
+          mode: new fields.StringField({
+            required: false,
+            initial: "fixed",
+            choices: ["fixed", "attached-source"]
+          })
+        }),
         geometry: new fields.SchemaField({
           type: new fields.StringField({
             required: false,
             initial: "circle",
-            choices: ["circle", "rectangle", "ring", "wall"]
+            choices: ["circle", "rectangle", "ring", "wall", "emanation"]
           }),
           radius: new fields.NumberField({
             required: false,

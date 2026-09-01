@@ -50,12 +50,13 @@ const buildGreaseTrigger = ({ standingOnly = false } = {}) => ({
   }
 });
 
-const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequency = "unlimited", frequencyGroup = "" }) => ({
+const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequency = "unlimited", frequencyGroup = "", targetFilter = "all" }) => ({
   ...buildDisabledTrigger(),
   enabled: true,
   mode: "simple-effect",
   frequency,
   frequencyGroup,
+  targetFilter: { mode: targetFilter },
   simpleEffect: {
     ...buildDisabledTrigger().simpleEffect,
     damage: { enabled: true, formula, type },
@@ -157,7 +158,7 @@ const wallOfFireLinkedLights = {
   color: "#ff9b42"
 };
 
-const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 } }) => ({
+const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -169,6 +170,7 @@ const base = ({ id, name, description, category, geometry, parts = [], triggers 
   persistentZone: {
     schemaVersion: ACTIVITY_DEFINITION_SCHEMA_VERSION,
     enabled: true,
+    ...(placement ? { placement } : {}),
     geometry,
     parts,
     triggers,

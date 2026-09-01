@@ -7,7 +7,7 @@ export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
   "schemaVersion", "enabled", "geometry", "parts", "triggers", "damage", "save", "effects",
-  "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle"
+  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle"
 ]);
 
 const RUNTIME_IDENTITY_KEYS = new Set([
@@ -156,7 +156,7 @@ function isValidPersistentZoneConfiguration(config) {
   const schemaVersion = Number(config.schemaVersion);
   if (!Number.isInteger(schemaVersion) || schemaVersion < 1) return false;
   const geometryType = String(config.geometry?.type ?? "").trim();
-  if (!geometryType || !["circle", "rectangle", "ring", "wall"].includes(geometryType)) return false;
+  if (!geometryType || !["circle", "rectangle", "ring", "wall", "emanation"].includes(geometryType)) return false;
   if (config.parts !== undefined && !Array.isArray(config.parts)) return false;
   if (Array.isArray(config.parts)) {
     const ids = new Set();
