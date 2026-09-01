@@ -146,21 +146,6 @@ const base = ({ id, name, description, category, geometry, parts = [], triggers 
 });
 
 export const BUILTIN_PRESETS = Object.freeze([
-  base({ id: "builtin.simple-circle", name: "PERSISTENT_ZONES.Activity.Presets.Builtins.SimpleCircle.Name", description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SimpleCircle.Description", category: "basic", geometry: { type: "circle", radius: 10 } }),
-  base({ id: "builtin.difficult-terrain", name: "PERSISTENT_ZONES.Activity.Presets.Builtins.DifficultTerrain.Name", description: "PERSISTENT_ZONES.Activity.Presets.Builtins.DifficultTerrain.Description", category: "terrain", geometry: { type: "circle", radius: 10 }, terrain: { enabled: true, multiplier: 2 } }),
-  base({ id: "builtin.ring", name: "PERSISTENT_ZONES.Activity.Presets.Builtins.Ring.Name", description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Ring.Description", category: "geometry", geometry: { type: "ring", ringReferenceRadius: 10, ringInnerWidth: 5, ringOuterWidth: 0 } }),
-  base({ id: "builtin.wall-line", name: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallLine.Name", description: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallLine.Description", category: "geometry", geometry: { type: "wall", wallLength: 30, wallThickness: 5 } }),
-  base({
-    id: "builtin.multipart-simple",
-    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.MultipartSimple.Name",
-    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.MultipartSimple.Description",
-    category: "multipart",
-    geometry: { type: "circle", radius: 10 },
-    parts: [
-      { id: "primary", label: "Primary", role: "primary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggers() },
-      { id: "secondary", label: "Secondary", role: "secondary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggers() }
-    ]
-  }),
   {
     id: "srd-5.2.1.grease",
     version: PRESET_SCHEMA_VERSION,

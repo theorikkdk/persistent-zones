@@ -3,7 +3,7 @@ import { fromUuidSafe } from "./utils.mjs";
 
 const ABILITY_IDS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
 const ESCAPE_ACTION_TYPES = new Set(["action"]);
-const ESCAPE_CHECK_TYPES = new Set(["ability"]);
+const ESCAPE_CHECK_TYPES = new Set(["ability", "skill"]);
 const ESCAPE_DC_MODES = new Set(["inherit", "custom"]);
 const pendingAttempts = new Set();
 
@@ -18,6 +18,7 @@ export function normalizeStatusEscape(value) {
     actionType: normalizeChoice(source.actionType, ESCAPE_ACTION_TYPES, "action"),
     checkType: normalizeChoice(source.checkType, ESCAPE_CHECK_TYPES, "ability"),
     ability: normalizeAbility(source.ability) ?? "str",
+    skill: normalizeSkill(source.skill) ?? "ath",
     dcMode,
     customDC: dcMode === "custom" ? positiveNumber(source.customDC) : null,
     removeOnSuccess: source.removeOnSuccess !== false,
@@ -119,6 +120,7 @@ export async function attemptStatusEscape({
   allowOutsideCombat = false,
   resolveUuid = fromUuidSafe,
   rollAbility = rollNativeAbilityCheck,
+  rollSkill = rollNativeSkillCheck,
   postResult = postStatusEscapeResult
 } = {}) {
   effect ??= effectUuid ? await resolveUuid(effectUuid) : null;
@@ -138,14 +140,20 @@ export async function attemptStatusEscape({
 
   if (effect.origin && !await resolveUuid(effect.origin)) return { attempted: false, reason: "source-not-found" };
   const dc = positiveNumber(config.resolvedDC);
+  const checkType = normalizeChoice(config.checkType, ESCAPE_CHECK_TYPES, "ability");
   const ability = normalizeAbility(config.ability);
-  if (!dc || !ability) return { attempted: false, reason: !dc ? "missing-dc" : "invalid-ability" };
+  const skill = normalizeSkill(config.skill);
+  if (!dc || (checkType === "ability" && !ability) || (checkType === "skill" && !skill)) {
+    return { attempted: false, reason: !dc ? "missing-dc" : checkType === "skill" ? "invalid-skill" : "invalid-ability" };
+  }
 
   const pendingKey = effectiveTurnKey ?? effect.uuid ?? effect.id;
   if (pendingAttempts.has(pendingKey)) return { attempted: false, reason: "attempt-in-progress" };
   pendingAttempts.add(pendingKey);
   try {
-    const rolls = await rollAbility({ actor, tokenDocument, ability, dc, effect });
+    const rolls = checkType === "skill"
+      ? await rollSkill({ actor, tokenDocument, skill, dc, effect })
+      : await rollAbility({ actor, tokenDocument, ability, dc, effect });
     const rollTotal = resolveAbilityCheckTotal(rolls);
     if (rollTotal === null) return { attempted: false, reason: "roll-cancelled" };
     if (effectiveTurnKey) await updateEscapeState(effect, { attemptedTurnKey: effectiveTurnKey });
@@ -161,7 +169,7 @@ export async function attemptStatusEscape({
         effectRemoved = true;
       }
     }
-    const result = { attempted: true, success, rollTotal, dc, ability, effectRemoved, effectUuid: effect.uuid ?? null };
+    const result = { attempted: true, success, rollTotal, dc, checkType, ability, skill: checkType === "skill" ? skill : null, effectRemoved, effectUuid: effect.uuid ?? null };
     await postResult({ ...result, actor, tokenDocument, effect, config });
     return result;
   } finally {
@@ -244,14 +252,23 @@ async function rollNativeAbilityCheck({ actor, tokenDocument, ability }) {
   );
 }
 
-async function postStatusEscapeResult({ actor, tokenDocument, effect, config, ability, rollTotal, dc, success, effectRemoved }) {
+async function rollNativeSkillCheck({ actor, tokenDocument, skill }) {
+  if (typeof actor?.rollSkill !== "function") return null;
+  return actor.rollSkill(
+    { skill },
+    {},
+    { data: { speaker: globalThis.ChatMessage?.getSpeaker?.({ actor, token: tokenDocument }) ?? {} } }
+  );
+}
+
+async function postStatusEscapeResult({ actor, tokenDocument, effect, config, rollTotal, dc, success, effectRemoved }) {
   if (!globalThis.ChatMessage?.create) return null;
-  const abilityLabel = getAbilityLabel(ability);
+  const checkLabel = getEscapeCheckLabel(config, actor);
   const outcome = localize(success ? "PERSISTENT_ZONES.Escape.Success" : "PERSISTENT_ZONES.Escape.Failure");
   const consequence = localize(effectRemoved ? "PERSISTENT_ZONES.Escape.EffectRemoved" : "PERSISTENT_ZONES.Escape.EffectRemains");
   return ChatMessage.create({
     speaker: ChatMessage.getSpeaker?.({ actor, token: tokenDocument }) ?? {},
-    content: `<h3>${escapeHtml(actor?.name ?? "")} — ${escapeHtml(localize("PERSISTENT_ZONES.Escape.Title"))}</h3><p>${escapeHtml(abilityLabel)}: <strong>${rollTotal}</strong><br>${escapeHtml(localize("PERSISTENT_ZONES.Escape.DC"))}: <strong>${dc}</strong></p><p><strong>${escapeHtml(outcome)}</strong><br>${escapeHtml(config.statusName ?? effect?.name ?? "")} — ${escapeHtml(consequence)}</p>`
+    content: `<h3>${escapeHtml(actor?.name ?? "")} — ${escapeHtml(localize("PERSISTENT_ZONES.Escape.Title"))}</h3><p>${escapeHtml(checkLabel)}: <strong>${rollTotal}</strong><br>${escapeHtml(localize("PERSISTENT_ZONES.Escape.DC"))}: <strong>${dc}</strong></p><p><strong>${escapeHtml(outcome)}</strong><br>${escapeHtml(config.statusName ?? effect?.name ?? "")} — ${escapeHtml(consequence)}</p>`
   });
 }
 
@@ -260,7 +277,7 @@ function buildEscapePromptContent({ tokenDocument, effect, config }) {
   const statusName = config.statusName ?? effect?.name ?? localize("PERSISTENT_ZONES.Escape.EffectFallback");
   const sourceName = config.sourceName ?? localize("PERSISTENT_ZONES.Escape.SourceFallback");
   const intro = customMessage ?? format("PERSISTENT_ZONES.Escape.Message", { effect: statusName, source: sourceName });
-  return `<p>${escapeHtml(intro)}</p><p>${escapeHtml(localize("PERSISTENT_ZONES.Escape.UsesAction"))}</p><p>${escapeHtml(localize("PERSISTENT_ZONES.Escape.Check"))}: <strong>${escapeHtml(getAbilityLabel(config.ability))}</strong><br>${escapeHtml(localize("PERSISTENT_ZONES.Escape.DC"))}: <strong>${Number(config.resolvedDC)}</strong></p><p>${escapeHtml(format("PERSISTENT_ZONES.Escape.SuccessRemoves", { effect: statusName }))}</p>`;
+  return `<p>${escapeHtml(intro)}</p><p>${escapeHtml(localize("PERSISTENT_ZONES.Escape.UsesAction"))}</p><p>${escapeHtml(localize("PERSISTENT_ZONES.Escape.Check"))}: <strong>${escapeHtml(getEscapeCheckLabel(config, tokenDocument?.actor))}</strong><br>${escapeHtml(localize("PERSISTENT_ZONES.Escape.DC"))}: <strong>${Number(config.resolvedDC)}</strong></p><p>${escapeHtml(format("PERSISTENT_ZONES.Escape.SuccessRemoves", { effect: statusName }))}</p>`;
 }
 
 function resolveCurrentCombatToken(combat) {
@@ -301,6 +318,15 @@ function getAbilityLabel(ability) {
   return localize(configured?.label ?? ability?.toUpperCase?.() ?? "");
 }
 
+export function getEscapeCheckLabel(config, actor = null) {
+  if (normalizeChoice(config?.checkType, ESCAPE_CHECK_TYPES, "ability") !== "skill") return getAbilityLabel(config?.ability);
+  const skill = normalizeSkill(config?.skill);
+  const skillConfig = globalThis.CONFIG?.DND5E?.skills?.[skill] ?? {};
+  const ability = actor?.system?.skills?.[skill]?.ability ?? skillConfig.ability ?? config?.ability;
+  const skillLabel = localize(skillConfig.label ?? skill?.toUpperCase?.() ?? "");
+  return `${getAbilityLabel(ability)} (${skillLabel})`;
+}
+
 function localize(key) {
   return globalThis.game?.i18n?.localize?.(key) ?? key;
 }
@@ -318,6 +344,14 @@ function escapeHtml(value) {
 function normalizeAbility(value) {
   const ability = String(value ?? "").trim().toLowerCase();
   return ABILITY_IDS.has(ability) ? ability : null;
+}
+
+function normalizeSkill(value) {
+  const skill = String(value ?? "").trim().toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(skill)) return null;
+  const configuredSkills = globalThis.CONFIG?.DND5E?.skills;
+  if (configuredSkills && Object.keys(configuredSkills).length && !Object.hasOwn(configuredSkills, skill)) return null;
+  return skill;
 }
 
 function normalizeChoice(value, choices, fallback) {

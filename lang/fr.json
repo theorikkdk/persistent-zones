@@ -16,13 +16,8 @@
         "ApplyConfirmTitle": "Appliquer un preset Persistent Zone",
         "ApplyConfirm": "Appliquer {preset} ? La configuration Persistent Zones actuelle de cette Activity sera remplacée.",
         "Applied": "Le preset {preset} a été appliqué.",
-        "Categories": { "SrdSpells": "Sorts SRD 5.2.1", "Generic": "Presets génériques" },
+        "Categories": { "SrdSpells": "Sorts SRD 5.2.1" },
         "Builtins": {
-          "SimpleCircle": { "Name": "Zone circulaire simple", "Description": "Une Zone persistante circulaire sans documents liés ni effets." },
-          "DifficultTerrain": { "Name": "Terrain difficile", "Description": "Une zone circulaire avec le terrain difficile natif activé." },
-          "Ring": { "Name": "Anneau", "Description": "Un anneau natif v2 avec largeurs intérieure et extérieure indépendantes." },
-          "WallLine": { "Name": "Mur / ligne", "Description": "Une Zone persistante linéaire simple sans murs ni lumières liés." },
-          "MultipartSimple": { "Name": "Multipart simple", "Description": "Deux parties template superposées et stables avec des déclenchements vides indépendants." },
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
           "WallOfFireLine": { "Name": "Mur de feu — Ligne", "Description": "Mur persistant en ligne avec un côté dangereux configurable." },
           "WallOfFireRing": { "Name": "Mur de feu — Anneau", "Description": "Mur persistant en anneau avec un côté dangereux intérieur ou extérieur configurable." },
@@ -131,7 +126,9 @@
         "StatusRecoveryDcMode": "DD du jet de sauvegarde",
         "StatusRecoveryCustomDC": "DD personnalisé",
         "StatusEscapeEnabled": "Activer l'action pour se libérer",
+        "StatusEscapeCheckType": "Type de test",
         "StatusEscapeAbility": "Test de caractéristique",
+        "StatusEscapeSkill": "Compétence",
         "StatusEscapeDcMode": "DD du test",
         "StatusEscapeCustomDC": "DD personnalisé",
         "StatusEscapeRemove": "Retirer cette source en cas de réussite",
@@ -278,6 +275,10 @@
         }
       },
       "StatusEscape": {
+        "CheckTypes": {
+          "Ability": "Caractéristique",
+          "Skill": "Compétence"
+        },
         "DcModes": {
           "Inherit": "Utiliser le DD de sauvegarde de la source",
           "Custom": "DD personnalisé"

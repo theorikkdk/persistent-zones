@@ -471,8 +471,9 @@ function createStatusesSchema(fields, exitTrigger) {
     escape: new fields.SchemaField({
       enabled: new fields.BooleanField({ required: false, initial: false }),
       actionType: new fields.StringField({ required: false, initial: "action", choices: ["action"] }),
-      checkType: new fields.StringField({ required: false, initial: "ability", choices: ["ability"] }),
+      checkType: new fields.StringField({ required: false, initial: "ability", choices: ["ability", "skill"] }),
       ability: new fields.StringField({ required: false, initial: "str", choices: ["str", "dex", "con", "int", "wis", "cha"] }),
+      skill: new fields.StringField({ required: false, initial: "ath" }),
       dcMode: new fields.StringField({ required: false, initial: "inherit", choices: ["inherit", "custom"] }),
       customDC: new fields.NumberField({ required: false, nullable: true, initial: null, min: 1 }),
       removeOnSuccess: new fields.BooleanField({ required: false, initial: true }),

@@ -68,6 +68,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity);
     context.persistentZoneDamageTypes = buildDamageTypeOptions(config?.damage?.type);
     context.persistentZoneAbilities = buildAbilityOptions(config?.save?.ability);
+    context.persistentZoneSkills = buildSkillOptions();
     context.persistentZoneTemplateUnits = buildTemplateUnitOptions(context.source?.target?.template?.units);
     context.persistentZoneWallPresets = buildLinkedWallPresetOptions(context.persistentZone.linkedWalls?.preset);
     context.persistentZoneLightPresets = buildLinkedLightPresetOptions(context.persistentZone.linkedLights?.preset);
@@ -87,6 +88,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     const selectedPreset = getPersistentZonePreset(this.#selectedPresetId);
     context.persistentZonePresets = presets.map((preset) => ({
       id: preset.id,
+      source: preset.source,
       name: localize(preset.name),
       description: localize(preset.description),
       selected: preset.id === selectedPreset?.id
@@ -1042,8 +1044,7 @@ function normalizeStatusIdList(value) {
 
 function buildPresetGroups(presets = []) {
   return [
-    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.SrdSpells", presets: presets.filter((preset) => preset.source === "srd-5.2.1") },
-    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.Generic", presets: presets.filter((preset) => preset.source !== "srd-5.2.1") }
+    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.SrdSpells", presets: presets.filter((preset) => preset.source === "srd-5.2.1") }
   ].filter((group) => group.presets.length > 0);
 }
 
@@ -1182,6 +1183,10 @@ function buildActivityChoices() {
     statusRecoveryDcModes: [
       { value: "inherit", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Inherit" },
       { value: "custom", label: "PERSISTENT_ZONES.Activity.StatusRecovery.DcModes.Custom" }
+    ],
+    statusEscapeCheckTypes: [
+      { value: "ability", label: "PERSISTENT_ZONES.Activity.StatusEscape.CheckTypes.Ability" },
+      { value: "skill", label: "PERSISTENT_ZONES.Activity.StatusEscape.CheckTypes.Skill" }
     ],
     statusEscapeDcModes: [
       { value: "inherit", label: "PERSISTENT_ZONES.Activity.StatusEscape.DcModes.Inherit" },
@@ -1393,13 +1398,23 @@ function updateConditionalVisibility(root) {
   root.querySelectorAll("[data-pz-status-escape]").forEach((section) => {
     const enabled = section.querySelector("[data-pz-status-escape-enabled]")?.checked === true;
     const dcMode = section.querySelector("[data-pz-status-escape-dc-mode]")?.value ?? "inherit";
+    const checkType = section.querySelector("[data-pz-status-escape-check-type]")?.value ?? "ability";
     section.querySelectorAll("[data-pz-status-escape-options]").forEach((options) => {
       options.hidden = !enabled;
     });
     section.querySelectorAll("[data-pz-status-escape-custom-dc]").forEach((customDC) => {
       customDC.hidden = !enabled || dcMode !== "custom";
     });
+    section.querySelectorAll("[data-pz-status-escape-check]").forEach((field) => {
+      field.hidden = !enabled || field.dataset.pzStatusEscapeCheck !== checkType;
+    });
   });
+}
+
+function buildSkillOptions() {
+  return Object.entries(CONFIG.DND5E?.skills ?? {})
+    .map(([value, config]) => ({ value, label: game.i18n?.localize?.(config.label ?? config) ?? value }))
+    .sort((left, right) => left.label.localeCompare(right.label, game.i18n?.lang));
 }
 
 function orderPersistentZoneActivitySections(root) {
@@ -1470,6 +1485,7 @@ async function renderMultipartTriggerEditors(sheetElement, context) {
         persistentZoneChoices: context.persistentZoneChoices,
         persistentZoneDamageTypes: context.persistentZoneDamageTypes,
         persistentZoneAbilities: context.persistentZoneAbilities,
+        persistentZoneSkills: context.persistentZoneSkills,
         persistentZoneStatusOptions: context.persistentZoneStatusOptions
       });
       editor.innerHTML = html;
@@ -1491,6 +1507,7 @@ function buildMultipartTriggerRenderContext(activity) {
     persistentZoneChoices: buildActivityChoices(),
     persistentZoneDamageTypes: buildDamageTypeOptions(config?.damage?.type),
     persistentZoneAbilities: buildAbilityOptions(config?.save?.ability),
+    persistentZoneSkills: buildSkillOptions(),
     persistentZoneStatusOptions: buildStatusOptions()
   };
 }

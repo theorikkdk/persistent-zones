@@ -16,13 +16,8 @@
         "ApplyConfirmTitle": "Apply Persistent Zone Preset",
         "ApplyConfirm": "Apply {preset}? This will replace the current Persistent Zones configuration of this Activity.",
         "Applied": "Applied the {preset} preset.",
-        "Categories": { "SrdSpells": "SRD 5.2.1 Spells", "Generic": "Generic presets" },
+        "Categories": { "SrdSpells": "SRD 5.2.1 Spells" },
         "Builtins": {
-          "SimpleCircle": { "Name": "Simple circular zone", "Description": "A basic circular Persistent Zone without linked documents or effects." },
-          "DifficultTerrain": { "Name": "Difficult terrain", "Description": "A circular zone with native difficult terrain enabled." },
-          "Ring": { "Name": "Ring", "Description": "A native v2 ring with independent inner and outer widths." },
-          "WallLine": { "Name": "Wall / line", "Description": "A simple linear Persistent Zone without linked walls or lights." },
-          "MultipartSimple": { "Name": "Simple multipart", "Description": "Two stable, overlapping template parts with independent empty trigger sets." },
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
@@ -131,7 +126,9 @@
         "StatusRecoveryDcMode": "Save DC",
         "StatusRecoveryCustomDC": "Custom DC",
         "StatusEscapeEnabled": "Enable escape action",
+        "StatusEscapeCheckType": "Check type",
         "StatusEscapeAbility": "Ability check",
+        "StatusEscapeSkill": "Skill",
         "StatusEscapeDcMode": "Check DC",
         "StatusEscapeCustomDC": "Custom DC",
         "StatusEscapeRemove": "Remove this source on success",
@@ -278,6 +275,10 @@
         }
       },
       "StatusEscape": {
+        "CheckTypes": {
+          "Ability": "Ability",
+          "Skill": "Skill"
+        },
         "DcModes": {
           "Inherit": "Use source save DC",
           "Custom": "Custom DC"

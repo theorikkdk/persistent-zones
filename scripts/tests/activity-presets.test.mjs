@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 11);
+  assert.equal(BUILTIN_PRESETS.length, 6);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -79,7 +79,22 @@ test("extracts configuration without cast identities", () => {
 });
 
 test("preserves multipart, per-part triggers and terrain, and global linked documents", () => {
-  const preset = getPersistentZonePreset("builtin.multipart-simple");
+  const preset = normalizePreset({
+    id: "fixture.multipart",
+    version: PRESET_SCHEMA_VERSION,
+    name: "Multipart fixture",
+    persistentZone: {
+      schemaVersion: 3,
+      enabled: true,
+      geometry: { type: "circle", radius: 10 },
+      parts: [
+        { id: "primary", role: "primary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggersFixture() },
+        { id: "secondary", role: "secondary", geometry: { type: "template" }, terrain: { enabled: false }, triggers: buildDisabledTriggersFixture() }
+      ],
+      linkedWalls: { enabled: false },
+      linkedLights: { enabled: false }
+    }
+  });
   assert.equal(preset.persistentZone.parts.length, 2);
   assert.deepEqual(preset.persistentZone.parts.map(part => part.id), ["primary", "secondary"]);
   assert.ok(preset.persistentZone.parts.every(part => hasOnlyDisabledTriggers(part.triggers)));
@@ -98,7 +113,7 @@ test("applies only Activity updates and never touches existing Regions", async (
     }
   };
   const activity = { id: "activity-1", item };
-  const preset = getPersistentZonePreset("builtin.simple-circle");
+  const preset = getPersistentZonePreset("srd-5.2.1.grease");
   const result = await applyPresetToActivity(activity, preset);
   assert.deepEqual(captured, [
     { id: activity.id, updates: { "-=persistentZone": null } },
@@ -138,43 +153,22 @@ test("replacement removes every stale mono and multipart setting", async () => {
       }
     }
   };
-  const preset = getPersistentZonePreset("builtin.multipart-simple");
+  const preset = getPersistentZonePreset("srd-5.2.1.grease");
   await applyPresetToActivity({ id: "activity-replace", item }, preset);
   assert.deepEqual(state.persistentZone, preset.persistentZone);
-  assert.ok(hasOnlyDisabledTriggers(state.persistentZone.triggers));
-  assert.deepEqual(state.persistentZone.parts.map(part => part.id), ["primary", "secondary"]);
-  assert.ok(state.persistentZone.parts.every(part => hasOnlyDisabledTriggers(part.triggers)));
+  assert.equal(JSON.stringify(state.persistentZone).includes("9d9"), false);
+  assert.equal(JSON.stringify(state.persistentZone).includes("8d8"), false);
+  assert.equal(JSON.stringify(state.persistentZone).includes("poisoned"), false);
+  assert.deepEqual(state.persistentZone.parts, []);
 });
 
-test("all technical built-ins replace stale effects with explicit disabled triggers", async () => {
-  const expectedGeometry = new Map([
-    ["builtin.simple-circle", "circle"],
-    ["builtin.difficult-terrain", "circle"],
-    ["builtin.ring", "ring"],
-    ["builtin.wall-line", "wall"],
-    ["builtin.multipart-simple", "circle"]
+test("visible library contains only the six validated SRD spell presets", () => {
+  const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
+  assert.deepEqual(ids, [
+    "srd-5.2.1.grease", "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam",
+    "srd-5.2.1.spike-growth", "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring"
   ]);
-
-  for (const preset of getBuiltinPersistentZonePresets().filter((candidate) => candidate.id.startsWith("builtin.") && candidate.category !== "test")) {
-    const state = { persistentZone: buildStalePersistentZoneConfiguration() };
-    const item = {
-      async updateActivity(_id, updates) {
-        if (Object.hasOwn(updates, "-=persistentZone")) delete state.persistentZone;
-        if (updates.persistentZone) state.persistentZone = structuredClone(updates.persistentZone);
-      }
-    };
-    await applyPresetToActivity({ id: `activity-${preset.id}`, item }, preset);
-
-    assert.equal(state.persistentZone.geometry.type, expectedGeometry.get(preset.id), preset.id);
-    assert.equal(state.persistentZone.terrain.enabled, preset.id === "builtin.difficult-terrain", preset.id);
-    assert.ok(hasOnlyDisabledTriggers(state.persistentZone.triggers), preset.id);
-    assert.equal(JSON.stringify(state.persistentZone).includes("9d9"), false, preset.id);
-    assert.equal(JSON.stringify(state.persistentZone).includes("8d8"), false, preset.id);
-    assert.equal(JSON.stringify(state.persistentZone).includes("poisoned"), false, preset.id);
-    for (const part of state.persistentZone.parts ?? []) {
-      assert.ok(hasOnlyDisabledTriggers(part.triggers), `${preset.id}:${part.id}`);
-    }
-  }
+  assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
 });
 
 test("preset extraction and application preserve frequency configuration", async () => {
@@ -329,6 +323,19 @@ function deepMerge(target, source) {
     } else output[key] = structuredClone(value);
   }
   return output;
+}
+
+function buildDisabledTriggersFixture() {
+  const trigger = () => ({
+    enabled: false,
+    mode: "none",
+    simpleEffect: {
+      damage: { enabled: false }, healing: { enabled: false }, temporaryHitPoints: { enabled: false },
+      save: { enabled: false }, statuses: { enabled: false }
+    },
+    linkedActivity: {}
+  });
+  return Object.fromEntries(["onCreate", "enter", "exit", "move", "turnStart", "turnEnd"].map((timing) => [timing, trigger()]));
 }
 
 function hasOnlyDisabledTriggers(triggers) {

@@ -41,6 +41,10 @@ test("frequency fields belong to every trigger schema and not to statuses", () =
   assert.deepEqual(onCreate.fields.targetFilter.fields.mode.options.choices, ["all", "allies", "enemies", "self", "others"]);
   assert.equal(onCreate.fields.targetFilter.fields.mode.options.initial, "all");
   assert.equal(Object.hasOwn(onCreate.fields.simpleEffect.fields.statuses.fields, "frequency"), false);
+  const escape = onCreate.fields.simpleEffect.fields.statuses.fields.escape.fields;
+  assert.deepEqual(escape.checkType.options.choices, ["ability", "skill"]);
+  assert.equal(escape.checkType.options.initial, "ability");
+  assert.equal(escape.skill.options.initial, "ath");
   const geometry = schema.persistentZone.fields.geometry.fields;
   assert.equal(geometry.width.options.initial, 10);
   assert.equal(geometry.height.options.initial, 10);
@@ -57,6 +61,9 @@ test("expanded mono and multipart form fields survive custom PZ processing", () 
     "persistentZone.triggers.onCreate.frequency": "once-per-turn",
     "persistentZone.triggers.onCreate.frequencyGroup": "mono-test",
     "persistentZone.triggers.onCreate.targetFilter.mode": "enemies",
+    "persistentZone.triggers.onCreate.simpleEffect.statuses.escape.enabled": true,
+    "persistentZone.triggers.onCreate.simpleEffect.statuses.escape.checkType": "skill",
+    "persistentZone.triggers.onCreate.simpleEffect.statuses.escape.skill": "ath",
     "persistentZone.triggers.enter.frequency": "once-per-turn",
     "persistentZone.triggers.enter.frequencyGroup": "mono-test",
     "persistentZone.parts.0.id": "primary",
@@ -64,6 +71,9 @@ test("expanded mono and multipart form fields survive custom PZ processing", () 
     "persistentZone.parts.0.triggers.onCreate.frequency": "once-per-turn",
     "persistentZone.parts.0.triggers.onCreate.frequencyGroup": "part-test",
     "persistentZone.parts.0.triggers.onCreate.targetFilter.mode": "allies",
+    "persistentZone.parts.0.triggers.onCreate.simpleEffect.statuses.escape.enabled": true,
+    "persistentZone.parts.0.triggers.onCreate.simpleEffect.statuses.escape.checkType": "skill",
+    "persistentZone.parts.0.triggers.onCreate.simpleEffect.statuses.escape.skill": "ste",
     "persistentZone.parts.1.id": "secondary",
     "persistentZone.parts.1.geometry.type": "template",
     "persistentZone.parts.1.triggers.onCreate.frequency": "once-per-turn",
@@ -76,9 +86,12 @@ test("expanded mono and multipart form fields survive custom PZ processing", () 
   assert.equal(processed.triggers.onCreate.frequency, "once-per-turn");
   assert.equal(processed.triggers.onCreate.frequencyGroup, "mono-test");
   assert.equal(processed.triggers.onCreate.targetFilter.mode, "enemies");
+  assert.equal(processed.triggers.onCreate.simpleEffect.statuses.escape.checkType, "skill");
+  assert.equal(processed.triggers.onCreate.simpleEffect.statuses.escape.skill, "ath");
   assert.equal(processed.triggers.enter.frequency, "once-per-turn");
   assert.equal(processed.parts[0].triggers.onCreate.frequency, "once-per-turn");
   assert.equal(processed.parts[0].triggers.onCreate.targetFilter.mode, "allies");
+  assert.equal(processed.parts[0].triggers.onCreate.simpleEffect.statuses.escape.skill, "ste");
   assert.equal(processed.parts[1].triggers.onCreate.frequencyGroup, "part-test");
 });
 
