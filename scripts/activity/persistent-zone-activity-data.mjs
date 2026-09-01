@@ -119,6 +119,11 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           })
         }),
         movement: new fields.SchemaField({
+          interruptionMode: new fields.StringField({
+            required: false,
+            initial: "inherit",
+            choices: ["inherit", "off", "on-enter", "on-move", "on-enter-and-move"]
+          }),
           stopOnTrigger: new fields.BooleanField({
             required: false,
             initial: false
@@ -143,6 +148,19 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             nullable: true,
             initial: 5,
             min: 0
+          }),
+          units: new fields.StringField({
+            required: false,
+            initial: "scene",
+            choices: ["scene", "ft", "m"]
+          }),
+          accumulateRemainder: new fields.BooleanField({
+            required: false,
+            initial: false
+          }),
+          aggregateApplications: new fields.BooleanField({
+            required: false,
+            initial: true
           }),
           cellStep: new fields.NumberField({
             integer: true,

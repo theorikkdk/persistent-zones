@@ -14,6 +14,14 @@ export const MOVEMENT_STOP_GLOBAL_MODES = Object.freeze({
   onEnterAndMove: "on-enter-and-move"
 });
 
+export const MOVEMENT_STOP_ACTIVITY_MODES = Object.freeze({
+  inherit: "inherit",
+  off: "off",
+  onEnter: "on-enter",
+  onMove: "on-move",
+  onEnterAndMove: "on-enter-and-move"
+});
+
 export const PERSISTENT_ZONES_LOG_LEVELS = Object.freeze({
   minimal: "minimal",
   standard: "standard",
@@ -172,7 +180,7 @@ export function isMovementStopSupportedTiming(timing) {
 }
 
 export function isMovementStopEnabledForTiming(timing, mode = getMovementStopGlobalMode()) {
-  const normalizedMode = normalizeMovementStopGlobalMode(mode);
+  const normalizedMode = normalizeMovementStopResolvedMode(mode);
   const normalizedTiming = String(timing ?? "").trim();
 
   if (!isMovementStopSupportedTiming(normalizedTiming)) {
@@ -185,6 +193,10 @@ export function isMovementStopEnabledForTiming(timing, mode = getMovementStopGlo
 
   if (normalizedMode === MOVEMENT_STOP_GLOBAL_MODES.onEnter) {
     return normalizedTiming === "onEnter";
+  }
+
+  if (normalizedMode === MOVEMENT_STOP_ACTIVITY_MODES.onMove) {
+    return normalizedTiming === "onMove";
   }
 
   return false;
@@ -214,7 +226,9 @@ export function resolveMovementStopGlobalState(triggerConfig = {}, timing = null
   const globalMode = getMovementStopGlobalMode();
   const globalEnabled = globalMode !== MOVEMENT_STOP_GLOBAL_MODES.off;
   const supportedTiming = isMovementStopSupportedTiming(timing);
-  const timingEnabled = supportedTiming && isMovementStopEnabledForTiming(timing, globalMode);
+  const activityMode = normalizeMovementStopActivityMode(triggerConfig?.interruptionMode);
+  const resolvedMode = activityMode === MOVEMENT_STOP_ACTIVITY_MODES.inherit ? globalMode : activityMode;
+  const timingEnabled = supportedTiming && isMovementStopEnabledForTiming(timing, resolvedMode);
   const legacyFlagDetected = Boolean(
     triggerConfig &&
     typeof triggerConfig === "object" &&
@@ -228,23 +242,40 @@ export function resolveMovementStopGlobalState(triggerConfig = {}, timing = null
     enabled: timingEnabled,
     globalEnabled,
     globalMode,
+    activityMode,
+    resolvedMode,
     supportedTiming,
     timingEnabled,
     legacyFlagDetected,
     resolvedFrom: supportedTiming
       ? (
         timingEnabled
-          ? "global-mode"
+          ? (activityMode === MOVEMENT_STOP_ACTIVITY_MODES.inherit ? "global-mode" : "activity-override")
           : (
-            globalEnabled
-              ? "global-mode-timing-disabled"
-              : "global-mode-off"
+            activityMode !== MOVEMENT_STOP_ACTIVITY_MODES.inherit
+              ? "activity-override-disabled-for-timing"
+              : globalEnabled
+                ? "global-mode-timing-disabled"
+                : "global-mode-off"
           )
       )
       : "unsupported-timing",
-    stopSkippedBecauseGlobalDisabled: supportedTiming && !globalEnabled,
-    stopSkippedBecauseTimingDisabled: supportedTiming && globalEnabled && !timingEnabled
+    stopSkippedBecauseGlobalDisabled: supportedTiming && activityMode === MOVEMENT_STOP_ACTIVITY_MODES.inherit && !globalEnabled,
+    stopSkippedBecauseTimingDisabled: supportedTiming && !timingEnabled
   };
+}
+
+function normalizeMovementStopResolvedMode(value) {
+  const activityMode = normalizeMovementStopActivityMode(value);
+  return activityMode === MOVEMENT_STOP_ACTIVITY_MODES.inherit
+    ? MOVEMENT_STOP_GLOBAL_MODES.off
+    : activityMode;
+}
+
+export function normalizeMovementStopActivityMode(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  if (Object.values(MOVEMENT_STOP_ACTIVITY_MODES).includes(normalizedValue)) return normalizedValue;
+  return MOVEMENT_STOP_ACTIVITY_MODES.inherit;
 }
 
 export function detectLegacyMovementStopFlags(definition) {

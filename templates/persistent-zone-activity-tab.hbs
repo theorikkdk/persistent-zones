@@ -448,16 +448,12 @@
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>
     <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.Movement"}}</p>
     <div class="form-group">
-      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.StopMovement"}}</label>
-      <input type="checkbox" name="persistentZone.movement.stopOnTrigger" data-pz-toggle-source="movement-stop" {{#if persistentZone.movement.stopOnTrigger}}checked{{/if}}>
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.MovementInterruption"}}</label>
+      <select name="persistentZone.movement.interruptionMode">
+        {{selectOptions persistentZoneChoices.interruptionModes selected=persistentZone.movement.interruptionMode localize=true}}
+      </select>
     </div>
-    <div data-pz-toggle-target="movement-stop">
-      <div class="form-group">
-        <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementStop"}}</label>
-        <select name="persistentZone.movement.stopMode">
-          {{selectOptions persistentZoneChoices.stopModes selected=persistentZone.movement.stopMode localize=true}}
-        </select>
-      </div>
+    <div>
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.UI.Fields.MovementMode"}}</label>
         <select name="persistentZone.movement.movementMode">
@@ -470,6 +466,22 @@
           {{selectOptions persistentZoneChoices.stepModes selected=persistentZone.movement.stepMode localize=true}}
         </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.MovementDistanceStep"}}</label>
+      <input type="number" name="persistentZone.movement.distanceStep" value="{{persistentZone.movement.distanceStep}}" min="0.000001" step="any">
+    </div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.MovementDistanceUnits"}}</label>
+      <select name="persistentZone.movement.units">
+        <option value="scene" {{#if (eq persistentZone.movement.units "scene")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Scene"}}</option>
+        <option value="ft" {{#if (eq persistentZone.movement.units "ft")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Feet"}}</option>
+        <option value="m" {{#if (eq persistentZone.movement.units "m")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DistanceUnits.Meters"}}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.AccumulateMovementRemainder"}}</label>
+      <input type="checkbox" name="persistentZone.movement.accumulateRemainder" {{#if persistentZone.movement.accumulateRemainder}}checked{{/if}}>
     </div>
   </fieldset>
 

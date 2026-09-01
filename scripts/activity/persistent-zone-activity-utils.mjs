@@ -408,10 +408,13 @@ function buildTriggerConfig(triggerSource = {}, {
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
+    interruptionMode: String(movement.interruptionMode ?? "inherit").trim().toLowerCase() || "inherit",
     movementMode: movement.movementMode ?? "any",
     stepMode: movement.stepMode ?? "distance",
     distanceStep: numberOrNull(movement.distanceStep) ?? 5,
     cellStep: numberOrNull(movement.cellStep) ?? 1,
+    accumulateRemainder: Boolean(movement.accumulateRemainder),
+    aggregateApplications: movement.aggregateApplications !== false,
     damage: {
       enabled: mode === "simple" && Boolean(damageConfig?.enabled),
       formula: String(damageConfig?.formula ?? "").trim(),

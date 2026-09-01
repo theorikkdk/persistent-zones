@@ -64,8 +64,8 @@ const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequ
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers }),
+const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, movement, terrain, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers, movement, terrain }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -77,7 +77,7 @@ const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, link
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers, movement, terrain }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -121,7 +121,7 @@ const wallOfFireLinkedLights = {
   color: "#ff9b42"
 };
 
-const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), terrain = { enabled: false, multiplier: 2 } }) => ({
+const base = ({ id, name, description, category, geometry, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 } }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -136,7 +136,7 @@ const base = ({ id, name, description, category, geometry, parts = [], triggers 
     geometry,
     parts,
     triggers,
-    movement: { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, cellStep: 1 },
+    movement: movement ?? { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "scene", accumulateRemainder: false, aggregateApplications: true, cellStep: 1 },
     terrain,
     linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
     linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
@@ -234,6 +234,21 @@ export const BUILTIN_PRESETS = Object.freeze([
       onCreate: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP }),
       enter: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP }),
       turnEnd: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP })
+    }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.spike-growth",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpikeGrowth.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpikeGrowth.Description",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    tags: ["transmutation", "control", "terrain", "concentration"],
+    terrain: { enabled: true, multiplier: 2 },
+    movement: { interruptionMode: "off", stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "ft", accumulateRemainder: true, aggregateApplications: true, cellStep: 1 },
+    linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
+    linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
+    triggers: {
+      ...buildDisabledTriggers(),
+      move: buildDamageTrigger({ formula: "2d4", type: "piercing", frequency: "unlimited" })
     }
   })
 ]);

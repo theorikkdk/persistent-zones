@@ -23,6 +23,9 @@ import {
 
 const lastKnownTokenStates = new Map();
 const regionInsideStates = new Map();
+const movementDistanceRemainders = new Map();
+const processedMovementExecutions = new Map();
+const movementInvocationIds = new WeakMap();
 const recentEnterEvents = new Map();
 const recentExitEvents = new Map();
 const recentOnMoveEvents = new Map();
@@ -36,6 +39,7 @@ const handledMovementInterruptions = new Map();
 const pendingPreUpdateGridStops = new Map();
 
 let hooksRegistered = false;
+let movementInvocationCounter = 0;
 const INTERNAL_STOP_TTL_MS = 3000;
 const MOVEMENT_SEQUENCE_TTL_MS = 5000;
 const MANAGED_REGION_ENTER_STOP_TTL_MS = 5000;
@@ -423,8 +427,14 @@ async function onMoveToken(tokenDocument, movement) {
     });
     return;
   }
-  const movementSequenceId = buildMovementSequenceId(tokenDocument, movement, movementPath);
+  const movementInvocationId = getMovementInvocationId(tokenDocument, movement, "moveToken");
+  const movementSequenceId = `${buildMovementSequenceId(tokenDocument, movement, movementPath)}|${movementInvocationId}`;
   const movementFamilyId = buildMovementFamilyId(tokenDocument, movement, movementPath);
+
+  markRecentMoveTokenEvent(tokenDocument, movementPath.toState, {
+    movementSequenceId,
+    pending: true
+  });
 
   if (consumeInternalStopDestinationIfMatched(tokenDocument, movementPath.toState)) {
     markRecentMoveTokenEvent(tokenDocument, movementPath.toState);
@@ -486,21 +496,35 @@ async function onMoveToken(tokenDocument, movement) {
     consume: true
   });
 
-  const evaluation = await evaluateTokenEntry(tokenDocument, {
-    moveSource: movementPath.moveSource,
-    movementSequenceId,
-    movementMode: movementResolution.resolvedMovementMode,
-    movementModeRaw: movementResolution.rawMovementMode,
-    movementMarkConsumed: movementResolution.consumed,
-    fromState: movementPath.fromState,
-    toState: movementPath.toState,
-    pathStates: movementPath.pathStates,
-    movementFamilyId,
-    movement
-  });
+  let evaluation;
+  try {
+    evaluation = await evaluateTokenEntry(tokenDocument, {
+      moveSource: movementPath.moveSource,
+      movementSequenceId,
+      movementMode: movementResolution.resolvedMovementMode,
+      movementModeRaw: movementResolution.rawMovementMode,
+      movementMarkConsumed: movementResolution.consumed,
+      fromState: movementPath.fromState,
+      toState: movementPath.toState,
+      pathStates: movementPath.pathStates,
+      movementFamilyId,
+      movement
+    });
+  } catch (error) {
+    completeRecentMoveTokenEvent(tokenDocument, movementSequenceId);
+    debug("Managed Region movement execution failed.", {
+      errorName: error?.name ?? null,
+      errorMessage: error?.message ?? String(error),
+      errorStack: error?.stack ?? null,
+      movementSequenceId,
+      tokenUuid: tokenDocument?.uuid ?? null,
+      regionId: null
+    });
+    return;
+  }
 
   const finalState = evaluation?.finalState ?? movementPath.toState;
-  markRecentMoveTokenEvent(tokenDocument, finalState);
+  completeRecentMoveTokenEvent(tokenDocument, movementSequenceId);
   lastKnownTokenStates.set(tokenDocument.uuid, finalState);
 
   if (evaluation?.interruptionAttempted) {
@@ -591,6 +615,8 @@ async function onUpdateToken(tokenDocument, changed, options = {}) {
   }
 
   const beforeState = lastKnownTokenStates.get(tokenDocument.uuid) ?? null;
+  const movementInvocationId = getMovementInvocationId(tokenDocument, null, "updateToken");
+  const movementSequenceId = `${buildMovementSequenceIdFromStates(tokenDocument, [beforeState, afterState])}|${movementInvocationId}`;
   const movementResolution = resolveMovementModeForEvaluation(tokenDocument, {
     moveSource: "updateToken-fallback",
     consume: false
@@ -598,6 +624,7 @@ async function onUpdateToken(tokenDocument, changed, options = {}) {
 
   await evaluateTokenEntry(tokenDocument, {
     moveSource: "updateToken-fallback",
+    movementSequenceId,
     movementMode: movementResolution.resolvedMovementMode,
     movementModeRaw: movementResolution.rawMovementMode,
     movementMarkConsumed: movementResolution.consumed,
@@ -654,6 +681,15 @@ function onDeleteToken(tokenDocument) {
   internalStopDestinations.delete(tokenDocument.uuid);
   clearHandledMovementInterruptionsForToken(tokenDocument);
   clearInsideStateCacheForToken(tokenDocument);
+  clearProcessedMovementExecutionsForToken(tokenDocument);
+}
+
+function clearProcessedMovementExecutionsForToken(tokenDocument) {
+  const tokenKey = tokenDocument?.uuid ?? tokenDocument?.id ?? null;
+  if (!tokenKey) return;
+  for (const key of processedMovementExecutions.keys()) {
+    if (key.includes(`|${tokenKey}|`)) processedMovementExecutions.delete(key);
+  }
 }
 
 function buildRegionNativeSegmentTriggerKey(evaluation) {
@@ -1192,14 +1228,18 @@ export function collectRegionEvaluations(tokenDocument, managedRegions, {
     );
     const insideCellCount = movementAnalysis.insideCellCount ?? 0;
     const remainingInsideCellCount = movementAnalysis.remainingInsideCellCount ?? insideCellCount;
+    const accumulateMovementDistance = stepMode === "distance" && onMove?.accumulateRemainder === true;
+    const distanceForMoveTrigger = accumulateMovementDistance ? insideDistance : remainingInsideDistance;
     const rawMoveTriggerCount = calculateMoveTriggerCount({
       stepMode,
-      insideDistance: remainingInsideDistance,
+      insideDistance: distanceForMoveTrigger,
       stepDistance,
       insideCellCount: remainingInsideCellCount,
       cellStep
     });
-    const moveTriggerCount = movementAnalysis.crossedBoundary ? 0 : rawMoveTriggerCount;
+    const moveTriggerCount = accumulateMovementDistance
+      ? (distanceForMoveTrigger > 0 ? Math.max(1, rawMoveTriggerCount) : 0)
+      : movementAnalysis.crossedBoundary ? 0 : rawMoveTriggerCount;
     const onMoveEligible = Boolean(fromInside && toInside && !movementAnalysis.crossedBoundary);
     const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime);
     if (nativeRingGeometry) {
@@ -1324,6 +1364,8 @@ export function collectRegionEvaluations(tokenDocument, managedRegions, {
       pathLength,
       insideDistance,
       remainingInsideDistance,
+      movementDistanceInside: distanceForMoveTrigger,
+      accumulateMovementDistance,
       insideCellCount,
       remainingInsideCellCount,
       stepMode,
@@ -1372,6 +1414,8 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
     pathLength,
     insideDistance,
     remainingInsideDistance,
+    movementDistanceInside,
+    accumulateMovementDistance,
     insideCellCount,
     remainingInsideCellCount,
     stepMode,
@@ -1591,6 +1635,40 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
               }
             }
           }
+          if (accumulateMovementDistance && !triggerSuppressedBecauseMovementAlreadyStopped) {
+            const moveApplied = await applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
+              moveSource,
+              movementSequenceId,
+              fromInside,
+              toInside,
+              movementMode,
+              moveTriggerCount: effectiveTriggerCount,
+              stepMode,
+              configuredStep,
+              rawInsideCellCount: insideCellCount,
+              remainingInsideCellCount,
+              moveMovementModeMatched,
+              movementStopResolution: moveMovementStopResolution,
+              fromState,
+              toState,
+              rawInsideDistance: insideDistance,
+              remainingInsideDistance,
+              movementDistanceInside,
+              accumulateMovementDistance,
+              movementStartedInside,
+              entryConsumedFirstMoveStep,
+              onMoveEligibleAfterEntry,
+              pathLength,
+              stepDistance,
+              stopPoint,
+              onMoveThresholdPoint,
+              stopHandledByRegion,
+              stopDecision,
+              movementAnalysis
+            });
+            effectApplied = effectApplied || moveApplied;
+            onMoveTriggered = moveApplied;
+          }
         } else {
           if (stopApplied && stopDecision?.trigger === "onMove") {
             onMoveSuppressed = moveTriggerCount > 1;
@@ -1616,6 +1694,8 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
             toState,
             rawInsideDistance: insideDistance,
             remainingInsideDistance,
+            movementDistanceInside,
+            accumulateMovementDistance,
             movementStartedInside,
             entryConsumedFirstMoveStep,
             onMoveEligibleAfterEntry,
@@ -1624,7 +1704,8 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
             stopPoint,
             onMoveThresholdPoint,
             stopHandledByRegion,
-            stopDecision
+            stopDecision,
+            movementAnalysis
           });
           effectApplied = effectApplied || moveApplied;
           onMoveTriggered = moveApplied;
@@ -1825,7 +1906,8 @@ async function applyEnterTriggerIfNeeded(tokenDocument, regionDocument, onEnter,
   movementStopResolution = null,
   stopPoint,
   stopHandledByRegion,
-  stopDecision
+  stopDecision,
+  movementAnalysis = null
 }) {
   logV14RuntimeDiagnostic("triggerTimingResolved", {
     tokenId: tokenDocument?.id ?? null,
@@ -1947,6 +2029,8 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   toState,
   rawInsideDistance,
   remainingInsideDistance,
+  movementDistanceInside = null,
+  accumulateMovementDistance = false,
   movementStartedInside,
   entryConsumedFirstMoveStep,
   onMoveEligibleAfterEntry,
@@ -1955,7 +2039,8 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   stopPoint,
   onMoveThresholdPoint,
   stopHandledByRegion,
-  stopDecision
+  stopDecision,
+  movementAnalysis = null
 }) {
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const partId =
@@ -1969,12 +2054,31 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     onMove?.activity?.id ??
     onMove?.activityId ??
     null;
+  const executionKey = buildMovementExecutionKey({
+    movementSequenceId,
+    tokenDocument,
+    regionDocument,
+    partId,
+    triggerId: "onMove"
+  });
 
-  if (moveTriggerCount <= 0) {
+  if (moveTriggerCount <= 0 && !accumulateMovementDistance) {
     return false;
   }
 
-  const effectiveTriggerCount = moveTriggerCount;
+  const executionClaim = claimMovementExecution(executionKey);
+  if (executionClaim.duplicate) return false;
+
+  const distanceProgress = accumulateMovementDistance
+    ? resolveMovementDistanceProgress({
+      regionDocument,
+      tokenDocument,
+      insideDistance: movementDistanceInside ?? rawInsideDistance,
+      interval: configuredStep,
+      toInside
+    })
+    : null;
+  const effectiveTriggerCount = distanceProgress?.completeIntervals ?? moveTriggerCount;
 
   if (!onMove.enabled) {
     if (triggerMode === "none") {
@@ -2057,7 +2161,7 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     return false;
   }
 
-  if (isDuplicateOnMoveTrigger(
+  if (!movementSequenceId && isDuplicateOnMoveTrigger(
     regionDocument,
     tokenDocument,
     moveSource,
@@ -2096,25 +2200,50 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
     return false;
   }
 
+  if (distanceProgress) commitMovementDistanceProgress(distanceProgress);
+
+  if (effectiveTriggerCount <= 0) {
+    return false;
+  }
+
   let appliedCount = 0;
   let activityFound = null;
   let activityTriggered = false;
   let simpleEffectApplied = false;
 
-  for (let index = 0; index < effectiveTriggerCount; index += 1) {
-    const application = await applyConfiguredTriggerEffect({
-      regionDocument,
-      tokenDocument,
-      triggerConfig: onMove,
-      timing: "onMove",
-      context: {
+  const applicationCount = onMove?.aggregateApplications !== false ? 1 : effectiveTriggerCount;
+  const effectiveTrigger = applicationCount === 1 && effectiveTriggerCount > 1
+    ? buildAggregatedDistanceTrigger(onMove, effectiveTriggerCount)
+    : onMove;
+  for (let index = 0; index < applicationCount; index += 1) {
+    let application;
+    try {
+      application = await applyConfiguredTriggerEffect({
+        regionDocument,
+        tokenDocument,
+        triggerConfig: effectiveTrigger,
+        timing: "onMove",
+        context: {
+          movementSequenceId,
+          previousInside: fromInside,
+          currentInside: toInside,
+          triggerType: "onMove",
+          moveSource
+        }
+      });
+    } catch (error) {
+      debug("Managed Region onMove effect failed.", {
+        errorName: error?.name ?? null,
+        errorMessage: error?.message ?? String(error),
+        errorStack: error?.stack ?? null,
         movementSequenceId,
-        previousInside: fromInside,
-        currentInside: toInside,
-        triggerType: "onMove",
-        moveSource
-      }
-    });
+        tokenUuid: tokenDocument?.uuid ?? tokenDocument?.id ?? null,
+        regionId: regionDocument?.id ?? null,
+        partId,
+        executionKey
+      });
+      throw error;
+    }
 
     if (application.applied && !application.skipped) {
       appliedCount += 1;
@@ -2174,6 +2303,59 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   });
 
   return appliedCount > 0;
+}
+
+function resolveMovementDistanceProgress({ regionDocument, tokenDocument, insideDistance, interval, toInside }) {
+  const safeInterval = Math.max(coerceNumber(interval, 0), 0);
+  const key = buildMovementDistanceRemainderKey(regionDocument, tokenDocument);
+  const previousRemainder = Math.max(coerceNumber(movementDistanceRemainders.get(key), 0), 0);
+  return { key, ...calculateMovementDistanceProgress(previousRemainder, insideDistance, safeInterval), clearAfter: !toInside };
+}
+
+export function calculateMovementDistanceProgress(previousRemainder, insideDistance, interval) {
+  const safeInterval = Math.max(coerceNumber(interval, 0), 0);
+  const previous = Math.max(coerceNumber(previousRemainder, 0), 0);
+  const total = previous + Math.max(coerceNumber(insideDistance, 0), 0);
+  const epsilon = safeInterval > 0 ? Math.max(1e-9, safeInterval * 1e-9) : 1e-9;
+  let completeIntervals = safeInterval > 0 ? Math.floor((total + epsilon) / safeInterval) : 0;
+  let newRemainder = safeInterval > 0 ? Math.max(0, total - completeIntervals * safeInterval) : 0;
+  if (newRemainder <= epsilon) newRemainder = 0;
+  else if (safeInterval - newRemainder <= epsilon) {
+    completeIntervals += 1;
+    newRemainder = 0;
+  }
+  return { previousRemainder: previous, completeIntervals, newRemainder };
+}
+
+function commitMovementDistanceProgress(progress) {
+  if (progress.clearAfter || progress.newRemainder <= 0.0001) movementDistanceRemainders.delete(progress.key);
+  else movementDistanceRemainders.set(progress.key, progress.newRemainder);
+}
+
+function buildMovementDistanceRemainderKey(regionDocument, tokenDocument) {
+  const combat = globalThis.game?.combat;
+  const scope = combat?.started
+    ? `${combat.id ?? "combat"}:${combat.round ?? 0}:${combat.turn ?? 0}`
+    : "exploration";
+  return `${regionDocument?.uuid ?? regionDocument?.id}|${tokenDocument?.uuid ?? tokenDocument?.id}|${scope}`;
+}
+
+export function multiplyDiceFormula(formula, count) {
+  const multiplier = Math.max(1, Math.floor(coerceNumber(count, 1)));
+  const normalized = String(formula ?? "").trim();
+  const match = normalized.match(/^(\d+)d(\d+)$/i);
+  if (match) return `${Number(match[1]) * multiplier}d${match[2]}`;
+  return `(${normalized || "0"}) * ${multiplier}`;
+}
+
+function buildAggregatedDistanceTrigger(trigger, count) {
+  const formula = trigger?.simpleEffect?.formula ?? trigger?.damage?.formula ?? "0";
+  const aggregatedFormula = multiplyDiceFormula(formula, count);
+  return {
+    ...trigger,
+    simpleEffect: { ...(trigger?.simpleEffect ?? {}), formula: aggregatedFormula },
+    damage: { ...(trigger?.damage ?? {}), formula: aggregatedFormula }
+  };
 }
 
 async function applyExitTriggerIfNeeded(tokenDocument, regionDocument, onExit, {
@@ -3715,6 +3897,8 @@ function hasTranslationChange(changed) {
 function refreshTrackedTokenStates(scene) {
   lastKnownTokenStates.clear();
   regionInsideStates.clear();
+  movementDistanceRemainders.clear();
+  processedMovementExecutions.clear();
   recentEnterEvents.clear();
   recentExitEvents.clear();
   recentOnMoveEvents.clear();
@@ -4224,17 +4408,25 @@ export function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathS
   let firstGridMoveTriggerPathDistancePixels = null;
   let firstGridMoveTriggerSegmentIndex = null;
   let gridPathDistancePixels = 0;
+  let gridAwareInsideDistancePixels = 0;
+  let gridAwareRemainingInsideDistancePixels = 0;
   let entryGridCellConsumed = Boolean(fromInside);
   let entryDistanceConsumed = Boolean(fromInside);
   const transitions = [];
 
   for (let index = 1; index < states.length; index += 1) {
     const gridTraversalStates = buildGridCellTraversalStates(states[index - 1], states[index]);
-    let previousGridState = states[index - 1];
+    const startingCell = getSquareGridCellCoordinates(states[index - 1]);
+    let previousGridState = startingCell
+      ? buildStateAtSquareGridCell(states[index - 1], states[index], startingCell.row, startingCell.col, 0)
+      : states[index - 1];
+    let previousGridInside = membershipTest(tokenDocument, regionDocument, previousGridState);
 
     for (const gridState of gridTraversalStates) {
-      gridPathDistancePixels += measureStateDistance(previousGridState, gridState);
+      const nativeGridSegmentDistancePixels = measureStateDistanceWithGrid(previousGridState, gridState, regionDocument?.parent);
+      gridPathDistancePixels += nativeGridSegmentDistancePixels;
       const gridInside = membershipTest(tokenDocument, regionDocument, gridState);
+      const gridInsideContributionPixels = gridInside ? nativeGridSegmentDistancePixels : 0;
 
       if (!firstInsideCellState && gridInside) {
         firstInsideCellState = gridState;
@@ -4264,7 +4456,11 @@ export function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathS
         }
       }
 
+      gridAwareInsideDistancePixels += gridInsideContributionPixels;
+      if (entryGridCellConsumed) gridAwareRemainingInsideDistancePixels += gridInsideContributionPixels;
+
       previousGridState = gridState;
+      previousGridInside = gridInside;
     }
 
     const segmentSamples = sampleSegmentStates(states[index - 1], states[index], { sampleStepPixels });
@@ -4340,6 +4536,12 @@ export function analyzeMovementAcrossRegion(tokenDocument, regionDocument, pathS
       previousInside = sampleInside;
       previousState = sampleState;
     }
+  }
+
+  const useGridAwareDistance = isSquareGridStopModeAvailable(regionDocument?.parent);
+  if (useGridAwareDistance) {
+    insideDistancePixels = gridAwareInsideDistancePixels;
+    remainingInsideDistancePixels = gridAwareRemainingInsideDistancePixels;
   }
 
   return {
@@ -4571,12 +4773,19 @@ function lerp(from, to, alpha) {
   return from + ((to - from) * alpha);
 }
 
-function markRecentMoveTokenEvent(tokenDocument, toState) {
+function markRecentMoveTokenEvent(tokenDocument, toState, metadata = {}) {
   recentMoveTokenEvents.set(tokenDocument.uuid, {
     x: toState?.position?.x ?? null,
     y: toState?.position?.y ?? null,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    ...metadata
   });
+}
+
+function completeRecentMoveTokenEvent(tokenDocument, movementSequenceId) {
+  const record = recentMoveTokenEvents.get(tokenDocument?.uuid);
+  if (!record || record.movementSequenceId !== movementSequenceId) return;
+  record.pending = false;
 }
 
 function wasRecentlyHandledByMoveToken(tokenDocument, afterState) {
@@ -4857,6 +5066,64 @@ function measureStateDistance(fromState, toState) {
     coerceNumber(toPoint.x, 0) - coerceNumber(fromPoint.x, 0),
     coerceNumber(toPoint.y, 0) - coerceNumber(fromPoint.y, 0)
   );
+}
+
+function getMovementInvocationId(tokenDocument, movement, hookSource) {
+  if (movement && typeof movement === "object") {
+    const existing = movementInvocationIds.get(movement);
+    if (existing) return existing;
+  }
+  movementInvocationCounter += 1;
+  const invocationId = `${hookSource}:${tokenDocument?.uuid ?? tokenDocument?.id ?? "token"}:${movementInvocationCounter}`;
+  if (movement && typeof movement === "object") movementInvocationIds.set(movement, invocationId);
+  return invocationId;
+}
+
+function buildMovementExecutionKey({ movementSequenceId, tokenDocument, regionDocument, partId, triggerId }) {
+  return [
+    regionDocument?.parent?.id ?? tokenDocument?.parent?.id ?? "scene",
+    movementSequenceId ?? "sequence-unknown",
+    tokenDocument?.uuid ?? tokenDocument?.id ?? "token",
+    regionDocument?.id ?? "region",
+    partId ?? "part-none",
+    triggerId ?? "onMove"
+  ].join("|");
+}
+
+export function claimMovementExecution(executionKey) {
+  cleanupProcessedMovementExecutions();
+  const key = String(executionKey ?? "").trim();
+  if (!key) return { firstSeen: true, duplicate: false };
+  if (processedMovementExecutions.has(key)) return { firstSeen: false, duplicate: true };
+  processedMovementExecutions.set(key, Date.now() + MOVEMENT_SEQUENCE_TTL_MS);
+  return { firstSeen: true, duplicate: false };
+}
+
+function cleanupProcessedMovementExecutions() {
+  const now = Date.now();
+  for (const [key, expiresAt] of processedMovementExecutions.entries()) {
+    if (expiresAt <= now) processedMovementExecutions.delete(key);
+  }
+}
+
+function measureStateDistanceWithGrid(fromState, toState, scene = canvas?.scene ?? null) {
+  // Token movement is measured from its document anchor. Using the footprint
+  // center here would make Large tokens travel farther when a grid cell is rebuilt.
+  const fromPoint = fromState?.position ?? fromState?.center ?? null;
+  const toPoint = toState?.position ?? toState?.center ?? null;
+  if (!fromPoint || !toPoint) return 0;
+
+  try {
+    const result = canvas?.grid?.measurePath?.([fromPoint, toPoint]);
+    const measuredDistance = coerceNumber(result?.distance, null);
+    if (measuredDistance !== null && measuredDistance >= 0) {
+      return distanceToPixels(measuredDistance, scene);
+    }
+  } catch {
+    // Fall back to geometric distance when the native grid API is unavailable.
+  }
+
+  return measureStateDistance(fromState, toState);
 }
 
 function estimateInsideDistanceFactor(fromInside, toInside) {

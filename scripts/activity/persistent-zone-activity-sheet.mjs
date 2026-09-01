@@ -774,6 +774,9 @@ export function normalizePersistentZoneActivitySubmitData(value) {
     globalSave: config.save
   });
   config.movement ??= {};
+  config.movement.units = normalizeCanonicalDistanceUnit(config.movement.units);
+  config.movement.accumulateRemainder = Boolean(config.movement.accumulateRemainder);
+  config.movement.aggregateApplications = config.movement.aggregateApplications !== false;
   config.terrain ??= {};
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = config.terrain.multiplier ?? 2;
@@ -1151,6 +1154,13 @@ function buildActivityChoices() {
       { value: "outer-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.OuterEdge" },
       { value: "centerline", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.Centerline" },
       { value: "inner-edge", label: "PERSISTENT_ZONES.Activity.ReferenceRadiusModes.InnerEdge" }
+    ],
+    interruptionModes: [
+      { value: "inherit", label: "PERSISTENT_ZONES.UI.InterruptionModes.Inherit" },
+      { value: "off", label: "PERSISTENT_ZONES.UI.InterruptionModes.Off" },
+      { value: "on-enter", label: "PERSISTENT_ZONES.UI.InterruptionModes.OnEnter" },
+      { value: "on-move", label: "PERSISTENT_ZONES.UI.InterruptionModes.OnMove" },
+      { value: "on-enter-and-move", label: "PERSISTENT_ZONES.UI.InterruptionModes.OnEnterAndMove" }
     ],
     triggerTargetFilters: [
       { value: "all", label: "PERSISTENT_ZONES.Activity.TargetFilters.All" },

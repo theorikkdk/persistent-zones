@@ -1767,6 +1767,7 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
     requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
+    interruptionMode: normalizeMovementInterruptionMode(definition.interruptionMode),
     stepMode,
     cellStep: stepMode === "grid-cell"
       ? normalizeMoveCellStep(
@@ -1794,6 +1795,8 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
         null
       )
       : null,
+    accumulateRemainder: coerceBoolean(definition.accumulateRemainder, false),
+    aggregateApplications: coerceBoolean(definition.aggregateApplications, true),
     stopMovementOnTrigger: coerceBoolean(
       pickFirstDefined(
         definition.stopMovementOnTrigger,
@@ -1860,6 +1863,13 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     },
     activity
   };
+}
+
+function normalizeMovementInterruptionMode(value) {
+  const normalized = String(value ?? "inherit").trim().toLowerCase();
+  return ["inherit", "off", "on-enter", "on-move", "on-enter-and-move"].includes(normalized)
+    ? normalized
+    : "inherit";
 }
 
 function normalizeTriggerFrequency(value) {

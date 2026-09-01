@@ -118,6 +118,10 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
       resolved.linkedLights[field] = convertCanonicalDistanceToSceneUnits(resolved.linkedLights[field], sourceUnits, scene);
     }
   }
+  if (isObject(resolved.movement) && resolved.movement.distanceStep !== undefined && resolved.movement.distanceStep !== null) {
+    resolved.movement.distanceStep = convertCanonicalDistanceToSceneUnits(resolved.movement.distanceStep, sourceUnits, scene);
+    resolved.movement.units = sceneUnits;
+  }
   geometry.units = sceneUnits;
   return resolved;
 }

@@ -26,7 +26,8 @@
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
-          "Moonbeam": { "Name": "Moonbeam", "Description": "Persistent 5-foot-radius beam with shared once-per-turn radiant damage triggers." }
+          "Moonbeam": { "Name": "Moonbeam", "Description": "Persistent 5-foot-radius beam with shared once-per-turn radiant damage triggers." },
+          "SpikeGrowth": { "Name": "Spike Growth", "Description": "Difficult terrain that deals piercing damage for each distance interval traveled within it." }
         }
       },
       "Help": {
@@ -106,6 +107,9 @@
         "ReferenceRadiusMode": "Reference radius mode",
         "WallLength": "Wall length",
         "WallThickness": "Wall thickness",
+        "MovementDistanceStep": "Damage distance interval",
+        "MovementDistanceUnits": "Distance unit",
+        "AccumulateMovementRemainder": "Accumulate partial distance",
         "TriggerFrequency": "Frequency",
         "TriggerTargets": "Targets",
         "TriggerFrequencyGroup": "Shared frequency group",
@@ -125,6 +129,7 @@
         "StatusRecoveryCustomDC": "Custom DC",
         "LinkedActivity": "Activity to execute",
         "StopMovement": "Stop movement",
+        "MovementInterruption": "Movement interruption",
         "DifficultTerrain": "Zone terrain",
         "TerrainMultiplier": "Terrain multiplier",
         "CreateWalls": "Create linked walls",
@@ -396,6 +401,13 @@
         "Off": "Off",
         "OnEnter": "On Enter only",
         "OnEnterAndMove": "On Enter + On Move"
+      },
+      "InterruptionModes": {
+        "Inherit": "Use global setting",
+        "Off": "Disabled",
+        "OnEnter": "On Enter",
+        "OnMove": "During movement",
+        "OnEnterAndMove": "On Enter + during movement"
       },
       "DebugLogLevels": {
         "Minimal": "Minimal",
