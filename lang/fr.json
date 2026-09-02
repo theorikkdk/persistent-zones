@@ -25,7 +25,9 @@
           "TerrainX4Allies": { "Name": "Debug/Test — Terrain ×4 — Alliés", "Description": "Un cercle neutre ×4 qui n'affecte que les alliés du token source." },
           "TerrainX4Self": { "Name": "Debug/Test — Terrain ×4 — Soi-même", "Description": "Un cercle neutre ×4 qui n'affecte que le token source." },
           "TerrainX4Others": { "Name": "Debug/Test — Terrain ×4 — Autres", "Description": "Un cercle neutre ×4 qui affecte tous les tokens sauf le token source." },
-          "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Ennemis + murs", "Description": "Un cercle ×4 réservé aux ennemis et restreint par les murs qui bloquent le mouvement." }
+          "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Ennemis + murs", "Description": "Un cercle ×4 réservé aux ennemis et restreint par les murs qui bloquent le mouvement." },
+          "RectangleWalls": { "Name": "Debug/Test — Rectangle + murs", "Description": "Un rectangle centré neutre restreint par les murs qui bloquent le mouvement." },
+          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + murs + terrain", "Description": "Un rectangle centré restreint par les murs, avec terrain difficile standard ×2." }
         },
         "Builtins": {
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },

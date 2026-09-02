@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 17);
+  assert.equal(BUILTIN_PRESETS.length, 19);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -156,37 +156,27 @@ test("preset application preserves wall restriction through final Activity appli
 
 test("audited SRD presets encode explicit obstacle behavior before runtime normalization", async () => {
   const unrestrictedIds = [
-    "srd-5.2.1.grease",
     "srd-5.2.1.wall-of-fire-line",
     "srd-5.2.1.wall-of-fire-ring",
     "srd-5.2.1.moonbeam",
     "srd-5.2.1.insect-plague",
-    "srd-5.2.1.entangle",
-    "srd-5.2.1.black-tentacles",
     "srd-5.2.1.web"
   ];
   for (const id of unrestrictedIds) {
     assert.deepEqual(getPersistentZonePreset(id).persistentZone.obstacles, { mode: "unrestricted" }, id);
   }
 
-  const spikeGrowth = getPersistentZonePreset("srd-5.2.1.spike-growth");
-  assert.deepEqual(spikeGrowth.persistentZone.obstacles, {
-    mode: "wall-restricted",
-    restrictionType: "move",
-    priority: 0
-  });
-
-  const captured = [];
-  const activity = {
-    id: "activity-spike-growth",
-    item: { async updateActivity(id, updates) { captured.push({ id, updates }); } }
-  };
-  await applyPresetToActivity(activity, spikeGrowth);
-  assert.deepEqual(captured.at(-1).updates.persistentZone.obstacles, {
-    mode: "wall-restricted",
-    restrictionType: "move",
-    priority: 0
-  });
+  for (const id of ["srd-5.2.1.spike-growth", "srd-5.2.1.grease", "srd-5.2.1.entangle", "srd-5.2.1.black-tentacles"]) {
+    const preset = getPersistentZonePreset(id);
+    assert.deepEqual(preset.persistentZone.obstacles, {
+      mode: "wall-restricted",
+      restrictionType: "move",
+      priority: 0
+    }, id);
+    const captured = [];
+    await applyPresetToActivity({ id: `activity-${id}`, item: { async updateActivity(activityId, updates) { captured.push({ activityId, updates }); } } }, preset);
+    assert.deepEqual(captured.at(-1).updates.persistentZone.obstacles, preset.persistentZone.obstacles, id);
+  }
 });
 
 test("attached preset fixture preserves attachment and wall restriction through Activity application", async () => {
@@ -284,7 +274,7 @@ test("replacement removes every stale mono and multipart setting", async () => {
 test("visible library separates validated SRD and debug movement-cost presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
-    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls",
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth",
@@ -292,7 +282,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
   for (const id of [
-    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls",
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self"
   ]) {
     const preset = getPersistentZonePreset(id);
@@ -319,6 +309,22 @@ test("debug movement-cost presets apply their explicit terrain and obstacle conf
     assert.ok(Object.values(result.persistentZone.triggers).every((trigger) => trigger.enabled === false), id);
     assert.equal(captured.at(-1).persistentZone.terrain.multiplier, multiplier, id);
     assert.deepEqual(captured.at(-1).persistentZone.obstacles, obstacles, id);
+  }
+});
+
+test("debug rectangle wall presets apply the centered fixed rectangle configuration", async () => {
+  for (const [id, terrainEnabled] of [
+    ["debug.rectangle-walls", false],
+    ["debug.rectangle-walls-terrain", true]
+  ]) {
+    const captured = [];
+    const activity = { id, item: { async updateActivity(_id, updates) { captured.push(updates); } } };
+    const result = await applyPresetToActivity(activity, getPersistentZonePreset(id));
+    assert.deepEqual(result.persistentZone.geometry, { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" }, id);
+    assert.deepEqual(result.persistentZone.obstacles, { mode: "wall-restricted", restrictionType: "move", priority: 0 }, id);
+    assert.equal(result.persistentZone.terrain.enabled, terrainEnabled, id);
+    assert.equal(result.persistentZone.terrain.multiplier, 2, id);
+    assert.deepEqual(captured.at(-1).persistentZone, result.persistentZone, id);
   }
 });
 

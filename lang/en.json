@@ -25,7 +25,9 @@
           "TerrainX4Allies": { "Name": "Debug/Test — Terrain ×4 — Allies", "Description": "A neutral ×4 circle that affects allies of the source token only." },
           "TerrainX4Self": { "Name": "Debug/Test — Terrain ×4 — Self", "Description": "A neutral ×4 circle that affects the source token only." },
           "TerrainX4Others": { "Name": "Debug/Test — Terrain ×4 — Others", "Description": "A neutral ×4 circle that affects every token except the source token." },
-          "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Enemies + Walls", "Description": "An enemy-only ×4 circle restricted by movement-blocking walls." }
+          "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Enemies + Walls", "Description": "An enemy-only ×4 circle restricted by movement-blocking walls." },
+          "RectangleWalls": { "Name": "Debug/Test — Rectangle + Walls", "Description": "A neutral centered rectangle restricted by movement-blocking walls." },
+          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + Walls + Terrain", "Description": "A centered wall-restricted rectangle with standard ×2 difficult terrain." }
         },
         "Builtins": {
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },

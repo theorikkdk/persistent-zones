@@ -127,7 +127,11 @@ test("M11D defaults wall restriction only for supported mono-part geometries", (
     geometry: { type: "rectangle", width: 10, height: 10, units: "ft" },
     parts: []
   });
-  assert.equal(rectangle.obstacles.mode, "unrestricted");
+  assert.deepEqual(rectangle.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "move",
+    priority: 0
+  });
 
   const multipart = normalizeZoneDefinition({
     enabled: true,

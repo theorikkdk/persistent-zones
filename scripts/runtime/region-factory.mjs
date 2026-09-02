@@ -1118,7 +1118,9 @@ export async function createManagedRegionFromRegion(regionDocument, {
     initializeAttachedEmanationTransitionState(resolved.runtimeFlags);
   }
   await applyConfiguredRegionElevation(regionDocument, resolved.runtimeFlags.normalizedDefinition);
-  await applyConfiguredRegionObstacles(regionDocument, resolved.runtimeFlags.normalizedDefinition);
+  await applyConfiguredRegionObstacles(regionDocument, resolved.runtimeFlags.normalizedDefinition, {
+    templateDocument: resolved.templateDocument
+  });
 
   if (resolved.multipartGroupPlan?.parts?.length > 1) {
     return createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
@@ -1284,12 +1286,17 @@ async function applyConfiguredRegionElevation(regionDocument, normalizedDefiniti
   return true;
 }
 
-async function applyConfiguredRegionObstacles(regionDocument, normalizedDefinition) {
+export async function applyConfiguredRegionObstacles(regionDocument, normalizedDefinition, {
+  templateDocument = null
+} = {}) {
   const obstacles = normalizedDefinition?.obstacles;
   if (obstacles?.mode !== "wall-restricted") return false;
   const multipart = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length > 1;
-  if (multipart || !["circle", "ring"].includes(normalizedDefinition?.geometry?.type)) {
-    console.warn("[persistent-zones] Wall restriction supports only mono-part circle, ring, and attached emanation; falling back to unrestricted.");
+  const geometryType = String(normalizedDefinition?.geometry?.type ?? "").toLowerCase();
+  const placementMode = String(normalizedDefinition?.placement?.mode ?? "fixed").toLowerCase();
+  const unsupportedRectanglePlacement = geometryType === "rectangle" && placementMode !== "fixed";
+  if (multipart || unsupportedRectanglePlacement || !["circle", "ring", "rectangle"].includes(geometryType)) {
+    console.warn("[persistent-zones] Wall restriction supports only mono-part circle, ring, rectangle, and attached emanation; falling back to unrestricted.");
     obstacles.mode = "unrestricted";
     obstacles.fallbackReason = "unsupported-geometry";
     return false;
@@ -1304,8 +1311,105 @@ async function applyConfiguredRegionObstacles(regionDocument, normalizedDefiniti
   obstacles.levelId = levelId;
   const restriction = { enabled: true, type: obstacles.restrictionType, priority: obstacles.priority };
   if (typeof regionDocument?.update !== "function") return false;
-  await regionDocument.update({ restriction, levels: [levelId] }, { [MODULE_ID]: { internalObstacleSync: true } });
+  const update = { restriction, levels: [levelId] };
+  if (geometryType === "rectangle") {
+    const centeredShapes = resolveCentralOriginRectangleShapes(regionDocument, templateDocument);
+    if (!centeredShapes) {
+      console.warn("[persistent-zones] Wall-restricted rectangle requires one unrotated rectangle shape; falling back to unrestricted.");
+      obstacles.mode = "unrestricted";
+      obstacles.fallbackReason = "unsupported-rectangle-shape";
+      return false;
+    }
+    update.shapes = centeredShapes;
+  }
+  await regionDocument.update(update, { [MODULE_ID]: { internalObstacleSync: true } });
   return true;
+}
+
+function resolveCentralOriginRectangleShapes(regionDocument, templateDocument) {
+  const existingShapes = Array.from(regionDocument?.shapes?.contents ?? regionDocument?.shapes ?? [])
+    .map((shape) => shape?.toObject?.() ?? duplicateData(shape));
+  const centeredExistingShapes = buildCentralOriginRectangleShapes(existingShapes);
+  if (centeredExistingShapes) return centeredExistingShapes;
+
+  const centeredDnd5eRectangleLine = buildCentralOriginRectangleShapesFromDnd5eLine(
+    existingShapes,
+    templateDocument
+  );
+  if (centeredDnd5eRectangleLine) return centeredDnd5eRectangleLine;
+
+  // D&D5e can initially create its square as a native line Region. Rebuild that
+  // single semantic rectangle from the placed rect template before enabling a
+  // restriction, so Foundry computes rays from the actual central origin. This
+  // is only a last fallback: placement-context templates do not necessarily
+  // retain the original distance/direction fields.
+  return buildCentralOriginRectangleShapes(buildRectShapesFromDocument(templateDocument));
+}
+
+/**
+ * D&D5e 5.3.x represents a placed square/rect template as a single `line`
+ * Region shape before PZ adopts it. That is an implementation detail of the
+ * D&D5e placement bridge, not a semantic PZ line. The active placement context
+ * has already established `t === "rect"`; only in that narrow case can the
+ * line's axis-aligned physical bounds be safely re-serialized as a rectangle.
+ */
+function buildCentralOriginRectangleShapesFromDnd5eLine(shapes, templateDocument) {
+  if (getTemplateType(templateDocument) !== "rect") return null;
+  const sourceShapes = Array.from(shapes ?? []);
+  if (sourceShapes.length !== 1) return null;
+  const source = sourceShapes[0]?.toObject?.() ?? duplicateData(sourceShapes[0]);
+  if (String(source?.type ?? "").toLowerCase() !== "line") return null;
+  if (coerceNumber(source.rotation, 0) !== 0) return null;
+
+  const bounds = calculateShapeBounds(source);
+  const width = coerceNumber(bounds?.width, 0);
+  const height = coerceNumber(bounds?.height, 0);
+  if (width <= 0 || height <= 0) return null;
+
+  return [{
+    type: "rectangle",
+    x: coerceNumber(bounds.minX, 0) + (width / 2),
+    y: coerceNumber(bounds.minY, 0) + (height / 2),
+    width,
+    height,
+    anchorX: 0.5,
+    anchorY: 0.5,
+    rotation: 0,
+    gridBased: Boolean(source.gridBased),
+    hole: Boolean(source.hole)
+  }];
+}
+
+/**
+ * Preserve a rectangle's visible bounds while relocating its Foundry shape
+ * origin to its center. Region.restriction computes its wall rays from
+ * shape.origin, which is the rectangle's x/y anchor point in V14.
+ */
+export function buildCentralOriginRectangleShapes(shapes) {
+  const sourceShapes = Array.from(shapes ?? []);
+  if (sourceShapes.length !== 1) return null;
+  const source = sourceShapes[0]?.toObject?.() ?? duplicateData(sourceShapes[0]);
+  if (String(source?.type ?? "").toLowerCase() !== "rectangle") return null;
+  if (coerceNumber(source.rotation, 0) !== 0) return null;
+
+  const width = coerceNumber(source.width, 0);
+  const height = coerceNumber(source.height, 0);
+  if (width <= 0 || height <= 0) return null;
+  const anchorX = coerceNumber(source.anchorX, 0);
+  const anchorY = coerceNumber(source.anchorY, 0);
+  const left = coerceNumber(source.x, 0) - (anchorX * width);
+  const top = coerceNumber(source.y, 0) - (anchorY * height);
+  return [{
+    ...source,
+    type: "rectangle",
+    x: left + (width / 2),
+    y: top + (height / 2),
+    width,
+    height,
+    anchorX: 0.5,
+    anchorY: 0.5,
+    rotation: 0
+  }];
 }
 
 export function resolveRestrictedRegionLevelId({ regionDocument = null, sourceToken = null, scene = null } = {}) {

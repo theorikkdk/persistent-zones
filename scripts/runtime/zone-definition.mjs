@@ -1154,7 +1154,7 @@ function supportsDefaultWallRestriction({ geometry, placement, partCount }) {
   const geometryType = String(geometry?.type ?? "").trim().toLowerCase();
   const placementMode = String(placement?.mode ?? "fixed").trim().toLowerCase();
   if (placementMode === "attached-source") return geometryType === "emanation";
-  return placementMode === "fixed" && ["circle", "ring"].includes(geometryType);
+  return placementMode === "fixed" && ["circle", "ring", "rectangle"].includes(geometryType);
 }
 
 function normalizeZoneParts({

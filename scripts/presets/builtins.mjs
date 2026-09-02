@@ -199,6 +199,17 @@ const buildMovementCostDebugPreset = ({ id, name, description, multiplier, targe
   triggers: buildDisabledTriggers()
 });
 
+const buildRectangleWallsDebugPreset = ({ id, name, description, terrain = false }) => base({
+  id,
+  name,
+  description,
+  category: "debug-tests",
+  geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
+  obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+  terrain: { enabled: terrain, multiplier: 2 },
+  triggers: buildDisabledTriggers()
+});
+
 export const BUILTIN_PRESETS = Object.freeze([
   buildMovementCostDebugPreset({
     id: "debug.movement-cost-x2",
@@ -261,6 +272,17 @@ export const BUILTIN_PRESETS = Object.freeze([
     targetFilter: "enemies",
     obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 }
   }),
+  buildRectangleWallsDebugPreset({
+    id: "debug.rectangle-walls",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWalls.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWalls.Description"
+  }),
+  buildRectangleWallsDebugPreset({
+    id: "debug.rectangle-walls-terrain",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWallsTerrain.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWallsTerrain.Description",
+    terrain: true
+  }),
   {
     id: "srd-5.2.1.grease",
     version: PRESET_SCHEMA_VERSION,
@@ -282,7 +304,7 @@ export const BUILTIN_PRESETS = Object.freeze([
       schemaVersion: ACTIVITY_DEFINITION_SCHEMA_VERSION,
       enabled: true,
       geometry: { type: "rectangle", width: 10, height: 10, units: "ft", placement: "center" },
-      obstacles: { mode: "unrestricted" },
+      obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
       parts: [],
       triggers: {
         ...buildDisabledTriggers(),
@@ -381,7 +403,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Entangle.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "terrain", "concentration", "escape"],
-    obstacles: { mode: "unrestricted" },
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),
@@ -394,7 +416,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.BlackTentacles.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "damage", "terrain", "concentration", "escape"],
-    obstacles: { mode: "unrestricted" },
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),
