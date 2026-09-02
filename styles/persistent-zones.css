@@ -748,6 +748,13 @@
   display: none !important;
 }
 
+/* Core Roll Resolver context, inserted only for rolls marked by PZ. */
+.roll-resolver .pz-roll-context {
+  margin: 0 0 0.5rem;
+  text-align: center;
+  font-weight: 600;
+}
+
 .persistent-zone-activity > [data-pz-toggle-target="pz-enabled"] {
   display: flex;
   flex-direction: column;

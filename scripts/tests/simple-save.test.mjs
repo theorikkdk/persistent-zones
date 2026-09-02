@@ -27,14 +27,19 @@ const { buildSimpleSaveResult, rollSimpleActorSave } = await import("../runtime/
     ability: "con",
     dc: 15,
     flavor: "Toxic Cloud: onEnter save",
+    rollContext: { title: "Toxic Cloud — CON Saving Throw — Entering the zone" },
     tokenDocument: { id: "token-id" }
   });
 
   assert.equal(result, expectedRoll, "the first D&D5e saving throw roll must be returned");
   assert.equal(legacyCalled, false, "rollAbilitySave must not run when rollSavingThrow exists");
   assert.deepEqual(modernArguments, [
-    { ability: "con", target: 15 },
-    { configure: false },
+    {
+      ability: "con",
+      target: 15,
+      rolls: [{ options: { "persistent-zones": { rollContext: { title: "Toxic Cloud — CON Saving Throw — Entering the zone" } } } }]
+    },
+    { configure: false, options: { window: { title: "Toxic Cloud: onEnter save" } } },
     {
       data: {
         flavor: "Toxic Cloud: onEnter save",

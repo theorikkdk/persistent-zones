@@ -718,6 +718,23 @@
       "EffectFallback": "Persistent effect",
       "SourceFallback": "Persistent Zone"
     },
+    "RollContext": {
+      "Title": "{source} — {roll} — {reason}",
+      "SourceFallback": "Persistent Zone",
+      "SavingThrow": "{ability} Saving Throw",
+      "AbilityCheck": "{ability} Ability Check",
+      "SkillCheck": "{skill} Skill Check",
+      "Reasons": {
+        "Create": "Zone creation",
+        "Enter": "Entering the zone",
+        "Exit": "Leaving the zone",
+        "Move": "Movement in the zone",
+        "TurnStart": "Start of turn",
+        "TurnEnd": "End of turn",
+        "Escape": "Action to break free",
+        "Generic": "Persistent Zone"
+      }
+    },
     "Settings": {
       "MovementStopGlobalLegacy": {
         "Name": "Legacy movement interruption setting",

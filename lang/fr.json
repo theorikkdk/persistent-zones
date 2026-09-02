@@ -718,6 +718,23 @@
       "EffectFallback": "Effet persistant",
       "SourceFallback": "Zone persistante"
     },
+    "RollContext": {
+      "Title": "{source} — {roll} — {reason}",
+      "SourceFallback": "Zone persistante",
+      "SavingThrow": "JDS de {ability}",
+      "AbilityCheck": "Test de {ability}",
+      "SkillCheck": "Test de compétence : {skill}",
+      "Reasons": {
+        "Create": "Création de la zone",
+        "Enter": "Entrée dans la zone",
+        "Exit": "Sortie de la zone",
+        "Move": "Mouvement dans la zone",
+        "TurnStart": "Début du tour",
+        "TurnEnd": "Fin du tour",
+        "Escape": "Action pour se libérer",
+        "Generic": "Zone persistante"
+      }
+    },
     "Settings": {
       "MovementStopGlobalLegacy": {
         "Name": "Ancien r\u00e9glage d'interruption du mouvement",

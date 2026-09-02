@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.mjs";
 import { fromUuidSafe } from "./utils.mjs";
+import { buildPersistentZoneRollContext, buildPersistentZoneRollProcessConfig } from "./roll-context.mjs";
 
 const ABILITY_IDS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
 const ESCAPE_ACTION_TYPES = new Set(["action"]);
@@ -251,21 +252,39 @@ async function createStatusEscapeFallbackMessage({ combat, tokenDocument, effect
   });
 }
 
-async function rollNativeAbilityCheck({ actor, tokenDocument, ability }) {
+async function rollNativeAbilityCheck({ actor, tokenDocument, ability, effect }) {
   if (typeof actor?.rollAbilityCheck !== "function") return null;
+  const rollContext = buildPersistentZoneRollContext({
+    sourceName: effect?.flags?.[MODULE_ID]?.statusEscape?.sourceName ?? null,
+    rollType: "ability",
+    ability,
+    timing: "escape"
+  });
   return actor.rollAbilityCheck(
-    { ability },
-    {},
-    { data: { speaker: globalThis.ChatMessage?.getSpeaker?.({ actor, token: tokenDocument }) ?? {} } }
+    { ability, ...buildPersistentZoneRollProcessConfig(rollContext) },
+    { options: { window: { title: rollContext.title } } },
+    { data: {
+      flavor: rollContext.flavor,
+      speaker: globalThis.ChatMessage?.getSpeaker?.({ actor, token: tokenDocument }) ?? {}
+    } }
   );
 }
 
-async function rollNativeSkillCheck({ actor, tokenDocument, skill }) {
+async function rollNativeSkillCheck({ actor, tokenDocument, skill, effect }) {
   if (typeof actor?.rollSkill !== "function") return null;
+  const rollContext = buildPersistentZoneRollContext({
+    sourceName: effect?.flags?.[MODULE_ID]?.statusEscape?.sourceName ?? null,
+    rollType: "skill",
+    skill,
+    timing: "escape"
+  });
   return actor.rollSkill(
-    { skill },
-    {},
-    { data: { speaker: globalThis.ChatMessage?.getSpeaker?.({ actor, token: tokenDocument }) ?? {} } }
+    { skill, ...buildPersistentZoneRollProcessConfig(rollContext) },
+    { options: { window: { title: rollContext.title } } },
+    { data: {
+      flavor: rollContext.flavor,
+      speaker: globalThis.ChatMessage?.getSpeaker?.({ actor, token: tokenDocument }) ?? {}
+    } }
   );
 }
 

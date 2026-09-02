@@ -1,16 +1,22 @@
+import { buildPersistentZoneRollProcessConfig } from "./roll-context.mjs";
+
 export async function rollSimpleActorSave({
   actor,
   ability,
   dc,
   flavor,
+  title = flavor,
+  rollContext = null,
   tokenDocument = null
 } = {}) {
   if (typeof actor?.rollSavingThrow === "function") {
     const rollResult = await actor.rollSavingThrow({
       ability,
-      target: dc
+      target: dc,
+      ...buildPersistentZoneRollProcessConfig(rollContext)
     }, {
-      configure: false
+      configure: false,
+      options: { window: { title } }
     }, {
       data: {
         flavor,

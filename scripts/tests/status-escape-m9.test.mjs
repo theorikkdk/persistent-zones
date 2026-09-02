@@ -72,8 +72,13 @@ test("default skill execution calls actor.rollSkill with the D&D5e 5.3.3 signatu
     postResult: async () => null
   });
   assert.equal(received.config.skill, "ste");
-  assert.deepEqual(received.dialog, {});
+  assert.equal(
+    received.config.rolls?.[0]?.options?.["persistent-zones"]?.rollContext?.title,
+    received.dialog?.options?.window?.title
+  );
+  assert.equal(typeof received.dialog?.options?.window?.title, "string");
   assert.equal(typeof received.message, "object");
+  assert.equal(typeof received.message?.data?.flavor, "string");
 });
 
 test("skill mode is generic, and a failed native skill roll leaves the effect", async () => {

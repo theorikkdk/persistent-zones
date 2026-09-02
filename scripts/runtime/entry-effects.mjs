@@ -17,6 +17,7 @@ import { buildStatusRecoveryPatch } from "./status-recovery.mjs";
 import { buildStatusEscapeEffectFlag, normalizeStatusEscape } from "./status-escape.mjs";
 import { ensureAggregateStatus } from "./status-state.mjs";
 import { buildSimpleSaveResult, rollSimpleActorSave } from "./simple-save.mjs";
+import { buildPersistentZoneRollContext } from "./roll-context.mjs";
 import {
   buildRecoveryGroupKey,
   buildRecoverySourceIdentity,
@@ -1096,6 +1097,7 @@ async function applyTriggeredStatuses({
   }
 
   const statusData = resolveStatusEffectData(statusId);
+  const sourceItem = await resolveRuntimeItem(runtime);
   const escapeConfig = normalizeStatusEscape(statusConfig?.escape);
   const escapeSourceActor = escapeConfig.enabled && escapeConfig.dcMode === "inherit"
     ? await resolveSaveSourceActor("caster", runtime)
@@ -1105,7 +1107,7 @@ async function applyTriggeredStatuses({
     saveDC: getActorSaveDc(escapeSourceActor),
     statusId,
     statusName: statusData.name,
-    sourceName: runtime.normalizedDefinition?.label ?? runtime.label ?? null,
+    sourceName: sourceItem?.name ?? runtime.normalizedDefinition?.label ?? runtime.label ?? null,
     sourceActivityId: runtime.activityId ?? null
   });
   const recoveryPatchResult = buildStatusRecoveryPatch(statusConfig?.recovery, {
@@ -1340,6 +1342,7 @@ async function executeZoneTriggeredSaveActivity({
   const actor = tokenDocument?.actor ?? null;
   const saveResult = await rollZoneTriggeredActivitySave({
     activity,
+    item,
     regionDocument,
     tokenDocument,
     timing,
@@ -1446,6 +1449,7 @@ async function executeZoneTriggeredHealActivity({
 
 async function rollZoneTriggeredActivitySave({
   activity,
+  item = null,
   regionDocument,
   tokenDocument,
   timing = "custom",
@@ -1457,16 +1461,21 @@ async function rollZoneTriggeredActivitySave({
     return null;
   }
 
-  const rollResult = await actor.rollSavingThrow({
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const rollContext = buildPersistentZoneRollContext({
+    sourceName: item?.name ?? runtime.normalizedDefinition?.label ?? runtime.label ?? regionDocument?.name ?? null,
+    rollType: "save",
     ability: saveAbility,
-    target: saveDc
-  }, {
-    configure: false
-  }, {
-    data: {
-      flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timing} activity save`,
-      speaker: ChatMessage.getSpeaker({ actor, token: tokenDocument })
-    }
+    timing
+  });
+  const rollResult = await rollSimpleActorSave({
+    actor,
+    ability: saveAbility,
+    dc: saveDc,
+    flavor: rollContext.flavor,
+    title: rollContext.title,
+    rollContext,
+    tokenDocument
   });
   const saveRoll = Array.isArray(rollResult) ? rollResult[0] : rollResult;
   if (!saveRoll) {
@@ -1689,11 +1698,21 @@ async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocumen
     };
   }
 
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const sourceItem = await resolveRuntimeItem(runtime);
+  const rollContext = buildPersistentZoneRollContext({
+    sourceName: sourceItem?.name ?? runtime.normalizedDefinition?.label ?? runtime.label ?? regionDocument?.name ?? null,
+    rollType: "save",
+    ability,
+    timing
+  });
   roll = await rollSimpleActorSave({
     actor,
     ability,
     dc,
-    flavor: `${regionDocument?.name ?? "Persistent Zone"}: ${timingLabel} save`,
+    flavor: rollContext.flavor,
+    title: rollContext.title,
+    rollContext,
     tokenDocument
   });
 
