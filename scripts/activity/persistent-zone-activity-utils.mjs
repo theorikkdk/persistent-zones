@@ -362,18 +362,25 @@ function resolveStoredActivityDefinitionSchemaVersion(activity, config) {
 
 function buildActivityTerrainDefinition(terrain, activitySchemaVersion) {
   const requestedEnabled = Boolean(terrain?.enabled);
+  const multiplier = normalizeMovementCostMultiplier(terrain?.multiplier);
   if (activitySchemaVersion >= 3) {
     return {
       enabled: requestedEnabled,
-      multiplier: 2
+      multiplier
     };
   }
   return {
     enabled: false,
     requestedEnabled,
-    multiplier: numberOrNull(terrain?.multiplier) ?? 2,
+    multiplier,
     runtimeSupported: false
   };
+}
+
+function normalizeMovementCostMultiplier(value) {
+  const numeric = numberOrNull(value);
+  if (numeric === null) return 2;
+  return Math.min(5, Math.max(1, numeric));
 }
 
 function buildTriggerDefinitions(triggers = {}, { damage = {}, save = {}, movement = {}, itemUuid = null, activityId = null } = {}) {

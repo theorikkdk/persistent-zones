@@ -559,11 +559,16 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
         width: submittedPart.geometry.width
       });
     }
-    if (submittedPart?.terrain?.enabled !== undefined) {
+    if (submittedPart?.terrain?.enabled !== undefined || submittedPart?.terrain?.multiplier !== undefined) {
       patched.terrain = patched.terrain && typeof patched.terrain === "object" && !Array.isArray(patched.terrain)
         ? patched.terrain
         : {};
-      patched.terrain.enabled = Boolean(submittedPart.terrain.enabled);
+      if (submittedPart?.terrain?.enabled !== undefined) {
+        patched.terrain.enabled = Boolean(submittedPart.terrain.enabled);
+      }
+      if (submittedPart?.terrain?.multiplier !== undefined) {
+        patched.terrain.multiplier = normalizeMovementCostMultiplier(submittedPart.terrain.multiplier);
+      }
     }
     if (submittedPart?.elevation && typeof submittedPart.elevation === "object" && !Array.isArray(submittedPart.elevation)) {
       patched.elevation = {
@@ -735,6 +740,7 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       width: distances.width,
       elevation,
       terrainEnabled: Boolean(part?.terrain?.enabled),
+      terrainMultiplier: normalizeMovementCostMultiplier(part?.terrain?.multiplier),
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
       geometryTypeOptions: buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, geometryType)
     };
@@ -887,7 +893,7 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.movement.aggregateApplications = config.movement.aggregateApplications !== false;
   config.terrain ??= {};
   config.terrain.enabled = Boolean(config.terrain.enabled);
-  config.terrain.multiplier = config.terrain.multiplier ?? 2;
+  config.terrain.multiplier = normalizeMovementCostMultiplier(config.terrain.multiplier);
   config.linkedWalls ??= {};
   config.linkedWalls.preset = String(config.linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
@@ -992,11 +998,14 @@ function normalizeActivityPartGeometry(value) {
 function normalizeActivityPartTerrain(value) {
   const terrain = normalizeActivityPartObject(value);
   if (terrain.enabled !== undefined) terrain.enabled = Boolean(terrain.enabled);
-  if (terrain.multiplier !== undefined && terrain.multiplier !== null && terrain.multiplier !== "") {
-    const numeric = Number(terrain.multiplier);
-    if (Number.isFinite(numeric)) terrain.multiplier = numeric;
-  }
+  if (terrain.multiplier !== undefined) terrain.multiplier = normalizeMovementCostMultiplier(terrain.multiplier);
   return terrain;
+}
+
+function normalizeMovementCostMultiplier(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 2;
+  return Math.min(5, Math.max(1, numeric));
 }
 
 function normalizeActivityPartLinkedWalls(value) {
@@ -1176,6 +1185,7 @@ function normalizeStatusIdList(value) {
 
 function buildPresetGroups(presets = []) {
   return [
+    { label: "PERSISTENT_ZONES.Activity.Presets.Categories.DebugTests", presets: presets.filter((preset) => preset.category === "debug-tests") },
     { label: "PERSISTENT_ZONES.Activity.Presets.Categories.SrdSpells", presets: presets.filter((preset) => preset.source === "srd-5.2.1") }
   ].filter((group) => group.presets.length > 0);
 }

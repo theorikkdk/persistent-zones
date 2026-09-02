@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 9);
+  assert.equal(BUILTIN_PRESETS.length, 12);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -281,15 +281,41 @@ test("replacement removes every stale mono and multipart setting", async () => {
   assert.deepEqual(state.persistentZone.parts, []);
 });
 
-test("visible library contains only validated SRD presets", () => {
+test("visible library separates validated SRD and debug movement-cost presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth",
     "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
-  assert.equal(ids.some((id) => id.startsWith("test.")), false);
+  for (const id of ["debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls"]) {
+    const preset = getPersistentZonePreset(id);
+    assert.equal(preset.source, "builtin");
+    assert.equal(preset.category, "debug-tests");
+  }
+});
+
+test("debug movement-cost presets apply their explicit terrain and obstacle configuration", async () => {
+  const expectations = [
+    ["debug.movement-cost-x2", 2, { mode: "unrestricted" }],
+    ["debug.movement-cost-x4", 4, { mode: "unrestricted" }],
+    ["debug.movement-cost-x4-walls", 4, { mode: "wall-restricted", restrictionType: "move", priority: 0 }]
+  ];
+  for (const [id, multiplier, obstacles] of expectations) {
+    const captured = [];
+    const activity = { id, item: { async updateActivity(_id, updates) { captured.push(updates); } } };
+    const result = await applyPresetToActivity(activity, getPersistentZonePreset(id));
+    assert.equal(result.persistentZone.terrain.enabled, true, id);
+    assert.equal(result.persistentZone.terrain.multiplier, multiplier, id);
+    assert.deepEqual(result.persistentZone.obstacles, obstacles, id);
+    assert.equal(result.persistentZone.linkedWalls.enabled, false, id);
+    assert.equal(result.persistentZone.linkedLights.enabled, false, id);
+    assert.ok(Object.values(result.persistentZone.triggers).every((trigger) => trigger.enabled === false), id);
+    assert.equal(captured.at(-1).persistentZone.terrain.multiplier, multiplier, id);
+    assert.deepEqual(captured.at(-1).persistentZone.obstacles, obstacles, id);
+  }
 });
 
 test("preset scene conversion preserves bounded mono and multipart elevation", () => {

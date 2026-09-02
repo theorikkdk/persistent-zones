@@ -184,7 +184,39 @@ const base = ({ id, name, description, category, geometry, elevation = null, obs
   }
 });
 
+const buildMovementCostDebugPreset = ({ id, name, description, multiplier, obstacles }) => base({
+  id,
+  name,
+  description,
+  category: "debug-tests",
+  geometry: { type: "circle", radius: 20, units: "ft" },
+  obstacles,
+  terrain: { enabled: true, multiplier },
+  triggers: buildDisabledTriggers()
+});
+
 export const BUILTIN_PRESETS = Object.freeze([
+  buildMovementCostDebugPreset({
+    id: "debug.movement-cost-x2",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX2.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX2.Description",
+    multiplier: 2,
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.movement-cost-x4",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4.Description",
+    multiplier: 4,
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.movement-cost-x4-walls",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4Walls.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4Walls.Description",
+    multiplier: 4,
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 }
+  }),
   {
     id: "srd-5.2.1.grease",
     version: PRESET_SCHEMA_VERSION,

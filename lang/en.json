@@ -16,7 +16,12 @@
         "ApplyConfirmTitle": "Apply Persistent Zone Preset",
         "ApplyConfirm": "Apply {preset}? This will replace the current Persistent Zones configuration of this Activity.",
         "Applied": "Applied the {preset} preset.",
-        "Categories": { "SrdSpells": "SRD 5.2.1 Spells" },
+        "Categories": { "SrdSpells": "SRD 5.2.1 Spells", "DebugTests": "Debug/Test Presets" },
+        "Debug": {
+          "MovementCostX2": { "Name": "Debug/Test — Movement Cost ×2", "Description": "A neutral circle with standard ×2 difficult terrain." },
+          "MovementCostX4": { "Name": "Debug/Test — Movement Cost ×4", "Description": "A neutral circle using Foundry's native ×4 movement cost behavior." },
+          "MovementCostX4Walls": { "Name": "Debug/Test — Movement Cost ×4 + Walls", "Description": "A neutral ×4 circle restricted by movement-blocking walls." }
+        },
         "Builtins": {
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
@@ -93,8 +98,8 @@
         "LinkedWalls": "Creates Foundry walls from the main placement geometry. Preset, geometry, direction, proximity, and custom restrictions apply globally to this placement.",
         "LinkedLights": "Creates Foundry lights from the main placement geometry. Their layout and limits apply globally, not separately to each zone part.",
         "TerrainRuntimePending": "Stores a terrain request for legacy activity data without enabling runtime difficult terrain.",
-        "TerrainZone": "Difficult terrain doubles movement cost in this zone according to the D&D5e rules.",
-        "TerrainPart": "Difficult terrain doubles movement cost in this zone part according to the D&D5e rules."
+        "TerrainZone": "Applies the configured movement-cost multiplier in this zone. ×2 is standard difficult terrain.",
+        "TerrainPart": "Applies the configured movement-cost multiplier in this zone part. ×2 is standard difficult terrain."
       },
       "Sections": {
         "Configuration": "Usage",
@@ -167,7 +172,8 @@
         "StopMovement": "Stop movement",
         "MovementInterruption": "Movement interruption",
         "DifficultTerrain": "Difficult Terrain",
-        "TerrainMultiplier": "Terrain multiplier",
+        "MovementCost": "Modify movement cost",
+        "TerrainMultiplier": "Movement cost multiplier",
         "CreateWalls": "Create linked walls",
         "LinkedWallGeometry": "Linked wall geometry",
         "LinkedWallMovement": "Movement",

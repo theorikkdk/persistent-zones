@@ -198,7 +198,9 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             required: false,
             nullable: true,
             initial: 2,
-            min: 1
+            min: 1,
+            max: 5,
+            step: 0.25
           })
         }),
         linkedWalls: new fields.SchemaField({

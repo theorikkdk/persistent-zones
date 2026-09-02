@@ -1,7 +1,9 @@
 import {
   DEFAULT_REGION_COLOR,
+  MAX_NATIVE_MOVEMENT_COST_MULTIPLIER,
   MODULE_ID,
   NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
+  NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE,
   REGION_HIGHLIGHT_MODE_SETTING_KEY,
   REGION_VISIBILITY_SETTING_KEY,
   RUNTIME_FLAG_KEY,
@@ -1333,9 +1335,10 @@ export async function ensureNativeTerrainBehaviorsForAdoptedRegion(regionDocumen
   }
 
   const finalBehaviors = Array.from(regionDocument?.behaviors?.contents ?? regionDocument?.behaviors ?? []);
-  const terrainBehavior = finalBehaviors.find((behavior) =>
-    String(behavior?.type ?? "") === String(normalizedDefinition?.terrain?.behaviorType ?? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE)
-  ) ?? null;
+  const behaviorType = normalizedDefinition?.terrain?.behaviorType ?? null;
+  const terrainBehavior = behaviorType
+    ? finalBehaviors.find((behavior) => String(behavior?.type ?? "") === String(behaviorType)) ?? null
+    : null;
   return terrainBehavior;
 }
 
@@ -10458,7 +10461,12 @@ function buildNativeRegionBehaviors({
     behaviors.push(buildAttachedEmanationBehaviorData());
   }
   const terrain = normalizedDefinition?.terrain ?? {};
-  if (!terrain.difficult) {
+  const multiplier = clampNativeMovementCostMultiplier(
+    coerceNumber(terrain.multiplier, STANDARD_DIFFICULT_TERRAIN_MULTIPLIER),
+    1,
+    MAX_NATIVE_MOVEMENT_COST_MULTIPLIER
+  );
+  if (!terrain.difficult || multiplier <= 1) {
     debug("No native Region movement-cost behavior requested by normalized definition.", {
       label: normalizedDefinition?.label ?? null,
       terrain
@@ -10466,8 +10474,11 @@ function buildNativeRegionBehaviors({
     return behaviors;
   }
 
-  const multiplier = coerceNumber(terrain.multiplier, STANDARD_DIFFICULT_TERRAIN_MULTIPLIER);
-  const behaviorType = terrain.behaviorType ?? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE;
+  const behaviorType = terrain.behaviorType ?? (
+    multiplier === STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
+      ? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE
+      : NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE
+  );
   if (!CONFIG?.RegionBehavior?.dataModels?.[behaviorType]) {
     debug("Skipped native Region behavior because the behavior type is unavailable.", {
       label: normalizedDefinition?.label ?? null,
@@ -10479,15 +10490,17 @@ function buildNativeRegionBehaviors({
   const behaviorData = {
     name: buildTerrainBehaviorName(normalizedDefinition, sourceContext),
     type: behaviorType,
-    system: {
-      magical: Boolean(terrain.system?.magical),
-      types: Array.from(terrain.system?.types ?? []),
-      ignoredDispositions: Array.from(terrain.system?.ignoredDispositions ?? [])
-    },
+    system: behaviorType === NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE
+      ? buildNativeMovementCostSystem(multiplier)
+      : {
+        magical: Boolean(terrain.system?.magical),
+        types: Array.from(terrain.system?.types ?? []),
+        ignoredDispositions: Array.from(terrain.system?.ignoredDispositions ?? [])
+      },
     flags: {
       [MODULE_ID]: {
         nativeBehavior: {
-          kind: "difficult-terrain",
+          kind: behaviorType === NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE ? "movement-cost" : "difficult-terrain",
           multiplier
         }
       }
@@ -10503,6 +10516,20 @@ function buildNativeRegionBehaviors({
 
   behaviors.push(behaviorData);
   return behaviors;
+}
+
+function buildNativeMovementCostSystem(multiplier) {
+  const actions = Object.entries(globalThis.CONFIG?.Token?.movement?.actions ?? {})
+    .filter(([, config]) => config?.terrainAction === undefined && config?.deriveTerrainDifficulty === undefined)
+    .map(([action]) => action);
+  const directActions = actions.length ? actions : ["walk"];
+  return {
+    difficulties: Object.fromEntries(directActions.map((action) => [action, multiplier]))
+  };
+}
+
+function clampNativeMovementCostMultiplier(value) {
+  return Math.min(MAX_NATIVE_MOVEMENT_COST_MULTIPLIER, Math.max(1, value));
 }
 
 async function buildRegionShapesFromTemplate(templateDocument) {

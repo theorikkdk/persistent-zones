@@ -3,6 +3,8 @@ import {
   DEFAULT_ZONE_LABEL,
   DEFINITION_FLAG_KEY,
   MODULE_ID,
+  MAX_NATIVE_MOVEMENT_COST_MULTIPLIER,
+  NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE,
   NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
   NORMALIZED_DEFINITION_VERSION,
   STANDARD_DIFFICULT_TERRAIN_MULTIPLIER,
@@ -979,7 +981,7 @@ function normalizeTerrain({
   );
 
   const multiplier = difficult
-    ? coerceNumber(
+    ? clampMovementCostMultiplier(coerceNumber(
       pickFirstDefined(
         terrainDefinition.multiplier,
         movementCostDefinition.multiplier,
@@ -987,13 +989,19 @@ function normalizeTerrain({
         STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
       ),
       STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
-    )
+    ), 1, MAX_NATIVE_MOVEMENT_COST_MULTIPLIER)
     : null;
+
+  const behaviorType = !difficult || multiplier <= 1
+    ? null
+    : multiplier === STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
+      ? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE
+      : NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE;
 
   return {
     difficult,
     multiplier,
-    behaviorType: difficult ? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE : null,
+    behaviorType,
     system: {
       magical: coerceBoolean(
         pickFirstDefined(
@@ -1019,6 +1027,10 @@ function normalizeTerrain({
       )
     }
   };
+}
+
+function clampMovementCostMultiplier(value) {
+  return Math.min(MAX_NATIVE_MOVEMENT_COST_MULTIPLIER, Math.max(1, value));
 }
 
 function normalizeLinkedWalls(linkedWallsDefinition) {

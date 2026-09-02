@@ -16,7 +16,12 @@
         "ApplyConfirmTitle": "Appliquer un preset Persistent Zone",
         "ApplyConfirm": "Appliquer {preset} ? La configuration Persistent Zones actuelle de cette Activity sera remplacée.",
         "Applied": "Le preset {preset} a été appliqué.",
-        "Categories": { "SrdSpells": "Sorts SRD 5.2.1" },
+        "Categories": { "SrdSpells": "Sorts SRD 5.2.1", "DebugTests": "Presets debug/test" },
+        "Debug": {
+          "MovementCostX2": { "Name": "Debug/Test — Coût de déplacement ×2", "Description": "Un cercle neutre avec terrain difficile standard ×2." },
+          "MovementCostX4": { "Name": "Debug/Test — Coût de déplacement ×4", "Description": "Un cercle neutre utilisant le comportement natif Foundry de coût de déplacement ×4." },
+          "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." }
+        },
         "Builtins": {
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
           "WallOfFireLine": { "Name": "Mur de feu — Ligne", "Description": "Mur persistant en ligne avec un côté dangereux configurable." },
@@ -93,8 +98,8 @@
         "LinkedWalls": "Crée des murs Foundry depuis la géométrie du placement principal. Le preset, la géométrie, la direction, la proximité et les restrictions personnalisées s'appliquent globalement à ce placement.",
         "LinkedLights": "Crée des lumières Foundry depuis la géométrie du placement principal. Leur disposition et leurs limites s'appliquent globalement, et non séparément à chaque partie.",
         "TerrainRuntimePending": "Stocke une demande de terrain pour les anciennes données d'activité sans activer le terrain difficile runtime.",
-        "TerrainZone": "Le terrain difficile double le coût de déplacement dans cette zone selon les règles D&D5e.",
-        "TerrainPart": "Le terrain difficile double le coût de déplacement dans cette partie selon les règles D&D5e."
+        "TerrainZone": "Applique le multiplicateur de coût de déplacement configuré dans cette zone. ×2 correspond au terrain difficile standard.",
+        "TerrainPart": "Applique le multiplicateur de coût de déplacement configuré dans cette partie. ×2 correspond au terrain difficile standard."
       },
       "Sections": {
         "Configuration": "Utilisation",
@@ -167,7 +172,8 @@
         "StopMovement": "Arrêter le mouvement",
         "MovementInterruption": "Interruption du mouvement",
         "DifficultTerrain": "Terrain difficile",
-        "TerrainMultiplier": "Multiplicateur de terrain",
+        "MovementCost": "Modifier le coût de déplacement",
+        "TerrainMultiplier": "Multiplicateur de coût de déplacement",
         "CreateWalls": "Créer des murs liés",
         "LinkedWallGeometry": "Géométrie des murs liés",
         "LinkedWallMovement": "Mouvement",
