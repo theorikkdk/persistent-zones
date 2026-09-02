@@ -361,6 +361,30 @@
                     {{/each}}
                   </select>
                 </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScaling"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.scaling.mode">
+                    <option value="none" {{#if (eq triggerRow.state.simpleEffect.damage.scaling.mode "none")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.None"}}</option>
+                    <option value="per-level" {{#if (eq triggerRow.state.simpleEffect.damage.scaling.mode "per-level")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.PerLevel"}}</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevelMode"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.scaling.baseLevelMode">
+                    <option value="item" {{#if (eq triggerRow.state.simpleEffect.damage.scaling.baseLevelMode "item")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.ItemLevel"}}</option>
+                    <option value="fixed" {{#if (eq triggerRow.state.simpleEffect.damage.scaling.baseLevelMode "fixed")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.FixedLevel"}}</option>
+                  </select>
+                </div>
+                {{#if (eq triggerRow.state.simpleEffect.damage.scaling.baseLevelMode "fixed")}}
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevel"}}</label>
+                    <input type="number" min="1" step="1" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.scaling.baseLevel" value="{{triggerRow.state.simpleEffect.damage.scaling.baseLevel}}">
+                  </div>
+                {{/if}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingPerLevelFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.scaling.perLevelFormula" value="{{triggerRow.state.simpleEffect.damage.scaling.perLevelFormula}}">
+                </div>
               </div>
             </fieldset>
 
@@ -375,6 +399,30 @@
                   <label>{{localize "PERSISTENT_ZONES.Activity.Fields.HealingFormula"}}</label>
                   <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.formula" value="{{triggerRow.state.simpleEffect.healing.formula}}">
                 </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScaling"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.scaling.mode">
+                    <option value="none" {{#if (eq triggerRow.state.simpleEffect.healing.scaling.mode "none")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.None"}}</option>
+                    <option value="per-level" {{#if (eq triggerRow.state.simpleEffect.healing.scaling.mode "per-level")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.PerLevel"}}</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevelMode"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.scaling.baseLevelMode">
+                    <option value="item" {{#if (eq triggerRow.state.simpleEffect.healing.scaling.baseLevelMode "item")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.ItemLevel"}}</option>
+                    <option value="fixed" {{#if (eq triggerRow.state.simpleEffect.healing.scaling.baseLevelMode "fixed")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.FixedLevel"}}</option>
+                  </select>
+                </div>
+                {{#if (eq triggerRow.state.simpleEffect.healing.scaling.baseLevelMode "fixed")}}
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevel"}}</label>
+                    <input type="number" min="1" step="1" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.scaling.baseLevel" value="{{triggerRow.state.simpleEffect.healing.scaling.baseLevel}}">
+                  </div>
+                {{/if}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingPerLevelFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.healing.scaling.perLevelFormula" value="{{triggerRow.state.simpleEffect.healing.scaling.perLevelFormula}}">
+                </div>
               </div>
             </fieldset>
 
@@ -388,6 +436,30 @@
                 <div class="form-group">
                   <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TempHpFormula"}}</label>
                   <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.formula" value="{{triggerRow.state.simpleEffect.temporaryHitPoints.formula}}">
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScaling"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.scaling.mode">
+                    <option value="none" {{#if (eq triggerRow.state.simpleEffect.temporaryHitPoints.scaling.mode "none")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.None"}}</option>
+                    <option value="per-level" {{#if (eq triggerRow.state.simpleEffect.temporaryHitPoints.scaling.mode "per-level")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.PerLevel"}}</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevelMode"}}</label>
+                  <select name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.scaling.baseLevelMode">
+                    <option value="item" {{#if (eq triggerRow.state.simpleEffect.temporaryHitPoints.scaling.baseLevelMode "item")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.ItemLevel"}}</option>
+                    <option value="fixed" {{#if (eq triggerRow.state.simpleEffect.temporaryHitPoints.scaling.baseLevelMode "fixed")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.DamageScaling.FixedLevel"}}</option>
+                  </select>
+                </div>
+                {{#if (eq triggerRow.state.simpleEffect.temporaryHitPoints.scaling.baseLevelMode "fixed")}}
+                  <div class="form-group">
+                    <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingBaseLevel"}}</label>
+                    <input type="number" min="1" step="1" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.scaling.baseLevel" value="{{triggerRow.state.simpleEffect.temporaryHitPoints.scaling.baseLevel}}">
+                  </div>
+                {{/if}}
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Fields.DamageScalingPerLevelFormula"}}</label>
+                  <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.temporaryHitPoints.scaling.perLevelFormula" value="{{triggerRow.state.simpleEffect.temporaryHitPoints.scaling.perLevelFormula}}">
                 </div>
               </div>
             </fieldset>

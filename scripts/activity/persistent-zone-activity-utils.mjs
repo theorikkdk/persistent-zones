@@ -474,15 +474,18 @@ function buildTriggerConfig(triggerSource = {}, {
     damage: {
       enabled: mode === "simple" && Boolean(damageConfig?.enabled),
       formula: String(damageConfig?.formula ?? "").trim(),
-      type: String(damageConfig?.type ?? "fire").trim() || "fire"
+      type: String(damageConfig?.type ?? "fire").trim() || "fire",
+      scaling: duplicate(damageConfig?.scaling ?? {})
     },
     healing: {
       enabled: mode === "simple" && Boolean(perTriggerHealing?.enabled),
-      formula: String(perTriggerHealing?.formula ?? "").trim()
+      formula: String(perTriggerHealing?.formula ?? "").trim(),
+      scaling: duplicate(perTriggerHealing?.scaling ?? {})
     },
     temporaryHitPoints: {
       enabled: mode === "simple" && Boolean(perTriggerTemporaryHitPoints?.enabled),
-      formula: String(perTriggerTemporaryHitPoints?.formula ?? "").trim()
+      formula: String(perTriggerTemporaryHitPoints?.formula ?? "").trim(),
+      scaling: duplicate(perTriggerTemporaryHitPoints?.scaling ?? {})
     },
     save: {
       enabled: mode === "simple" && Boolean(saveConfig?.enabled),
@@ -496,11 +499,13 @@ function buildTriggerConfig(triggerSource = {}, {
       formula: String(damageConfig?.formula ?? "").trim(),
       healing: {
         enabled: mode === "simple" && Boolean(perTriggerHealing?.enabled),
-        formula: String(perTriggerHealing?.formula ?? "").trim()
+        formula: String(perTriggerHealing?.formula ?? "").trim(),
+        scaling: duplicate(perTriggerHealing?.scaling ?? {})
       },
       temporaryHitPoints: {
         enabled: mode === "simple" && Boolean(perTriggerTemporaryHitPoints?.enabled),
-        formula: String(perTriggerTemporaryHitPoints?.formula ?? "").trim()
+        formula: String(perTriggerTemporaryHitPoints?.formula ?? "").trim(),
+        scaling: duplicate(perTriggerTemporaryHitPoints?.scaling ?? {})
       },
       statuses: {
         enabled: mode === "simple" && Boolean(perTriggerStatuses?.enabled),

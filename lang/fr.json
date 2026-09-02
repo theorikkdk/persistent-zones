@@ -27,7 +27,11 @@
           "TerrainX4Others": { "Name": "Debug/Test — Terrain ×4 — Autres", "Description": "Un cercle neutre ×4 qui affecte tous les tokens sauf le token source." },
           "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Ennemis + murs", "Description": "Un cercle ×4 réservé aux ennemis et restreint par les murs qui bloquent le mouvement." },
           "RectangleWalls": { "Name": "Debug/Test — Rectangle + murs", "Description": "Un rectangle centré neutre restreint par les murs qui bloquent le mouvement." },
-          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + murs + terrain", "Description": "Un rectangle centré restreint par les murs, avec terrain difficile standard ×2." }
+          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + murs + terrain", "Description": "Un rectangle centré restreint par les murs, avec terrain difficile standard ×2." },
+          "DamageScaling3d8": { "Name": "Debug/Test — Scaling 3d8 + 1d8/emplacement", "Description": "Entrez dans le cercle après un lancement à l’emplacement de base du sort, puis à un emplacement supérieur, pour vérifier +1d8 par niveau." },
+          "DamageScalingConstant": { "Name": "Debug/Test — Scaling constant", "Description": "Fixture non-d8 : 2d6 plus 3 par niveau d’emplacement supérieur." },
+          "HealingScaling": { "Name": "Debug/Test — Scaling des soins", "Description": "Entrez dans le cercle après un lancement à un emplacement supérieur pour vérifier les soins évolutifs." },
+          "TemporaryHitPointsScaling": { "Name": "Debug/Test — Scaling des PV temporaires", "Description": "Entrez dans le cercle après un lancement à un emplacement supérieur pour vérifier les PV temporaires évolutifs." }
         },
         "Builtins": {
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
@@ -152,6 +156,10 @@
         "TriggerTargets": "Cibles",
         "TriggerFrequencyGroup": "Groupe de fréquence partagé",
         "DamageEnabled": "Appliquer des dégâts",
+        "DamageScaling": "Scaling par emplacement",
+        "DamageScalingBaseLevelMode": "Niveau de référence",
+        "DamageScalingBaseLevel": "Niveau d’emplacement de référence",
+        "DamageScalingPerLevelFormula": "Formule supplémentaire par niveau supérieur",
         "HealingEnabled": "Appliquer un soin",
         "HealingFormula": "Formule de soin",
         "TempHpEnabled": "Appliquer des PV temporaires",
@@ -263,6 +271,12 @@
       "SaveResults": {
         "Half": "Demi-dégâts",
         "None": "Aucun effet"
+      },
+      "DamageScaling": {
+        "None": "Aucun",
+        "PerLevel": "Par niveau d’emplacement supérieur",
+        "ItemLevel": "Automatique — niveau du sort",
+        "FixedLevel": "Manuel"
       },
       "ReferenceRadiusModes": {
         "OuterEdge": "Bord extérieur",

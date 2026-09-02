@@ -27,7 +27,11 @@
           "TerrainX4Others": { "Name": "Debug/Test — Terrain ×4 — Others", "Description": "A neutral ×4 circle that affects every token except the source token." },
           "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Enemies + Walls", "Description": "An enemy-only ×4 circle restricted by movement-blocking walls." },
           "RectangleWalls": { "Name": "Debug/Test — Rectangle + Walls", "Description": "A neutral centered rectangle restricted by movement-blocking walls." },
-          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + Walls + Terrain", "Description": "A centered wall-restricted rectangle with standard ×2 difficult terrain." }
+          "RectangleWallsTerrain": { "Name": "Debug/Test — Rectangle + Walls + Terrain", "Description": "A centered wall-restricted rectangle with standard ×2 difficult terrain." },
+          "DamageScaling3d8": { "Name": "Debug/Test — Scaling 3d8 + 1d8/slot", "Description": "Enter the circle after casting at the spell's base slot, then higher slots, to verify one extra 1d8 per slot level." },
+          "DamageScalingConstant": { "Name": "Debug/Test — Scaling constant", "Description": "A non-d8 scaling fixture: 2d6 plus 3 per higher slot level." },
+          "HealingScaling": { "Name": "Debug/Test — Healing scaling", "Description": "Enter the circle after casting at higher slots to verify scalable healing." },
+          "TemporaryHitPointsScaling": { "Name": "Debug/Test — Temporary HP scaling", "Description": "Enter the circle after casting at higher slots to verify scalable temporary hit points." }
         },
         "Builtins": {
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },
@@ -152,6 +156,10 @@
         "TriggerTargets": "Targets",
         "TriggerFrequencyGroup": "Shared frequency group",
         "DamageEnabled": "Apply damage",
+        "DamageScaling": "Slot scaling",
+        "DamageScalingBaseLevelMode": "Reference level",
+        "DamageScalingBaseLevel": "Reference slot level",
+        "DamageScalingPerLevelFormula": "Extra formula per higher slot",
         "HealingEnabled": "Apply healing",
         "HealingFormula": "Healing formula",
         "TempHpEnabled": "Apply temporary HP",
@@ -263,6 +271,12 @@
       "SaveResults": {
         "Half": "Half damage",
         "None": "No effect"
+      },
+      "DamageScaling": {
+        "None": "None",
+        "PerLevel": "Per higher slot level",
+        "ItemLevel": "Automatic — spell level",
+        "FixedLevel": "Manual"
       },
       "ReferenceRadiusModes": {
         "OuterEdge": "Outer edge",

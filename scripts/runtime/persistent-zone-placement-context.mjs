@@ -15,7 +15,9 @@ export function registerPersistentZonePlacementContext({
   targetTemplateType = null,
   nativeTemplateType = null,
   sourceTokenUuid = null,
-  sourceDisposition = null
+  sourceDisposition = null,
+  castLevel = null,
+  castLevelSource = null
 } = {}) {
   pruneExpiredPlacementContexts();
 
@@ -31,6 +33,8 @@ export function registerPersistentZonePlacementContext({
     nativeTemplateType: normalizeIdentifier(nativeTemplateType)?.toLowerCase() ?? null,
     sourceTokenUuid: normalizeIdentifier(sourceTokenUuid),
     sourceDisposition: normalizeDisposition(sourceDisposition),
+    castLevel: normalizePositiveInteger(castLevel),
+    castLevelSource: normalizeIdentifier(castLevelSource),
     placementSequence: ++placementSequence,
     createdAt: Date.now()
   };
@@ -146,4 +150,9 @@ function normalizeDisposition(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizePositiveInteger(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 1 ? Math.floor(numeric) : null;
 }

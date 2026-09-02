@@ -212,7 +212,7 @@ export function registerRegionFactoryHooks() {
   });
 }
 
-export async function createAttachedEmanationFromActivity(activity, sourceToken) {
+export async function createAttachedEmanationFromActivity(activity, sourceToken, { castLevel = null } = {}) {
   const scene = sourceToken?.parent ?? null;
   const item = activity?.item ?? activity?.parent ?? null;
   if (!scene || !sourceToken?.id || !sourceToken?.persisted || !item) {
@@ -224,7 +224,10 @@ export async function createAttachedEmanationFromActivity(activity, sourceToken)
     return null;
   }
 
-  const rawDefinition = getPersistentZoneActivityDefinition(activity);
+  const activityDefinition = getPersistentZoneActivityDefinition(activity);
+  const rawDefinition = Number.isFinite(Number(castLevel)) && Number(castLevel) >= 1
+    ? { ...activityDefinition, castLevel: Math.floor(Number(castLevel)) }
+    : activityDefinition;
   const normalizedDefinition = normalizeZoneDefinition(rawDefinition, {
     item,
     actor: activity?.actor ?? item?.actor ?? null,
@@ -8365,6 +8368,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       activity: sourceContext.activity,
       templateDocument: contextTemplateDocument,
       regionDocument,
+      castLevel: directPlacementContext.castLevel,
       entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion:placement-context-direct"
     });
     const normalizedDefinition = configuration.normalizedDefinition;
@@ -8444,6 +8448,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       activity: sourceContext.activity,
       templateDocument,
       regionDocument,
+      castLevel: placementContext?.castLevel ?? null,
       entryPoint: "buildRuntimeFlagsForUnmanagedCreatedRegion"
     });
     if (!configuration.hasConfiguration) {

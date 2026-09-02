@@ -50,7 +50,7 @@ const buildGreaseTrigger = ({ standingOnly = false } = {}) => ({
   }
 });
 
-const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequency = "unlimited", frequencyGroup = "", targetFilter = "all" }) => ({
+const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequency = "unlimited", frequencyGroup = "", targetFilter = "all", scaling = null }) => ({
   ...buildDisabledTrigger(),
   enabled: true,
   mode: "simple-effect",
@@ -59,7 +59,7 @@ const buildDamageTrigger = ({ formula, type, ability = null, half = false, frequ
   targetFilter: { mode: targetFilter },
   simpleEffect: {
     ...buildDisabledTrigger().simpleEffect,
-    damage: { enabled: true, formula, type },
+    damage: { enabled: true, formula, type, ...(scaling ? { scaling } : {}) },
     save: { enabled: Boolean(ability), ability: ability ?? "dex", dcMode: "inherit", dc: null, onSave: half ? "half" : "none" }
   }
 });
@@ -210,7 +210,84 @@ const buildRectangleWallsDebugPreset = ({ id, name, description, terrain = false
   triggers: buildDisabledTriggers()
 });
 
+const buildDamageScalingDebugPreset = ({ id, name, description, formula, perLevelFormula, type = "force" }) => base({
+  id,
+  name,
+  description,
+  category: "debug-tests",
+  geometry: { type: "circle", radius: 20, units: "ft" },
+  obstacles: { mode: "unrestricted" },
+  terrain: { enabled: false, multiplier: 2 },
+  triggers: {
+    ...buildDisabledTriggers(),
+    enter: buildDamageTrigger({
+      formula,
+      type,
+      scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 1, perLevelFormula }
+    })
+  }
+});
+
+const buildRecoveryScalingDebugPreset = ({ id, name, description, recoveryType, formula, perLevelFormula }) => {
+  const recoveryKey = recoveryType === "tempHP" ? "temporaryHitPoints" : "healing";
+  return base({
+    id,
+    name,
+    description,
+    category: "debug-tests",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    obstacles: { mode: "unrestricted" },
+    terrain: { enabled: false, multiplier: 2 },
+    triggers: {
+      ...buildDisabledTriggers(),
+      enter: {
+        ...buildDisabledTrigger(),
+        enabled: true,
+        mode: "simple-effect",
+        simpleEffect: {
+          ...buildDisabledTrigger().simpleEffect,
+          [recoveryKey]: {
+            enabled: true,
+            formula,
+            scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 1, perLevelFormula }
+          }
+        }
+      }
+    }
+  });
+};
+
 export const BUILTIN_PRESETS = Object.freeze([
+  buildDamageScalingDebugPreset({
+    id: "debug.damage-scaling-3d8",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScaling3d8.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScaling3d8.Description",
+    formula: "3d8",
+    perLevelFormula: "1d8"
+  }),
+  buildDamageScalingDebugPreset({
+    id: "debug.damage-scaling-constant",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScalingConstant.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScalingConstant.Description",
+    formula: "2d6",
+    perLevelFormula: "3"
+  }),
+  buildRecoveryScalingDebugPreset({
+    id: "debug.healing-scaling",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.HealingScaling.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.HealingScaling.Description",
+    recoveryType: "heal",
+    formula: "2d8",
+    perLevelFormula: "1d8"
+  }),
+  buildRecoveryScalingDebugPreset({
+    id: "debug.temporary-hit-points-scaling",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TemporaryHitPointsScaling.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TemporaryHitPointsScaling.Description",
+    recoveryType: "tempHP",
+    formula: "5",
+    perLevelFormula: "5"
+  }),
   buildMovementCostDebugPreset({
     id: "debug.movement-cost-x2",
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX2.Name",

@@ -6,7 +6,13 @@ globalThis.game = { settings: { settings: new Map() } };
 globalThis.canvas = { scene: null };
 globalThis.Roll = class {
   constructor(formula) { this.formula = formula; this.total = 0; }
-  async evaluate() { this.total = Number(this.formula) || 0; return this; }
+  async evaluate() {
+    const numericExpression = String(this.formula ?? "").replace(/\s+/g, "");
+    this.total = /^[0-9+()]+$/.test(numericExpression)
+      ? Function(`return (${numericExpression});`)()
+      : Number(this.formula) || 0;
+    return this;
+  }
   async toMessage() {}
 };
 
@@ -123,7 +129,9 @@ test("turnEnd allies healing survives normalization and updates only friendly ta
   fixture.runtime.normalizedDefinition = normalized;
   const trigger = normalized.triggers.onEndTurn;
   assert.equal(trigger.targetFilter.mode, "allies");
-  assert.deepEqual(trigger.healing, { enabled: true, formula: "1" });
+  assert.equal(trigger.healing.enabled, true);
+  assert.equal(trigger.healing.formula, "1");
+  assert.equal(trigger.healing.scaling.mode, "none");
 
   for (const target of [fixture.source, fixture.ally, fixture.enemy, fixture.neutral]) {
     await applyConfiguredTriggerEffect({
@@ -145,6 +153,39 @@ test("turnEnd allies healing survives normalization and updates only friendly ta
     triggers: { turnStart: { enabled: true, mode: "simple-effect", targetFilter: { mode: "self" } } }
   });
   assert.equal(startAlias.triggers.onStartTurn.targetFilter.mode, "self");
+});
+
+test("healing and temporary hit point scaling use the Region cast level at execution", async () => {
+  const fixture = buildFixture(1);
+  fixture.runtime.castLevel = 2;
+  fixture.runtime.normalizedDefinition.castLevel = 2;
+  installHitPoints(fixture.source, 5, 10);
+  const trigger = {
+    enabled: true,
+    mode: "simple-effect",
+    targetFilter: { mode: "self" },
+    healing: {
+      enabled: true,
+      formula: "1",
+      scaling: { mode: "per-level", baseLevelMode: "item", itemBaseLevel: 1, perLevelFormula: "1" }
+    },
+    temporaryHitPoints: {
+      enabled: true,
+      formula: "1",
+      scaling: { mode: "per-level", baseLevelMode: "item", itemBaseLevel: 1, perLevelFormula: "1" }
+    }
+  };
+  const result = await applyConfiguredTriggerEffect({
+    regionDocument: fixture.region,
+    tokenDocument: fixture.source,
+    triggerConfig: trigger,
+    timing: "onEnter"
+  });
+  assert.equal(result.healing.formula, "1 + (1)");
+  assert.equal(result.healing.rolledTotal, 2);
+  assert.equal(result.temporaryHitPoints.formula, "1 + (1)");
+  assert.equal(result.temporaryHitPoints.rolledTotal, 2);
+  assert.equal(fixture.source.actor.system.attributes.hp.value, 7);
 });
 
 test("enter enemies damage remains restricted to hostile targets", async () => {

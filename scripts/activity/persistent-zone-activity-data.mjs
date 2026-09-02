@@ -372,7 +372,8 @@ function createDamageSchema(fields) {
     type: new fields.StringField({
       required: false,
       initial: "fire"
-    })
+    }),
+    scaling: createFormulaScalingSchema(fields)
   });
 }
 
@@ -385,7 +386,8 @@ function createHealingSchema(fields) {
     formula: new fields.StringField({
       required: false,
       initial: "1d6"
-    })
+    }),
+    scaling: createFormulaScalingSchema(fields)
   });
 }
 
@@ -398,7 +400,17 @@ function createTemporaryHitPointsSchema(fields) {
     formula: new fields.StringField({
       required: false,
       initial: "1d6"
-    })
+    }),
+    scaling: createFormulaScalingSchema(fields)
+  });
+}
+
+function createFormulaScalingSchema(fields) {
+  return new fields.SchemaField({
+    mode: new fields.StringField({ required: false, initial: "none", choices: ["none", "per-level"] }),
+    baseLevelMode: new fields.StringField({ required: false, nullable: true, initial: null, choices: ["item", "fixed"] }),
+    baseLevel: new fields.NumberField({ required: false, integer: true, initial: 1, min: 1 }),
+    perLevelFormula: new fields.StringField({ required: false, initial: "" })
   });
 }
 

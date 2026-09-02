@@ -18,6 +18,7 @@ import { buildStatusEscapeEffectFlag, normalizeStatusEscape } from "./status-esc
 import { ensureAggregateStatus } from "./status-state.mjs";
 import { buildSimpleSaveResult, rollSimpleActorSave } from "./simple-save.mjs";
 import { buildPersistentZoneRollContext } from "./roll-context.mjs";
+import { resolveScaledFormula } from "./damage-scaling.mjs";
 import {
   buildRecoveryGroupKey,
   buildRecoverySourceIdentity,
@@ -1225,7 +1226,7 @@ async function applySimpleRecoveryEffect({
   }
 
   const simpleRecoveryResult = await resolveSimpleRecoveryResult(
-    { type, formula },
+    { type, formula, scaling: config?.scaling ?? null },
     regionDocument,
     tokenDocument,
     timing
@@ -1769,10 +1770,15 @@ async function resolveConfiguredSaveDc(saveConfig, regionDocument) {
 
 async function resolveDamageResult(damageConfig, saveResult, regionDocument, tokenDocument, timing = "custom") {
   const timingLabel = String(timing || "custom");
-  const roll =
-    damageConfig.formula
-      ? new Roll(String(damageConfig.formula))
-      : null;
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const resolvedScaling = resolveScaledFormula({
+    formula: damageConfig.formula,
+    scaling: damageConfig.scaling,
+    castLevel: runtime.castLevel ?? runtime.normalizedDefinition?.castLevel ?? null
+  });
+  const roll = resolvedScaling.formula
+    ? new Roll(resolvedScaling.formula, resolvedScaling.rollData)
+    : null;
 
   if (roll) {
     await roll.evaluate();
@@ -1789,7 +1795,10 @@ async function resolveDamageResult(damageConfig, saveResult, regionDocument, tok
 
   const result = {
     type: damageConfig.type ?? "force",
-    formula: damageConfig.formula ?? null,
+    formula: resolvedScaling.formula,
+    scaling: resolvedScaling.scaling,
+    castLevel: resolvedScaling.castLevel,
+    extraLevels: resolvedScaling.extraLevels,
     rolledDamage,
     appliedDamage
   };
@@ -1810,8 +1819,14 @@ async function resolveDamageResult(damageConfig, saveResult, regionDocument, tok
 async function resolveSimpleRecoveryResult(simpleEffectConfig, regionDocument, tokenDocument, timing = "custom") {
   const timingLabel = String(timing || "custom");
   const effectType = normalizeSimpleEffectType(simpleEffectConfig?.type);
-  const formula = String(simpleEffectConfig?.formula ?? "").trim();
-  const roll = formula ? new Roll(formula) : null;
+  const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
+  const resolvedScaling = resolveScaledFormula({
+    formula: simpleEffectConfig?.formula,
+    scaling: simpleEffectConfig?.scaling,
+    castLevel: runtime.castLevel ?? runtime.normalizedDefinition?.castLevel ?? null
+  });
+  const formula = resolvedScaling.formula;
+  const roll = formula ? new Roll(formula, resolvedScaling.rollData) : null;
 
   if (roll) {
     await roll.evaluate();
@@ -1828,12 +1843,18 @@ async function resolveSimpleRecoveryResult(simpleEffectConfig, regionDocument, t
     timing: timingLabel,
     simpleEffectType: effectType,
     simpleEffectFormula: formula || null,
+    scaling: resolvedScaling.scaling,
+    castLevel: resolvedScaling.castLevel,
+    extraLevels: resolvedScaling.extraLevels,
     rolledTotal
   });
 
   return {
     type: effectType,
     formula: formula || null,
+    scaling: resolvedScaling.scaling,
+    castLevel: resolvedScaling.castLevel,
+    extraLevels: resolvedScaling.extraLevels,
     rolledTotal
   };
 }

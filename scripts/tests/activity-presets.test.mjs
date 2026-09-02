@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 19);
+  assert.equal(BUILTIN_PRESETS.length, 23);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -274,7 +274,8 @@ test("replacement removes every stale mono and multipart setting", async () => {
 test("visible library separates validated SRD and debug movement-cost presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
-    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
+    "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth",
@@ -282,6 +283,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
   for (const id of [
+    "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.temporary-hit-points-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self"
   ]) {

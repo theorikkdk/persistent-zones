@@ -22,15 +22,19 @@ export function resolvePersistentZoneConfiguration({
   templateDocument = null,
   regionDocument = null,
   rawDefinition = null,
+  castLevel = null,
   entryPoint = null
 } = {}) {
   const resolvedActivity = activity ?? resolveActivityFromUsageOrWorkflow({ item, workflow, usage });
   const activityDefinition = getPersistentZoneActivityDefinition(resolvedActivity);
   const legacyDefinition = rawDefinition ?? getZoneDefinitionFromItem(item);
   const selectedDefinition = activityDefinition ?? legacyDefinition ?? null;
+  const runtimeDefinition = Number.isFinite(Number(castLevel)) && Number(castLevel) >= 1
+    ? { ...selectedDefinition, castLevel: Math.floor(Number(castLevel)) }
+    : selectedDefinition;
   const source = activityDefinition ? "activity" : legacyDefinition ? "legacy-item-flag" : "none";
-  const normalizedDefinition = selectedDefinition
-    ? normalizeZoneDefinition(selectedDefinition, {
+  const normalizedDefinition = runtimeDefinition
+    ? normalizeZoneDefinition(runtimeDefinition, {
       item,
       actor,
       caster: actor,
@@ -55,7 +59,7 @@ export function resolvePersistentZoneConfiguration({
   return {
     source,
     activity: resolvedActivity,
-    rawDefinition: selectedDefinition,
+    rawDefinition: runtimeDefinition,
     normalizedDefinition,
     usedActivityDefinition: Boolean(activityDefinition),
     usedLegacyDefinition: !activityDefinition && Boolean(legacyDefinition),

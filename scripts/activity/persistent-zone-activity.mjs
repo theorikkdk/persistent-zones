@@ -4,6 +4,7 @@ import {
 } from "../constants.mjs";
 import { PersistentZoneActivityData } from "./persistent-zone-activity-data.mjs";
 import { PersistentZoneActivitySheet } from "./persistent-zone-activity-sheet.mjs";
+import { resolvePersistentZoneCastLevel } from "./cast-level.mjs";
 import { registerPersistentZonePlacementContext } from "../runtime/persistent-zone-placement-context.mjs";
 import { createAttachedEmanationFromActivity } from "../runtime/region-factory.mjs";
 
@@ -28,6 +29,32 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
   }
 
   async use(usage = {}, dialog = {}, message = {}) {
+    console.warn(
+      `[${MODULE_ID}][activity] PZ ACTIVITY USE | activityId=${this.id ?? "null"} | activityUuid=${this.uuid ?? "null"} | itemUuid=${this.item?.uuid ?? "null"} | activityType=${PERSISTENT_ZONE_ACTIVITY_TYPE}`
+    );
+    return super.use(usage, dialog, message);
+  }
+
+  async _finalizeUsage(config, results) {
+    const castLevel = resolvePersistentZoneCastLevel({ usage: config, item: this.item, actor: this.actor ?? this.item?.actor ?? null });
+    this.#registerPlacementContext(config, castLevel);
+    const placementMode = this.persistentZone?.placement?.mode ?? this._source?.persistentZone?.placement?.mode ?? "fixed";
+    if (placementMode !== "attached-source") return super._finalizeUsage(config, results);
+    const sourceToken = resolveActivitySourceToken(this, config);
+    const region = await createAttachedEmanationFromActivity(this, sourceToken, { castLevel: castLevel.castLevel });
+    results.templates = [];
+    results.regions = region ? [region] : [];
+  }
+
+  _usageChatButtons(message) {
+    const buttons = super._usageChatButtons(message);
+    const placementMode = this.persistentZone?.placement?.mode ?? this._source?.persistentZone?.placement?.mode ?? "fixed";
+    return placementMode === "attached-source"
+      ? buttons.filter((button) => button?.dataset?.action !== "placeTemplate")
+      : buttons;
+  }
+
+  #registerPlacementContext(usage, castLevel) {
     const targetTemplateType = this.target?.template?.type ?? this._source?.target?.template?.type ?? null;
     const sourceToken = resolveActivitySourceToken(this, usage);
     registerPersistentZonePlacementContext({
@@ -41,29 +68,10 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
       targetTemplateType,
       nativeTemplateType: normalizeNativeTemplateType(targetTemplateType),
       sourceTokenUuid: sourceToken?.uuid ?? null,
-      sourceDisposition: sourceToken?.disposition ?? sourceToken?.document?.disposition ?? null
+      sourceDisposition: sourceToken?.disposition ?? sourceToken?.document?.disposition ?? null,
+      castLevel: castLevel?.castLevel ?? null,
+      castLevelSource: castLevel?.source ?? null
     });
-    console.warn(
-      `[${MODULE_ID}][activity] PZ ACTIVITY USE | activityId=${this.id ?? "null"} | activityUuid=${this.uuid ?? "null"} | itemUuid=${this.item?.uuid ?? "null"} | activityType=${PERSISTENT_ZONE_ACTIVITY_TYPE}`
-    );
-    return super.use(usage, dialog, message);
-  }
-
-  async _finalizeUsage(config, results) {
-    const placementMode = this.persistentZone?.placement?.mode ?? this._source?.persistentZone?.placement?.mode ?? "fixed";
-    if (placementMode !== "attached-source") return super._finalizeUsage(config, results);
-    const sourceToken = resolveActivitySourceToken(this, config);
-    const region = await createAttachedEmanationFromActivity(this, sourceToken);
-    results.templates = [];
-    results.regions = region ? [region] : [];
-  }
-
-  _usageChatButtons(message) {
-    const buttons = super._usageChatButtons(message);
-    const placementMode = this.persistentZone?.placement?.mode ?? this._source?.persistentZone?.placement?.mode ?? "fixed";
-    return placementMode === "attached-source"
-      ? buttons.filter((button) => button?.dataset?.action !== "placeTemplate")
-      : buttons;
   }
 }
 

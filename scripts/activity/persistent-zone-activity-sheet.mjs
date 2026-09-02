@@ -1137,17 +1137,20 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
         ...foundry.utils.deepClone(damage),
         enabled: Boolean(damage.enabled),
         formula: String(damage.formula ?? "1d6"),
-        type: String(damage.type ?? "fire")
+        type: String(damage.type ?? "fire"),
+        scaling: normalizeUiFormulaScaling(damage.scaling)
       },
       healing: {
         ...foundry.utils.deepClone(healing),
         enabled: Boolean(healing.enabled),
-        formula: String(healing.formula ?? "1d6")
+        formula: String(healing.formula ?? "1d6"),
+        scaling: normalizeUiFormulaScaling(healing.scaling)
       },
       temporaryHitPoints: {
         ...foundry.utils.deepClone(temporaryHitPoints),
         enabled: Boolean(temporaryHitPoints.enabled),
-        formula: String(temporaryHitPoints.formula ?? "1d6")
+        formula: String(temporaryHitPoints.formula ?? "1d6"),
+        scaling: normalizeUiFormulaScaling(temporaryHitPoints.scaling)
       },
       save: {
         ...foundry.utils.deepClone(save),
@@ -1190,6 +1193,16 @@ function normalizeUiTriggerMode(value, fallback = "none") {
     return "linked-activity";
   }
   return "none";
+}
+
+function normalizeUiFormulaScaling(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    mode: String(source.mode ?? "none").trim().toLowerCase() === "per-level" ? "per-level" : "none",
+    baseLevelMode: String(source.baseLevelMode ?? "").trim().toLowerCase() === "fixed" ? "fixed" : "item",
+    baseLevel: Math.max(1, Math.floor(Number(source.baseLevel) || 1)),
+    perLevelFormula: String(source.perLevelFormula ?? "")
+  };
 }
 
 function normalizeChoice(value, choices, fallback) {

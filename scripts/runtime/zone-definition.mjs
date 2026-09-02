@@ -26,6 +26,7 @@ import {
 } from "./linked-presets.mjs";
 import { normalizeStatusRecovery } from "./status-recovery.mjs";
 import { normalizeStatusEscape } from "./status-escape.mjs";
+import { normalizeDamageScaling } from "./damage-scaling.mjs";
 
 export function getZoneDefinitionFromItem(item) {
   if (!item) {
@@ -1764,7 +1765,11 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     : isPlainObject(definition.statuses)
       ? definition.statuses
       : {};
-  const damageDefinition = isPlainObject(definition.damage) ? definition.damage : {};
+  const damageDefinition = isPlainObject(definition.damage)
+    ? definition.damage
+    : isPlainObject(simpleEffectDefinition.damage)
+      ? simpleEffectDefinition.damage
+      : {};
   const healingDefinition = isPlainObject(definition.healing)
     ? definition.healing
     : isPlainObject(simpleEffectDefinition.healing)
@@ -1924,7 +1929,10 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       amount: coerceNumber(damageDefinition.amount, null),
       type: simpleEffectType === "damage"
         ? pickFirstDefined(damageDefinition.type, simpleEffectDamageType, "force")
-        : null
+        : null,
+      scaling: normalizeDamageScaling(damageDefinition.scaling, {
+        itemBaseLevel: safeGet(item, ["system", "level"])
+      })
     },
     save: {
       enabled: coerceBoolean(
@@ -1941,11 +1949,17 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     },
     healing: {
       enabled: coerceBoolean(healingDefinition.enabled, false) && mode === "simple",
-      formula: String(healingDefinition.formula ?? "").trim()
+      formula: String(healingDefinition.formula ?? "").trim(),
+      scaling: normalizeDamageScaling(healingDefinition.scaling, {
+        itemBaseLevel: safeGet(item, ["system", "level"])
+      })
     },
     temporaryHitPoints: {
       enabled: coerceBoolean(temporaryHitPointsDefinition.enabled, false) && mode === "simple",
-      formula: String(temporaryHitPointsDefinition.formula ?? "").trim()
+      formula: String(temporaryHitPointsDefinition.formula ?? "").trim(),
+      scaling: normalizeDamageScaling(temporaryHitPointsDefinition.scaling, {
+        itemBaseLevel: safeGet(item, ["system", "level"])
+      })
     },
     statuses: {
       enabled: coerceBoolean(statusesDefinition.enabled, false) && mode === "simple",
