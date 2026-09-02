@@ -559,7 +559,7 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
         width: submittedPart.geometry.width
       });
     }
-    if (submittedPart?.terrain?.enabled !== undefined || submittedPart?.terrain?.multiplier !== undefined) {
+    if (submittedPart?.terrain?.enabled !== undefined || submittedPart?.terrain?.multiplier !== undefined || submittedPart?.terrain?.targetFilter?.mode !== undefined) {
       patched.terrain = patched.terrain && typeof patched.terrain === "object" && !Array.isArray(patched.terrain)
         ? patched.terrain
         : {};
@@ -568,6 +568,11 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
       }
       if (submittedPart?.terrain?.multiplier !== undefined) {
         patched.terrain.multiplier = normalizeMovementCostMultiplier(submittedPart.terrain.multiplier);
+      }
+      if (submittedPart?.terrain?.targetFilter?.mode !== undefined) {
+        const targetFilterMode = normalizeTerrainTargetFilterOverride(submittedPart.terrain.targetFilter.mode);
+        if (targetFilterMode === "inherit") delete patched.terrain.targetFilter;
+        else patched.terrain.targetFilter = { mode: targetFilterMode };
       }
     }
     if (submittedPart?.elevation && typeof submittedPart.elevation === "object" && !Array.isArray(submittedPart.elevation)) {
@@ -741,6 +746,9 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       elevation,
       terrainEnabled: Boolean(part?.terrain?.enabled),
       terrainMultiplier: normalizeMovementCostMultiplier(part?.terrain?.multiplier),
+      terrainTargetFilter: Object.hasOwn(part?.terrain ?? {}, "targetFilter")
+        ? normalizeTerrainTargetFilterOverride(part?.terrain?.targetFilter?.mode)
+        : "inherit",
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
       geometryTypeOptions: buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, geometryType)
     };
@@ -894,6 +902,7 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.terrain ??= {};
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = normalizeMovementCostMultiplier(config.terrain.multiplier);
+  config.terrain.targetFilter = { mode: normalizeTriggerTargetFilterMode(config.terrain.targetFilter?.mode) };
   config.linkedWalls ??= {};
   config.linkedWalls.preset = String(config.linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
@@ -999,7 +1008,17 @@ function normalizeActivityPartTerrain(value) {
   const terrain = normalizeActivityPartObject(value);
   if (terrain.enabled !== undefined) terrain.enabled = Boolean(terrain.enabled);
   if (terrain.multiplier !== undefined) terrain.multiplier = normalizeMovementCostMultiplier(terrain.multiplier);
+  if (terrain.targetFilter !== undefined) {
+    const targetFilterMode = normalizeTerrainTargetFilterOverride(terrain.targetFilter?.mode);
+    if (targetFilterMode === "inherit") delete terrain.targetFilter;
+    else terrain.targetFilter = { mode: targetFilterMode };
+  }
   return terrain;
+}
+
+function normalizeTerrainTargetFilterOverride(value) {
+  const mode = String(value ?? "inherit").trim().toLowerCase();
+  return mode === "inherit" ? "inherit" : normalizeTriggerTargetFilterMode(mode);
 }
 
 function normalizeMovementCostMultiplier(value) {
@@ -1316,6 +1335,14 @@ function buildActivityChoices() {
       { value: "on-enter-and-move", label: "PERSISTENT_ZONES.UI.InterruptionModes.OnEnterAndMove" }
     ],
     triggerTargetFilters: [
+      { value: "all", label: "PERSISTENT_ZONES.Activity.TargetFilters.All" },
+      { value: "allies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Allies" },
+      { value: "enemies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Enemies" },
+      { value: "self", label: "PERSISTENT_ZONES.Activity.TargetFilters.Self" },
+      { value: "others", label: "PERSISTENT_ZONES.Activity.TargetFilters.Others" }
+    ],
+    terrainTargetFilters: [
+      { value: "inherit", label: "PERSISTENT_ZONES.Activity.TargetFilterModes.Inherit" },
       { value: "all", label: "PERSISTENT_ZONES.Activity.TargetFilters.All" },
       { value: "allies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Allies" },
       { value: "enemies", label: "PERSISTENT_ZONES.Activity.TargetFilters.Enemies" },

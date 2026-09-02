@@ -276,6 +276,7 @@ function normalize(config) {
     enabled: false,
     requestedEnabled: true,
     multiplier: 2,
+    targetFilter: { mode: "all" },
     runtimeSupported: false
   }, "v2 requestedEnabled must stay neutralized");
 }

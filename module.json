@@ -30,7 +30,8 @@
   ],
   "documentTypes": {
     "RegionBehavior": {
-      "attachedEmanation": {}
+      "attachedEmanation": {},
+      "filteredMovementCost": {}
     }
   },
   "languages": [

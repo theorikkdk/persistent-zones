@@ -150,6 +150,12 @@
                 <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TerrainMultiplier"}}</label>
                 <input type="number" min="1" max="5" step="0.25" name="persistentZone.parts.{{partRow.index}}.terrain.multiplier" data-pz-part-field="terrain.multiplier" value="{{partRow.terrainMultiplier}}">
               </div>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TerrainTargets"}}</label>
+                <select name="persistentZone.parts.{{partRow.index}}.terrain.targetFilter.mode" data-pz-part-field="terrain.targetFilter.mode">
+                  {{selectOptions ../persistentZoneChoices.terrainTargetFilters selected=partRow.terrainTargetFilter localize=true}}
+                </select>
+              </div>
               {{/if}}
               <details class="persistent-zone-activity__part-trigger-section" data-pz-part-trigger-section>
                 <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">
@@ -571,6 +577,12 @@
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TerrainMultiplier"}}</label>
       <input type="number" min="1" max="5" step="0.25" name="persistentZone.terrain.multiplier" value="{{persistentZone.terrain.multiplier}}">
+    </div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TerrainTargets"}}</label>
+      <select name="persistentZone.terrain.targetFilter.mode">
+        {{selectOptions persistentZoneChoices.triggerTargetFilters selected=persistentZone.terrain.targetFilter.mode localize=true}}
+      </select>
     </div>
   </fieldset>
   {{/unless}}

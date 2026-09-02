@@ -20,6 +20,7 @@ export const DEFAULT_CONCENTRATION_STATUS_ID = "concentrating";
 export const DEBUG_PREFIX = `[${MODULE_ID}]`;
 export const NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE = "dnd5e.difficultTerrain";
 export const NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE = "modifyMovementCost";
+export const FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE = `${MODULE_ID}.filteredMovementCost`;
 export const STANDARD_DIFFICULT_TERRAIN_MULTIPLIER = 2;
 export const MAX_NATIVE_MOVEMENT_COST_MULTIPLIER = 5;
 export const ATTACHED_EMANATION_BEHAVIOR_TYPE = `${MODULE_ID}.attachedEmanation`;

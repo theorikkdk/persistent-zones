@@ -42,7 +42,7 @@ const { isLegacyMovementRuntimeRegion, markNextMovementMode } = await import("..
 const { applyRegionOnCreateTrigger } = await import("../runtime/on-create-runtime.mjs");
 
 test("M11A RegionBehavior is registered in CONFIG and in the manifest-backed Document types", () => {
-  assert.deepEqual(manifestBehaviorTypes, ["persistent-zones.attachedEmanation"]);
+  assert.deepEqual(manifestBehaviorTypes, ["persistent-zones.attachedEmanation", "persistent-zones.filteredMovementCost"]);
   assert.equal(registerAttachedEmanationRegionBehavior(), true);
   const registration = getAttachedEmanationBehaviorRegistration();
   assert.equal(registration.type, "persistent-zones.attachedEmanation");

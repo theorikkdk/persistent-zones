@@ -20,7 +20,12 @@
         "Debug": {
           "MovementCostX2": { "Name": "Debug/Test — Coût de déplacement ×2", "Description": "Un cercle neutre avec terrain difficile standard ×2." },
           "MovementCostX4": { "Name": "Debug/Test — Coût de déplacement ×4", "Description": "Un cercle neutre utilisant le comportement natif Foundry de coût de déplacement ×4." },
-          "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." }
+          "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." },
+          "TerrainX4Enemies": { "Name": "Debug/Test — Terrain ×4 — Ennemis", "Description": "Un cercle neutre ×4 qui n'affecte que les ennemis du token source." },
+          "TerrainX4Allies": { "Name": "Debug/Test — Terrain ×4 — Alliés", "Description": "Un cercle neutre ×4 qui n'affecte que les alliés du token source." },
+          "TerrainX4Self": { "Name": "Debug/Test — Terrain ×4 — Soi-même", "Description": "Un cercle neutre ×4 qui n'affecte que le token source." },
+          "TerrainX4Others": { "Name": "Debug/Test — Terrain ×4 — Autres", "Description": "Un cercle neutre ×4 qui affecte tous les tokens sauf le token source." },
+          "TerrainX4EnemiesWalls": { "Name": "Debug/Test — Terrain ×4 — Ennemis + murs", "Description": "Un cercle ×4 réservé aux ennemis et restreint par les murs qui bloquent le mouvement." }
         },
         "Builtins": {
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
@@ -174,6 +179,7 @@
         "DifficultTerrain": "Terrain difficile",
         "MovementCost": "Modifier le coût de déplacement",
         "TerrainMultiplier": "Multiplicateur de coût de déplacement",
+        "TerrainTargets": "Cibles du terrain",
         "CreateWalls": "Créer des murs liés",
         "LinkedWallGeometry": "Géométrie des murs liés",
         "LinkedWallMovement": "Mouvement",

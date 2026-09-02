@@ -366,13 +366,15 @@ function buildActivityTerrainDefinition(terrain, activitySchemaVersion) {
   if (activitySchemaVersion >= 3) {
     return {
       enabled: requestedEnabled,
-      multiplier
+      multiplier,
+      targetFilter: { mode: normalizeTriggerTargetFilterMode(terrain?.targetFilter?.mode) }
     };
   }
   return {
     enabled: false,
     requestedEnabled,
     multiplier,
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(terrain?.targetFilter?.mode) },
     runtimeSupported: false
   };
 }

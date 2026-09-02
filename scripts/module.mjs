@@ -12,6 +12,7 @@ import {
 } from "./runtime/concentration-cleanup.mjs";
 import { registerEntryRuntimeHooks } from "./runtime/entry-runtime.mjs";
 import { registerAttachedEmanationRegionBehavior } from "./runtime/attached-emanation-runtime.mjs";
+import { registerFilteredMovementCostRegionBehavior } from "./runtime/filtered-movement-cost-runtime.mjs";
 import { registerStatusStateHooks } from "./runtime/status-state.mjs";
 import { registerStatusRecoveryArbitrationHooks } from "./runtime/status-recovery-arbitration.mjs";
 import { registerStatusEscapeHooks } from "./runtime/status-escape.mjs";
@@ -47,6 +48,7 @@ function onInit() {
   registerPersistentZoneProfileSettings();
   registerPersistentZoneModuleSettings();
   registerAttachedEmanationRegionBehavior();
+  registerFilteredMovementCostRegionBehavior();
   registerPersistentZoneActivityType();
   console.warn(`[${MODULE_ID}] settingsRegistered`);
   apiInstance = createPersistentZonesApi();

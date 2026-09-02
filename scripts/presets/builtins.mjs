@@ -184,14 +184,18 @@ const base = ({ id, name, description, category, geometry, elevation = null, obs
   }
 });
 
-const buildMovementCostDebugPreset = ({ id, name, description, multiplier, obstacles }) => base({
+const buildMovementCostDebugPreset = ({ id, name, description, multiplier, targetFilter = null, obstacles }) => base({
   id,
   name,
   description,
   category: "debug-tests",
   geometry: { type: "circle", radius: 20, units: "ft" },
   obstacles,
-  terrain: { enabled: true, multiplier },
+  terrain: {
+    enabled: true,
+    multiplier,
+    ...(targetFilter ? { targetFilter: { mode: targetFilter } } : {})
+  },
   triggers: buildDisabledTriggers()
 });
 
@@ -215,6 +219,46 @@ export const BUILTIN_PRESETS = Object.freeze([
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4Walls.Name",
     description: "PERSISTENT_ZONES.Activity.Presets.Debug.MovementCostX4Walls.Description",
     multiplier: 4,
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.terrain-x4-enemies",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Enemies.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Enemies.Description",
+    multiplier: 4,
+    targetFilter: "enemies",
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.terrain-x4-allies",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Allies.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Allies.Description",
+    multiplier: 4,
+    targetFilter: "allies",
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.terrain-x4-self",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Self.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Self.Description",
+    multiplier: 4,
+    targetFilter: "self",
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.terrain-x4-others",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Others.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4Others.Description",
+    multiplier: 4,
+    targetFilter: "others",
+    obstacles: { mode: "unrestricted" }
+  }),
+  buildMovementCostDebugPreset({
+    id: "debug.terrain-x4-enemies-walls",
+    name: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4EnemiesWalls.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Debug.TerrainX4EnemiesWalls.Description",
+    multiplier: 4,
+    targetFilter: "enemies",
     obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 }
   }),
   {

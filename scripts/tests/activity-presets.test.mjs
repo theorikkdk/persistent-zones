@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 12);
+  assert.equal(BUILTIN_PRESETS.length, 17);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -285,12 +285,16 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls",
+    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth",
     "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
-  for (const id of ["debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls"]) {
+  for (const id of [
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls",
+    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self"
+  ]) {
     const preset = getPersistentZonePreset(id);
     assert.equal(preset.source, "builtin");
     assert.equal(preset.category, "debug-tests");
@@ -315,6 +319,27 @@ test("debug movement-cost presets apply their explicit terrain and obstacle conf
     assert.ok(Object.values(result.persistentZone.triggers).every((trigger) => trigger.enabled === false), id);
     assert.equal(captured.at(-1).persistentZone.terrain.multiplier, multiplier, id);
     assert.deepEqual(captured.at(-1).persistentZone.obstacles, obstacles, id);
+  }
+});
+
+test("debug terrain-filter presets apply their explicit source-relative target filter", async () => {
+  for (const [id, mode] of [
+    ["debug.terrain-x4-enemies", "enemies"],
+    ["debug.terrain-x4-allies", "allies"],
+    ["debug.terrain-x4-self", "self"],
+    ["debug.terrain-x4-others", "others"],
+    ["debug.terrain-x4-enemies-walls", "enemies"]
+  ]) {
+    const captured = [];
+    const activity = { id, item: { async updateActivity(_id, updates) { captured.push(updates); } } };
+    const result = await applyPresetToActivity(activity, getPersistentZonePreset(id));
+    assert.equal(result.persistentZone.terrain.multiplier, 4, id);
+    assert.deepEqual(result.persistentZone.terrain.targetFilter, { mode }, id);
+    const obstacles = id === "debug.terrain-x4-enemies-walls"
+      ? { mode: "wall-restricted", restrictionType: "move", priority: 0 }
+      : { mode: "unrestricted" };
+    assert.deepEqual(result.persistentZone.obstacles, obstacles, id);
+    assert.deepEqual(captured.at(-1).persistentZone.terrain.targetFilter, { mode }, id);
   }
 });
 

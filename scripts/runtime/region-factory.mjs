@@ -1,5 +1,6 @@
 import {
   DEFAULT_REGION_COLOR,
+  FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE,
   MAX_NATIVE_MOVEMENT_COST_MULTIPLIER,
   MODULE_ID,
   NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE,
@@ -39,6 +40,7 @@ import {
   finalizeAttachedEmanationCreation,
   initializeAttachedEmanationTransitionState
 } from "./attached-emanation-runtime.mjs";
+import { buildFilteredMovementCostBehaviorData } from "./filtered-movement-cost-runtime.mjs";
 import { resolveTemplateSourceContext } from "./template-source-context.mjs";
 import {
   findPersistentZoneActivityOnItem,
@@ -10490,14 +10492,18 @@ function buildNativeRegionBehaviors({
   const behaviorData = {
     name: buildTerrainBehaviorName(normalizedDefinition, sourceContext),
     type: behaviorType,
-    system: behaviorType === NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE
+    system: behaviorType === FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE
+      ? buildFilteredMovementCostBehaviorData({ multiplier, targetFilter: terrain.targetFilter }).system
+      : behaviorType === NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE
       ? buildNativeMovementCostSystem(multiplier)
       : {
         magical: Boolean(terrain.system?.magical),
         types: Array.from(terrain.system?.types ?? []),
         ignoredDispositions: Array.from(terrain.system?.ignoredDispositions ?? [])
       },
-    flags: {
+    flags: behaviorType === FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE
+      ? buildFilteredMovementCostBehaviorData({ multiplier, targetFilter: terrain.targetFilter }).flags
+      : {
       [MODULE_ID]: {
         nativeBehavior: {
           kind: behaviorType === NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE ? "movement-cost" : "difficult-terrain",

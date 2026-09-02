@@ -50,6 +50,9 @@ test("frequency fields belong to every trigger schema and not to statuses", () =
   assert.equal(onCreate.fields.frequencyGroup.options.initial, "");
   assert.deepEqual(onCreate.fields.targetFilter.fields.mode.options.choices, ["all", "allies", "enemies", "self", "others"]);
   assert.equal(onCreate.fields.targetFilter.fields.mode.options.initial, "all");
+  const terrain = schema.persistentZone.fields.terrain.fields;
+  assert.deepEqual(terrain.targetFilter.fields.mode.options.choices, ["all", "allies", "enemies", "self", "others"]);
+  assert.equal(terrain.targetFilter.fields.mode.options.initial, "all");
   assert.equal(Object.hasOwn(onCreate.fields.simpleEffect.fields.statuses.fields, "frequency"), false);
   const escape = onCreate.fields.simpleEffect.fields.statuses.fields.escape.fields;
   assert.deepEqual(escape.checkType.options.choices, ["ability", "skill"]);
@@ -350,7 +353,7 @@ test("an unrelated manual DC edit preserves hidden Rectangle and trigger configu
   assert.equal(processed.triggers.turnEnd.hiddenTriggerData, "keep");
   assert.equal(processed.parts[0].geometry.hiddenOffset, 2);
   assert.equal(processed.parts[0].hiddenPartData, "keep");
-  assert.deepEqual(processed.terrain, existing.terrain);
+  assert.deepEqual(processed.terrain, { ...existing.terrain, targetFilter: { mode: "all" } });
   assert.equal(processed.linkedWalls.hiddenWallData, "keep");
   assert.equal(processed.linkedLights.hiddenLightData, "keep");
   assert.equal(processed.lifecycle.hiddenLifecycleData, "keep");

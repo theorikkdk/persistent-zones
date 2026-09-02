@@ -201,6 +201,13 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             min: 1,
             max: 5,
             step: 0.25
+          }),
+          targetFilter: new fields.SchemaField({
+            mode: new fields.StringField({
+              required: false,
+              initial: "all",
+              choices: ["all", "allies", "enemies", "self", "others"]
+            })
           })
         }),
         linkedWalls: new fields.SchemaField({

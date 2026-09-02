@@ -88,6 +88,22 @@ test("Activity terrain multiplier survives the Activity-to-runtime handoff", () 
     geometry: { type: "circle", radius: 10, units: "ft" },
     terrain: { enabled: true, multiplier: 4 }
   });
-  assert.deepEqual(definition.terrain, { enabled: true, multiplier: 4 });
+  assert.deepEqual(definition.terrain, { enabled: true, multiplier: 4, targetFilter: { mode: "all" } });
   assert.equal(normalizeZoneDefinition(definition).terrain.behaviorType, "modifyMovementCost");
+});
+
+test("Activity terrain target filters survive the Activity-to-runtime handoff", () => {
+  const definition = buildLegacyDefinitionFromPersistentZoneActivity({
+    id: "filtered-movement-cost",
+    name: "Filtered Movement Cost",
+    target: { template: { units: "ft", size: 10 } },
+    duration: {}
+  }, {
+    schemaVersion: 3,
+    enabled: true,
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    terrain: { enabled: true, multiplier: 4, targetFilter: { mode: "enemies" } }
+  });
+  assert.deepEqual(definition.terrain, { enabled: true, multiplier: 4, targetFilter: { mode: "enemies" } });
+  assert.equal(normalizeZoneDefinition(definition).terrain.behaviorType, "persistent-zones.filteredMovementCost");
 });

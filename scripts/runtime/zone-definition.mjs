@@ -2,6 +2,7 @@ import {
   DEFAULT_CONCENTRATION_STATUS_ID,
   DEFAULT_ZONE_LABEL,
   DEFINITION_FLAG_KEY,
+  FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE,
   MODULE_ID,
   MAX_NATIVE_MOVEMENT_COST_MULTIPLIER,
   NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE,
@@ -994,6 +995,8 @@ function normalizeTerrain({
 
   const behaviorType = !difficult || multiplier <= 1
     ? null
+    : normalizeTriggerTargetFilterMode(terrainDefinition.targetFilter?.mode) !== "all"
+      ? FILTERED_MOVEMENT_COST_BEHAVIOR_TYPE
     : multiplier === STANDARD_DIFFICULT_TERRAIN_MULTIPLIER
       ? NATIVE_DIFFICULT_TERRAIN_BEHAVIOR_TYPE
       : NATIVE_MOVEMENT_COST_BEHAVIOR_TYPE;
@@ -1002,6 +1005,7 @@ function normalizeTerrain({
     difficult,
     multiplier,
     behaviorType,
+    targetFilter: { mode: normalizeTriggerTargetFilterMode(terrainDefinition.targetFilter?.mode) },
     system: {
       magical: coerceBoolean(
         pickFirstDefined(
@@ -1237,6 +1241,13 @@ function normalizeZonePart(partLikeDefinition, index, {
   const mergedTerrainDefinition = usesExplicitPartTerrain
     ? mergePlainObjects({ enabled: false }, partTerrainDefinition)
     : mergePlainObjects(terrainDefinition, partTerrainDefinition);
+  const globalTerrainTargetFilter = isPlainObject(terrainDefinition.targetFilter)
+    ? terrainDefinition.targetFilter
+    : {};
+  const partTerrainTargetFilter = isPlainObject(partTerrainDefinition.targetFilter)
+    ? partTerrainDefinition.targetFilter
+    : {};
+  mergedTerrainDefinition.targetFilter = mergePlainObjects(globalTerrainTargetFilter, partTerrainTargetFilter);
   const mergedMovementCostDefinition = usesExplicitPartTerrain
     ? partMovementCostDefinition
     : mergePlainObjects(movementCostDefinition, partMovementCostDefinition);
@@ -2077,14 +2088,6 @@ function collectCurrentLimits(definition) {
 
   if (safeGet(definition, ["forcedMovement"]) !== undefined) {
     limits.push("Forced movement is not executed in this release.");
-  }
-
-  if (
-    safeGet(definition, ["terrain", "multiplier"]) !== undefined ||
-    safeGet(definition, ["movementCost", "multiplier"]) !== undefined ||
-    safeGet(definition, ["movementCost", "costMultiplier"]) !== undefined
-  ) {
-    limits.push("Custom movement cost multipliers are not yet supported; standard difficult terrain is used when enabled.");
   }
 
   if (safeGet(definition, ["linkedWalls"]) !== undefined) {
