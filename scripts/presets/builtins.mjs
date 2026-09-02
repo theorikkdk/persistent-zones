@@ -98,8 +98,8 @@ const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "a
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, movement, terrain, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers, movement, terrain }),
+const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, parts, triggers, movement, terrain, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -111,7 +111,7 @@ const buildSrdPreset = ({ id, name, description, geometry, parts, triggers, move
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, parts, triggers, movement, terrain }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -206,6 +206,7 @@ export const BUILTIN_PRESETS = Object.freeze([
       schemaVersion: ACTIVITY_DEFINITION_SCHEMA_VERSION,
       enabled: true,
       geometry: { type: "rectangle", width: 10, height: 10, units: "ft", placement: "center" },
+      obstacles: { mode: "unrestricted" },
       parts: [],
       triggers: {
         ...buildDisabledTriggers(),
@@ -226,6 +227,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireLine.Description",
     geometry: { type: "wall", wallLength: 60, wallThickness: 1, units: "ft" },
     tags: ["evocation", "fire", "multipart", "wall"],
+    obstacles: { mode: "unrestricted" },
     linkedWalls: wallOfFireLinkedWalls,
     linkedLights: wallOfFireLinkedLights,
     parts: [
@@ -239,6 +241,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.WallOfFireRing.Description",
     geometry: { type: "ring", ringReferenceRadius: 10, ringInnerWidth: 1, ringOuterWidth: 0, units: "ft" },
     tags: ["evocation", "fire", "multipart", "ring"],
+    obstacles: { mode: "unrestricted" },
     linkedWalls: wallOfFireLinkedWalls,
     linkedLights: wallOfFireLinkedLights,
     parts: [
@@ -252,6 +255,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Moonbeam.Description",
     geometry: { type: "circle", radius: 5, units: "ft" },
     tags: ["evocation", "radiant", "light"],
+    obstacles: { mode: "unrestricted" },
     linkedLights: { enabled: true, preset: "moonlight", bright: 0, dim: 5, max: 1, color: "#dbe7ff" },
     parts: [],
     triggers: {
@@ -267,6 +271,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpikeGrowth.Description",
     geometry: { type: "circle", radius: 20, units: "ft" },
     tags: ["transmutation", "control", "terrain", "concentration"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
     terrain: { enabled: true, multiplier: 2 },
     movement: { interruptionMode: "off", stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "ft", accumulateRemainder: true, aggregateApplications: true, cellStep: 1 },
     linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
@@ -282,6 +287,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.InsectPlague.Description",
     geometry: { type: "circle", radius: 20, units: "ft" },
     tags: ["conjuration", "piercing", "control", "terrain", "concentration"],
+    obstacles: { mode: "unrestricted" },
     terrain: { enabled: true, multiplier: 2 },
     linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
     linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
@@ -299,6 +305,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Entangle.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "terrain", "concentration", "escape"],
+    obstacles: { mode: "unrestricted" },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),
@@ -311,6 +318,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.BlackTentacles.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "damage", "terrain", "concentration", "escape"],
+    obstacles: { mode: "unrestricted" },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),
@@ -325,6 +333,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Web.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "terrain", "concentration", "escape", "partial-safe"],
+    obstacles: { mode: "unrestricted" },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),

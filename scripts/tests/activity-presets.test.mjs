@@ -154,6 +154,41 @@ test("preset application preserves wall restriction through final Activity appli
   assert.deepEqual(captured.at(-1).updates.persistentZone.obstacles, preset.persistentZone.obstacles);
 });
 
+test("audited SRD presets encode explicit obstacle behavior before runtime normalization", async () => {
+  const unrestrictedIds = [
+    "srd-5.2.1.grease",
+    "srd-5.2.1.wall-of-fire-line",
+    "srd-5.2.1.wall-of-fire-ring",
+    "srd-5.2.1.moonbeam",
+    "srd-5.2.1.insect-plague",
+    "srd-5.2.1.entangle",
+    "srd-5.2.1.black-tentacles",
+    "srd-5.2.1.web"
+  ];
+  for (const id of unrestrictedIds) {
+    assert.deepEqual(getPersistentZonePreset(id).persistentZone.obstacles, { mode: "unrestricted" }, id);
+  }
+
+  const spikeGrowth = getPersistentZonePreset("srd-5.2.1.spike-growth");
+  assert.deepEqual(spikeGrowth.persistentZone.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "move",
+    priority: 0
+  });
+
+  const captured = [];
+  const activity = {
+    id: "activity-spike-growth",
+    item: { async updateActivity(id, updates) { captured.push({ id, updates }); } }
+  };
+  await applyPresetToActivity(activity, spikeGrowth);
+  assert.deepEqual(captured.at(-1).updates.persistentZone.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "move",
+    priority: 0
+  });
+});
+
 test("attached preset fixture preserves attachment and wall restriction through Activity application", async () => {
   const captured = [];
   const activity = {

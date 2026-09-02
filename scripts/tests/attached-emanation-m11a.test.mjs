@@ -108,6 +108,92 @@ test("attached emanation survives Activity conversion and runtime normalization"
   assert.equal(normalized.geometry.radius, 10);
 });
 
+test("M11D defaults wall restriction only for supported mono-part geometries", () => {
+  const defaultCircle = normalizeZoneDefinition({
+    enabled: true,
+    placement: { mode: "fixed" },
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    parts: []
+  });
+  assert.deepEqual(defaultCircle.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "move",
+    priority: 0
+  });
+
+  const rectangle = normalizeZoneDefinition({
+    enabled: true,
+    placement: { mode: "fixed" },
+    geometry: { type: "rectangle", width: 10, height: 10, units: "ft" },
+    parts: []
+  });
+  assert.equal(rectangle.obstacles.mode, "unrestricted");
+
+  const multipart = normalizeZoneDefinition({
+    enabled: true,
+    placement: { mode: "fixed" },
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    parts: [
+      { id: "primary", role: "primary", geometry: { type: "template" } },
+      { id: "secondary", role: "secondary", geometry: { type: "template" } }
+    ]
+  });
+  assert.equal(multipart.obstacles.mode, "unrestricted");
+
+  const explicitUnrestricted = normalizeZoneDefinition({
+    enabled: true,
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    obstacles: { mode: "unrestricted" }
+  });
+  assert.equal(explicitUnrestricted.obstacles.mode, "unrestricted");
+
+  const explicitCustom = normalizeZoneDefinition({
+    enabled: true,
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    obstacles: { mode: "wall-restricted", restrictionType: "sound", priority: 4 }
+  });
+  assert.deepEqual(explicitCustom.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "sound",
+    priority: 4
+  });
+});
+
+test("SRD obstacle exceptions leave Moonbeam and Insect Plague unrestricted while Spike Growth inherits M11D", () => {
+  const normalizeSrdPreset = (id) => {
+    const preset = BUILTIN_PRESETS.find((candidate) => candidate.id === id);
+    const template = { type: "circle", size: preset.persistentZone.geometry.radius, units: "ft" };
+    const definition = getPersistentZoneActivityDefinition({
+      id,
+      uuid: `Actor.actor.Item.item.Activity.${id}`,
+      type: "persistent-zone",
+      name: id,
+      persistentZone: preset.persistentZone,
+      _source: { persistentZone: preset.persistentZone, target: { template } },
+      item: { uuid: "Actor.actor.Item.item", actor: { uuid: "Actor.actor" } }
+    });
+    return { definition, normalized: normalizeZoneDefinition(definition) };
+  };
+
+  const spikeGrowth = normalizeSrdPreset("srd-5.2.1.spike-growth");
+  assert.deepEqual(spikeGrowth.definition.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "move",
+    priority: 0
+  });
+  assert.equal(spikeGrowth.normalized.obstacles.mode, "wall-restricted");
+  assert.deepEqual(normalizeSrdPreset("srd-5.2.1.moonbeam").normalized.obstacles, {
+    mode: "unrestricted",
+    restrictionType: "sight",
+    priority: 0
+  });
+  assert.deepEqual(normalizeSrdPreset("srd-5.2.1.insect-plague").normalized.obstacles, {
+    mode: "unrestricted",
+    restrictionType: "sight",
+    priority: 0
+  });
+});
+
 test("unsupported multipart attached configuration fails safe to fixed", () => {
   const definition = getPersistentZoneActivityDefinition(activity({
     schemaVersion: 3,
@@ -246,6 +332,25 @@ test("wall-restricted fixed Regions use native boundary events without legacy du
     cleanupStatuses: async () => {}
   });
   assert.deepEqual(timings, [["onEnter", "native-restricted-region"], ["onExit", "native-restricted-region"]]);
+});
+
+test("wall-restricted fixed Regions re-enter the movement runtime only for an onMove trigger", () => {
+  const withoutOnMove = mockRegion({
+    normalizedDefinition: {
+      placement: { mode: "fixed" },
+      obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+      triggers: { onEnter: enabledTrigger(), onExit: enabledTrigger() }
+    }
+  }, []);
+  const withOnMove = mockRegion({
+    normalizedDefinition: {
+      placement: { mode: "fixed" },
+      obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+      triggers: { onMove: enabledTrigger() }
+    }
+  }, []);
+  assert.equal(isLegacyMovementRuntimeRegion(withoutOnMove), false);
+  assert.equal(isLegacyMovementRuntimeRegion(withOnMove), true);
 });
 
 test("attached emanation configuration remains valid and isolated", () => {

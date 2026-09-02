@@ -686,7 +686,11 @@ function onDeleteToken(tokenDocument) {
 
 export function isLegacyMovementRuntimeRegion(regionDocument) {
   const definition = getRegionRuntimeFlags(regionDocument)?.normalizedDefinition;
-  return definition?.placement?.mode !== "attached-source" && definition?.obstacles?.mode !== "wall-restricted";
+  if (definition?.placement?.mode === "attached-source") return false;
+  if (definition?.obstacles?.mode === "wall-restricted") {
+    return Boolean(definition?.triggers?.onMove?.enabled);
+  }
+  return true;
 }
 
 function clearProcessedMovementExecutionsForToken(tokenDocument) {
@@ -1598,7 +1602,9 @@ async function applyRegionEvaluation(tokenDocument, evaluation, {
         triggerSuppressedBecauseMovementAlreadyStopped =
           onEnterSuppressed || onMoveSuppressed || onExitSuppressed;
       } else {
-        const boundaryTransitions = Array.from(movementAnalysis.transitions ?? []);
+        const boundaryTransitions = normalizedDefinition?.obstacles?.mode === "wall-restricted"
+          ? []
+          : Array.from(movementAnalysis.transitions ?? []);
         if (boundaryTransitions.length) {
           for (const [transitionIndex, transition] of boundaryTransitions.entries()) {
             if (transition.type === "onExit") {

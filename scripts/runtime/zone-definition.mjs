@@ -331,7 +331,6 @@ export function normalizeZoneDefinition(
       definition
     }),
     elevation: normalizeElevationDefinition(definition.elevation),
-    obstacles: normalizeObstaclesDefinition(definition.obstacles),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -361,6 +360,11 @@ export function normalizeZoneDefinition(
     mode: normalizedDefinition.parts.length > 1 ? "parts" : "single",
     partCount: normalizedDefinition.parts.length
   };
+  normalizedDefinition.obstacles = normalizeObstaclesDefinition(definition.obstacles, {
+    geometry: normalizedDefinition.geometry,
+    placement: normalizedDefinition.placement,
+    partCount: normalizedDefinition.parts.length
+  });
 
   if (normalizedDefinition.variants.length) {
     debug("Resolved normalized zone variants.", {
@@ -1111,14 +1115,30 @@ function normalizeElevationDefinition(value) {
   };
 }
 
-function normalizeObstaclesDefinition(value) {
-  if (!isPlainObject(value)) return { mode: "unrestricted", restrictionType: "sight", priority: 0 };
+function normalizeObstaclesDefinition(value, {
+  geometry = null,
+  placement = null,
+  partCount = 0
+} = {}) {
   const types = ["sight", "move", "light", "darkness", "sound"];
+  if (!isPlainObject(value)) {
+    return supportsDefaultWallRestriction({ geometry, placement, partCount })
+      ? { mode: "wall-restricted", restrictionType: "move", priority: 0 }
+      : { mode: "unrestricted", restrictionType: "move", priority: 0 };
+  }
   return {
     mode: value.mode === "wall-restricted" ? "wall-restricted" : "unrestricted",
     restrictionType: types.includes(value.restrictionType) ? value.restrictionType : "sight",
     priority: Math.max(0, Math.trunc(coerceNumber(value.priority, 0)))
   };
+}
+
+function supportsDefaultWallRestriction({ geometry, placement, partCount }) {
+  if (Number(partCount) > 1) return false;
+  const geometryType = String(geometry?.type ?? "").trim().toLowerCase();
+  const placementMode = String(placement?.mode ?? "fixed").trim().toLowerCase();
+  if (placementMode === "attached-source") return geometryType === "emanation";
+  return placementMode === "fixed" && ["circle", "ring"].includes(geometryType);
 }
 
 function normalizeZoneParts({
