@@ -158,7 +158,7 @@ const wallOfFireLinkedLights = {
   color: "#ff9b42"
 };
 
-const base = ({ id, name, description, category, geometry, elevation = null, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
+const base = ({ id, name, description, category, geometry, elevation = null, obstacles = null, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -173,6 +173,7 @@ const base = ({ id, name, description, category, geometry, elevation = null, par
     ...(placement ? { placement } : {}),
     geometry,
     ...(elevation ? { elevation } : {}),
+    ...(obstacles ? { obstacles } : {}),
     parts,
     triggers,
     movement: movement ?? { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "scene", accumulateRemainder: false, aggregateApplications: true, cellStep: 1 },

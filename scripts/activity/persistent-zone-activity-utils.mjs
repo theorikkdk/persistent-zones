@@ -63,6 +63,11 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const activityUuid = getActivityUuid(activity);
   const itemUuid = getActivityItem(activity)?.uuid ?? null;
   const elevation = buildRuntimeElevation(source.elevation);
+  const obstacles = source.obstacles && typeof source.obstacles === "object" ? {
+    mode: source.obstacles.mode === "wall-restricted" ? "wall-restricted" : "unrestricted",
+    restrictionType: ["sight", "move", "light", "darkness", "sound"].includes(source.obstacles.restrictionType) ? source.obstacles.restrictionType : "sight",
+    priority: Math.max(0, Number.isInteger(Number(source.obstacles.priority)) ? Number(source.obstacles.priority) : 0)
+  } : null;
 
   const definition = {
     schemaVersion: activitySchemaVersion,
@@ -75,6 +80,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     activityType: PERSISTENT_ZONE_ACTIVITY_TYPE,
     placement: { mode: placementMode },
     ...(elevation ? { elevation } : {}),
+    ...(obstacles ? { obstacles } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {

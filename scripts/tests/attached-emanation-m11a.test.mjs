@@ -219,6 +219,35 @@ test("attached regions are excluded from the legacy movement runtime while fixed
   }, [])), true);
 });
 
+test("wall-restricted fixed Regions use native boundary events without legacy duplicate movement", async () => {
+  const target = token("restricted-target");
+  const runtime = {
+    normalizedDefinition: {
+      placement: { mode: "fixed" },
+      obstacles: { mode: "wall-restricted", restrictionType: "sight", priority: 0 },
+      triggers: { onEnter: enabledTrigger(), onExit: enabledTrigger() }
+    },
+    attachedTransitionState: { creationPhase: false, pendingInitialEnterTokenIds: [] }
+  };
+  const region = mockRegion(runtime, [target]);
+  assert.equal(isLegacyMovementRuntimeRegion(region), false);
+  const timings = [];
+  await handleAttachedRegionTransition(region, nativeEvent(target), "onEnter", {
+    applyEffect: async ({ timing, context }) => {
+      timings.push([timing, context.moveSource]);
+      return { applied: true };
+    }
+  });
+  await handleAttachedRegionTransition(region, nativeEvent(target), "onExit", {
+    applyEffect: async ({ timing, context }) => {
+      timings.push([timing, context.moveSource]);
+      return { applied: true };
+    },
+    cleanupStatuses: async () => {}
+  });
+  assert.deepEqual(timings, [["onEnter", "native-restricted-region"], ["onExit", "native-restricted-region"]]);
+});
+
 test("attached emanation configuration remains valid and isolated", () => {
   const config = {
     placement: { mode: "attached-source" },

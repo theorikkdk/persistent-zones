@@ -331,6 +331,7 @@ export function normalizeZoneDefinition(
       definition
     }),
     elevation: normalizeElevationDefinition(definition.elevation),
+    obstacles: normalizeObstaclesDefinition(definition.obstacles),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -1107,6 +1108,16 @@ function normalizeElevationDefinition(value) {
     bottom,
     top,
     topInclusive: Boolean(value.topInclusive)
+  };
+}
+
+function normalizeObstaclesDefinition(value) {
+  if (!isPlainObject(value)) return { mode: "unrestricted", restrictionType: "sight", priority: 0 };
+  const types = ["sight", "move", "light", "darkness", "sound"];
+  return {
+    mode: value.mode === "wall-restricted" ? "wall-restricted" : "unrestricted",
+    restrictionType: types.includes(value.restrictionType) ? value.restrictionType : "sight",
+    priority: Math.max(0, Math.trunc(coerceNumber(value.priority, 0)))
   };
 }
 

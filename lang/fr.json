@@ -29,6 +29,7 @@
           "Web": { "Name": "Toile d'araignée", "Description": "PARTIEL-SÛR — Un carré de 6 m de terrain difficile avec JS de Dextérité, Entravé tant que la cible reste dedans et évasion d'Athlétisme. Ancrage, visibilité réduite et combustion restent manuels." }
         }
       },
+      "Obstacles": { "Title": "Obstacles", "Enabled": "Restreindre la zone par les murs", "RestrictionType": "Type de restriction", "Priority": "Priorité", "Hint": "Utilise les canaux de murs Foundry ; ne représente pas automatiquement le couvert total D&D.", "Types": { "Sight": "Vision", "Move": "Mouvement", "Light": "Lumière", "Darkness": "Ténèbres", "Sound": "Son" } },
       "Elevation": {
         "Title": "Élévation",
         "Enabled": "Limiter verticalement la zone",

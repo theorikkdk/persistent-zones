@@ -101,8 +101,10 @@ export async function handleAttachedRegionTransition(regionDocument, event, timi
 } = {}) {
   if (!isPrimaryGM()) return { applied: false, reason: "not-primary-gm" };
   const runtime = getRegionRuntimeFlags(regionDocument);
-  if (!runtime || runtime?.normalizedDefinition?.placement?.mode !== "attached-source") {
-    return { applied: false, reason: "not-attached-persistent-zone" };
+  const usesNativeBoundaryEvents = runtime?.normalizedDefinition?.placement?.mode === "attached-source" ||
+    runtime?.normalizedDefinition?.obstacles?.mode === "wall-restricted";
+  if (!runtime || !usesNativeBoundaryEvents) {
+    return { applied: false, reason: "not-native-boundary-persistent-zone" };
   }
   if (regionDocument?._destroyed || regionDocument?.parent?.regions?.has?.(regionDocument.id) === false) {
     return { applied: false, reason: "region-deleting" };
@@ -142,7 +144,9 @@ export async function handleAttachedRegionTransition(regionDocument, event, timi
       context: {
         triggerType: timing,
         triggerCause: transition.cause,
-        moveSource: "native-attached-region",
+        moveSource: runtime?.normalizedDefinition?.placement?.mode === "attached-source"
+          ? "native-attached-region"
+          : "native-restricted-region",
         ...(movementResolution ? {
           movementMode: movementResolution.resolvedMovementMode,
           movementModeRaw: movementResolution.rawMovementMode,

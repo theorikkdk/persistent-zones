@@ -123,6 +123,90 @@ test("applies only Activity updates and never touches existing Regions", async (
   assert.deepEqual(result.persistentZone, preset.persistentZone);
 });
 
+test("preset application preserves wall restriction through final Activity application", async () => {
+  const captured = [];
+  const activity = {
+    id: "activity-m11d",
+    item: { async updateActivity(id, updates) { captured.push({ id, updates }); } }
+  };
+  const preset = normalizePreset({
+    id: "fixture.wall-restricted-circle",
+    version: PRESET_SCHEMA_VERSION,
+    name: "Wall restricted circle fixture",
+    persistentZone: {
+      schemaVersion: 3,
+      enabled: true,
+      geometry: { type: "circle", radius: 10, units: "ft" },
+      parts: [],
+      obstacles: { mode: "wall-restricted", restrictionType: "sight", priority: 0 }
+    }
+  });
+  assert.ok(preset);
+  assert.deepEqual(preset.persistentZone.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "sight",
+    priority: 0
+  });
+  const result = await applyPresetToActivity(activity, preset, {
+    scene: { grid: { units: "ft", distance: 5, size: 100 } }
+  });
+  assert.deepEqual(result.persistentZone.obstacles, preset.persistentZone.obstacles);
+  assert.deepEqual(captured.at(-1).updates.persistentZone.obstacles, preset.persistentZone.obstacles);
+});
+
+test("attached preset fixture preserves attachment and wall restriction through Activity application", async () => {
+  const captured = [];
+  const activity = {
+    id: "activity-m11d-attached",
+    item: { async updateActivity(id, updates) { captured.push({ id, updates }); } }
+  };
+  const preset = normalizePreset({
+    id: "fixture.wall-restricted-attached",
+    version: PRESET_SCHEMA_VERSION,
+    name: "Wall restricted attached fixture",
+    persistentZone: {
+      schemaVersion: 3,
+      enabled: true,
+      placement: { mode: "attached-source" },
+      geometry: { type: "emanation", radius: 10, units: "ft" },
+      parts: [],
+      obstacles: { mode: "wall-restricted", restrictionType: "sight", priority: 0 },
+      linkedWalls: { enabled: false },
+      linkedLights: { enabled: false },
+      triggers: {
+        ...buildDisabledTriggersFixture(),
+        enter: { ...buildDisabledTriggersFixture().enter, enabled: true, mode: "simple-effect", simpleEffect: { ...buildDisabledTriggersFixture().enter.simpleEffect, damage: { enabled: true, formula: "1", type: "force" } } },
+        exit: { ...buildDisabledTriggersFixture().exit, enabled: true, mode: "simple-effect", simpleEffect: { ...buildDisabledTriggersFixture().exit.simpleEffect, healing: { enabled: true, formula: "1" } } }
+      }
+    }
+  });
+  assert.ok(preset);
+  const result = await applyPresetToActivity(activity, preset, {
+    scene: { grid: { units: "m", distance: 1.5, size: 100 } }
+  });
+  assert.deepEqual(result.persistentZone.placement, { mode: "attached-source" });
+  assert.equal(result.persistentZone.geometry.type, "emanation");
+  assert.equal(result.persistentZone.geometry.radius, 3);
+  assert.deepEqual(result.persistentZone.parts, []);
+  assert.deepEqual(result.persistentZone.obstacles, {
+    mode: "wall-restricted",
+    restrictionType: "sight",
+    priority: 0
+  });
+  assert.equal(result.persistentZone.linkedWalls.enabled, false);
+  assert.equal(result.persistentZone.linkedLights.enabled, false);
+  assert.deepEqual(result.persistentZone.triggers.enter.simpleEffect.damage, {
+    enabled: true,
+    formula: "1",
+    type: "force"
+  });
+  assert.deepEqual(result.persistentZone.triggers.exit.simpleEffect.healing, {
+    enabled: true,
+    formula: "1"
+  });
+  assert.deepEqual(captured.at(-1).updates.persistentZone, result.persistentZone);
+});
+
 test("replacement removes every stale mono and multipart setting", async () => {
   const state = {
     persistentZone: {

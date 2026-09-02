@@ -108,6 +108,11 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           topInclusive: new fields.BooleanField({ required: false, initial: false }),
           units: new fields.StringField({ required: false, initial: "scene", choices: ["scene", "ft", "m"] })
         }, { required: false, nullable: true, initial: null }),
+        obstacles: new fields.SchemaField({
+          mode: new fields.StringField({ required: false, initial: "unrestricted", choices: ["unrestricted", "wall-restricted"] }),
+          restrictionType: new fields.StringField({ required: false, initial: "sight", choices: ["sight", "move", "light", "darkness", "sound"] }),
+          priority: new fields.NumberField({ required: false, initial: 0, integer: true, min: 0 })
+        }, { required: false, nullable: true, initial: null }),
         parts: new fields.ArrayField(new fields.ObjectField(), {
           required: false
         }),

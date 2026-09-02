@@ -29,6 +29,7 @@
           "Web": { "Name": "Web", "Description": "PARTIAL-SAFE — A 20-foot square of difficult terrain with Dexterity saves, Restrained while inside, and Athletics escape. Anchoring, reduced visibility, and combustion remain manual." }
         }
       },
+      "Obstacles": { "Title": "Obstacles", "Enabled": "Restrict the zone by walls", "RestrictionType": "Restriction type", "Priority": "Priority", "Hint": "Uses Foundry wall channels; this does not automatically represent D&D Total Cover.", "Types": { "Sight": "Sight", "Move": "Movement", "Light": "Light", "Darkness": "Darkness", "Sound": "Sound" } },
       "Elevation": {
         "Title": "Elevation",
         "Enabled": "Limit the zone vertically",

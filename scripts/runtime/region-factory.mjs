@@ -232,6 +232,15 @@ export async function createAttachedEmanationFromActivity(activity, sourceToken)
     globalThis.ui?.notifications?.warn?.("Persistent Zones: this definition is not a supported mono-part attached emanation.");
     return null;
   }
+  const attachedWallRestricted = normalizedDefinition?.obstacles?.mode === "wall-restricted";
+  const restrictedLevelId = attachedWallRestricted
+    ? resolveRestrictedRegionLevelId({ sourceToken, scene })
+    : null;
+  if (attachedWallRestricted && !restrictedLevelId) {
+    globalThis.ui?.notifications?.error?.("Persistent Zones: a wall-restricted attached emanation requires the source token to belong to exactly one Level.");
+    return null;
+  }
+  if (restrictedLevelId) normalizedDefinition.obstacles.levelId = restrictedLevelId;
 
   const sourceContext = {
     item,
@@ -261,10 +270,13 @@ export async function createAttachedEmanationFromActivity(activity, sourceToken)
     architecturePath: REGION_ARCHITECTURE_PATHS.V14_REGION_NATIVE
   });
   initializeAttachedEmanationTransitionState(runtimeFlags);
-  const behaviorData = [buildAttachedEmanationBehaviorData()];
-  if (normalizedDefinition.terrain?.difficult) {
-    behaviorData.push(...buildNativeRegionBehaviors({ normalizedDefinition, sourceContext }));
-  }
+  const behaviorData = normalizedDefinition?.obstacles?.mode === "wall-restricted"
+    ? buildNativeRegionBehaviors({ normalizedDefinition, sourceContext })
+    : [buildAttachedEmanationBehaviorData(), ...(
+      normalizedDefinition.terrain?.difficult
+        ? buildNativeRegionBehaviors({ normalizedDefinition, sourceContext })
+        : []
+    )];
   const RegionClass = globalThis.CONFIG?.Region?.documentClass;
   if (typeof RegionClass?.createTokenEmanation !== "function") {
     globalThis.ui?.notifications?.warn?.("Persistent Zones: Foundry V14 token emanations are unavailable.");
@@ -274,6 +286,15 @@ export async function createAttachedEmanationFromActivity(activity, sourceToken)
   const createdRegion = await RegionClass.createTokenEmanation(sourceToken, radius, {
     name: buildRegionName(normalizedDefinition, sourceContext),
     color: DEFAULT_REGION_COLOR,
+    elevation: resolveRegionElevation(normalizedDefinition, sourceToken.elevation ?? 0),
+    ...(attachedWallRestricted ? {
+      restriction: {
+        enabled: true,
+        type: normalizedDefinition.obstacles.restrictionType,
+        priority: normalizedDefinition.obstacles.priority
+      },
+      levels: [restrictedLevelId]
+    } : {}),
     behaviors: behaviorData,
     flags: buildManagedRegionFlags(runtimeFlags),
     [`flags.${MODULE_ID}.${RUNTIME_FLAG_KEY}`]: runtimeFlags
@@ -1089,7 +1110,11 @@ export async function createManagedRegionFromRegion(regionDocument, {
     };
   }
 
+  if (resolved.runtimeFlags.normalizedDefinition?.obstacles?.mode === "wall-restricted") {
+    initializeAttachedEmanationTransitionState(resolved.runtimeFlags);
+  }
   await applyConfiguredRegionElevation(regionDocument, resolved.runtimeFlags.normalizedDefinition);
+  await applyConfiguredRegionObstacles(regionDocument, resolved.runtimeFlags.normalizedDefinition);
 
   if (resolved.multipartGroupPlan?.parts?.length > 1) {
     return createV14MultipartRegionGroupFromSource(regionDocument, resolved, {
@@ -1227,6 +1252,9 @@ export async function createManagedRegionFromRegion(regionDocument, {
     stage: "v14-native-region-adoption"
   });
   await applyRegionOnCreateTrigger(regionDocument);
+  if ((ensuredRuntimeFlags ?? runtimeFlags).normalizedDefinition?.obstacles?.mode === "wall-restricted") {
+    await finalizeAttachedEmanationCreation(regionDocument);
+  }
 
   return {
     handled: true,
@@ -1250,6 +1278,46 @@ async function applyConfiguredRegionElevation(regionDocument, normalizedDefiniti
   await regionDocument.update({ elevation }, { [MODULE_ID]: { internalElevationSync: true } });
   const actual = regionDocument?.elevation ?? null;
   return true;
+}
+
+async function applyConfiguredRegionObstacles(regionDocument, normalizedDefinition) {
+  const obstacles = normalizedDefinition?.obstacles;
+  if (obstacles?.mode !== "wall-restricted") return false;
+  const multipart = Array.isArray(normalizedDefinition?.parts) && normalizedDefinition.parts.length > 1;
+  if (multipart || !["circle", "ring"].includes(normalizedDefinition?.geometry?.type)) {
+    console.warn("[persistent-zones] Wall restriction supports only mono-part circle, ring, and attached emanation; falling back to unrestricted.");
+    obstacles.mode = "unrestricted";
+    obstacles.fallbackReason = "unsupported-geometry";
+    return false;
+  }
+  const levelId = resolveRestrictedRegionLevelId({ regionDocument });
+  if (!levelId) {
+    console.warn("[persistent-zones] Wall-restricted Region requires a Level; falling back to unrestricted.");
+    obstacles.mode = "unrestricted";
+    obstacles.fallbackReason = "missing-level";
+    return false;
+  }
+  obstacles.levelId = levelId;
+  const restriction = { enabled: true, type: obstacles.restrictionType, priority: obstacles.priority };
+  if (typeof regionDocument?.update !== "function") return false;
+  await regionDocument.update({ restriction, levels: [levelId] }, { [MODULE_ID]: { internalObstacleSync: true } });
+  return true;
+}
+
+export function resolveRestrictedRegionLevelId({ regionDocument = null, sourceToken = null, scene = null } = {}) {
+  const parentScene = scene ?? regionDocument?.parent ?? sourceToken?.parent ?? null;
+  const tokenLevelId = sourceToken?.level?.id ?? sourceToken?._source?.level ?? sourceToken?.level ?? null;
+  const storedLevels = Array.from(regionDocument?._source?.levels ?? regionDocument?.levels ?? [])
+    .map((level) => level?.id ?? level)
+    .filter((level) => typeof level === "string" && level.length > 0);
+  const canvasLevelId = globalThis.canvas?.scene?.id === parentScene?.id
+    ? globalThis.canvas?.level?.id ?? null
+    : null;
+  const candidate = tokenLevelId ?? (storedLevels.length === 1 ? storedLevels[0] : null) ?? canvasLevelId;
+  if (!candidate) return null;
+  const sceneLevels = parentScene?.levels;
+  if (sceneLevels?.has && !sceneLevels.has(candidate)) return null;
+  return candidate;
 }
 
 export async function ensureNativeTerrainBehaviorsForAdoptedRegion(regionDocument, normalizedDefinition, sourceContext) {
@@ -1681,6 +1749,9 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     regionDocument,
     sourceDocumentType: "Region"
   });
+  if (nativeRuntimeFlags.normalizedDefinition?.obstacles?.mode === "wall-restricted") {
+    initializeAttachedEmanationTransitionState(nativeRuntimeFlags);
+  }
   const shapeSummary = summarizeFoundryRegionShapes(serializedShapes);
   const holeShapeCount = serializedShapes.filter((shape) => shape?.hole).length;
   const regionDisplayData = buildV14RegionDisplayCreateData({
@@ -1743,7 +1814,15 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
     name: regionDocument?.name ?? buildRegionName(nativeRuntimeFlags.normalizedDefinition, resolved.sourceContext),
     color: regionDocument?.color ?? DEFAULT_REGION_COLOR,
     hidden: false,
-    elevation: coerceNumber(regionDocument?.elevation, 0),
+    elevation: resolveRegionElevation(nativeRuntimeFlags.normalizedDefinition, coerceNumber(regionDocument?.elevation, 0)),
+    ...(nativeRuntimeFlags.normalizedDefinition?.obstacles?.mode === "wall-restricted" ? {
+      restriction: {
+        enabled: true,
+        type: nativeRuntimeFlags.normalizedDefinition.obstacles.restrictionType,
+        priority: nativeRuntimeFlags.normalizedDefinition.obstacles.priority
+      },
+      levels: [nativeRuntimeFlags.normalizedDefinition.obstacles.levelId]
+    } : {}),
     ...regionDisplayData,
     shapes: serializedShapes,
     behaviors: buildNativeRegionBehaviors({
@@ -2171,6 +2250,9 @@ async function createV14NativeRegionFromResolved(regionDocument, resolved, {
   });
 
   await applyRegionOnCreateTrigger(createdRegion);
+  if (nativeRuntimeFlags.normalizedDefinition?.obstacles?.mode === "wall-restricted") {
+    await finalizeAttachedEmanationCreation(createdRegion);
+  }
 
   return {
     handled: true,
@@ -10371,13 +10453,17 @@ function buildNativeRegionBehaviors({
   normalizedDefinition,
   sourceContext
 }) {
+  const behaviors = [];
+  if (normalizedDefinition?.obstacles?.mode === "wall-restricted" && normalizedDefinition?.obstacles?.levelId) {
+    behaviors.push(buildAttachedEmanationBehaviorData());
+  }
   const terrain = normalizedDefinition?.terrain ?? {};
   if (!terrain.difficult) {
     debug("No native Region movement-cost behavior requested by normalized definition.", {
       label: normalizedDefinition?.label ?? null,
       terrain
     });
-    return [];
+    return behaviors;
   }
 
   const multiplier = coerceNumber(terrain.multiplier, STANDARD_DIFFICULT_TERRAIN_MULTIPLIER);
@@ -10387,7 +10473,7 @@ function buildNativeRegionBehaviors({
       label: normalizedDefinition?.label ?? null,
       behaviorType
     });
-    return [];
+    return behaviors;
   }
 
   const behaviorData = {
@@ -10415,7 +10501,8 @@ function buildNativeRegionBehaviors({
     system: behaviorData.system
   });
 
-  return [behaviorData];
+  behaviors.push(behaviorData);
+  return behaviors;
 }
 
 async function buildRegionShapesFromTemplate(templateDocument) {

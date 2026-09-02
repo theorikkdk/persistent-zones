@@ -20,7 +20,7 @@ const { getPersistentZonePreset } = await import("../presets/preset-library.mjs"
 const { registerPersistentZonePlacementContext, findPersistentZonePlacementContext } = await import("../runtime/persistent-zone-placement-context.mjs");
 const { applyRegionOnCreateTrigger } = await import("../runtime/on-create-runtime.mjs");
 const { testTokenInsideManagedRegion } = await import("../runtime/utils.mjs");
-const { ensureNativeTerrainBehaviorsForAdoptedRegion } = await import("../runtime/region-factory.mjs");
+const { ensureNativeTerrainBehaviorsForAdoptedRegion, resolveRestrictedRegionLevelId } = await import("../runtime/region-factory.mjs");
 const { createManagedRegionFromRegion } = await import("../runtime/region-factory.mjs");
 const { getRegionRuntime } = await import("../runtime/utils.mjs");
 
@@ -31,6 +31,15 @@ test("canonical 10 feet converts to two cells on imperial and metric scenes", ()
   assert.equal(distanceToScenePixels(10, "ft", imperial), 200);
   assert.equal(convertCanonicalDistanceToSceneUnits(10, "ft", metric), 3);
   assert.equal(distanceToScenePixels(10, "ft", metric), 200);
+});
+
+test("restricted Region Level resolution prefers source token and requires a scene Level", () => {
+  const levels = new Map([["ground", { id: "ground" }], ["upper", { id: "upper" }]]);
+  const scene = { id: "scene", levels };
+  assert.equal(resolveRestrictedRegionLevelId({ sourceToken: { parent: scene, level: { id: "upper" } }, scene }), "upper");
+  assert.equal(resolveRestrictedRegionLevelId({ regionDocument: { parent: scene, _source: { levels: ["ground"] } } }), "ground");
+  assert.equal(resolveRestrictedRegionLevelId({ regionDocument: { parent: scene, _source: { levels: [] } } }), null);
+  assert.equal(resolveRestrictedRegionLevelId({ sourceToken: { parent: scene, level: { id: "missing" } }, scene }), null);
 });
 
 test("rectangle serialize and runtime normalization preserve dimensions and centered placement", () => {

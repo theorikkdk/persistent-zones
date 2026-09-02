@@ -63,6 +63,17 @@ test("gridless scenes keep the historical geometric membership path", () => {
   canvas.grid.type = previousType;
 });
 
+test("wall-restricted Regions trust native membership while unrestricted Regions retain 50 percent coverage", () => {
+  const shape = [{ type: "rectangle", x: 0, y: 90, width: 200, height: 200 }];
+  const restricted = region(shape);
+  restricted.flags["persistent-zones"].runtime.normalizedDefinition.obstacles = { mode: "wall-restricted" };
+  const nativeOutside = { ...token(), testInsideRegion: () => false };
+  const nativeInside = { ...token(), testInsideRegion: () => true };
+  assert.equal(testTokenInsideManagedRegion(nativeOutside, restricted), false);
+  assert.equal(testTokenInsideManagedRegion(nativeInside, restricted), true);
+  assert.equal(testTokenInsideManagedRegion(nativeInside, region(shape)), false);
+});
+
 function inside(shapes) {
   return calculateTokenRegionGridCoverage(
     { x: 0, y: 0, width: 1, height: 1 },

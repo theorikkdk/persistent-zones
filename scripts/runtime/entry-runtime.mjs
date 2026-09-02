@@ -685,7 +685,8 @@ function onDeleteToken(tokenDocument) {
 }
 
 export function isLegacyMovementRuntimeRegion(regionDocument) {
-  return getRegionRuntimeFlags(regionDocument)?.normalizedDefinition?.placement?.mode !== "attached-source";
+  const definition = getRegionRuntimeFlags(regionDocument)?.normalizedDefinition;
+  return definition?.placement?.mode !== "attached-source" && definition?.obstacles?.mode !== "wall-restricted";
 }
 
 function clearProcessedMovementExecutionsForToken(tokenDocument) {

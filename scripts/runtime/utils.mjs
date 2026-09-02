@@ -627,6 +627,11 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     }
   }
 
+  const wallRestricted = runtime?.normalizedDefinition?.obstacles?.mode === "wall-restricted";
+  if (wallRestricted) {
+    return nativeInside ?? false;
+  }
+
   const legacyResult = hasVerticalBounds
     ? (nativeInside ?? fallbackInside)
     : isManagedV14Region

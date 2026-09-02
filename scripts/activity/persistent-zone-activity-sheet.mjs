@@ -133,6 +133,10 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
         });
       });
       root.addEventListener("change", (event) => {
+        if (event.target?.matches?.("[data-pz-obstacles-enabled]")) {
+          const mode = root.querySelector("[data-pz-obstacles-mode]");
+          if (mode) mode.value = event.target.checked ? "wall-restricted" : "unrestricted";
+        }
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
@@ -1248,6 +1252,13 @@ export function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
 
 function buildActivityChoices() {
   return {
+    obstacleTypes: [
+      { value: "sight", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Sight" },
+      { value: "move", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Move" },
+      { value: "light", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Light" },
+      { value: "darkness", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Darkness" },
+      { value: "sound", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Sound" }
+    ],
     geometryTypes: [
       { value: "circle", label: "PERSISTENT_ZONES.Activity.Geometry.Circle" },
       { value: "emanation", label: "PERSISTENT_ZONES.Activity.Geometry.Emanation" },
@@ -1447,6 +1458,8 @@ function buildStatusOptions() {
 function updateConditionalVisibility(root) {
   let geometry = root.querySelector("[name='persistentZone.geometry.type']")?.value ?? "circle";
   const placementMode = root.querySelector("[name='persistentZone.placement.mode']")?.value ?? "fixed";
+  const obstaclesEnabled = root.querySelector("[data-pz-obstacles-enabled]")?.checked === true;
+  root.querySelectorAll("[data-pz-obstacles-fields]").forEach((element) => { element.hidden = !obstaclesEnabled; });
   const attached = placementMode === "attached-source";
   if (attached && geometry !== "emanation") {
     const geometrySelect = root.querySelector("[name='persistentZone.geometry.type']");

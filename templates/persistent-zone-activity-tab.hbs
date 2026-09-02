@@ -277,6 +277,17 @@
       <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Top"}} ({{persistentZone.elevation.unitLabel}})</label><input type="number" step="any" name="persistentZone.elevation.top" value="{{persistentZone.elevation.top}}"></div>
       <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusive"}}</label><input type="checkbox" name="persistentZone.elevation.topInclusive" {{#if persistentZone.elevation.topInclusive}}checked{{/if}}><p class="hint">{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusiveHint"}}</p></div>
     </div>
+    <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Obstacles.Title"}}</div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Obstacles.Enabled"}}</label>
+      <input type="checkbox" data-pz-obstacles-enabled {{#if (eq persistentZone.obstacles.mode "wall-restricted")}}checked{{/if}}>
+      <input type="hidden" name="persistentZone.obstacles.mode" data-pz-obstacles-mode value="{{persistentZone.obstacles.mode}}">
+    </div>
+    <div data-pz-obstacles-fields {{#unless (eq persistentZone.obstacles.mode "wall-restricted")}}hidden{{/unless}}>
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Obstacles.RestrictionType"}}</label><select name="persistentZone.obstacles.restrictionType">{{selectOptions persistentZoneChoices.obstacleTypes selected=persistentZone.obstacles.restrictionType localize=true}}</select></div>
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Obstacles.Priority"}}</label><input type="number" min="0" step="1" name="persistentZone.obstacles.priority" value="{{persistentZone.obstacles.priority}}"></div>
+      <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Obstacles.Hint"}}</p>
+    </div>
   </fieldset>
 
   {{#unless persistentZoneMultipartEnabled}}
