@@ -122,6 +122,23 @@
                   <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartWidth"}}</p>
                 </div>
               </div>
+              <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Elevation.Title"}}</div>
+              <div class="form-group">
+                <label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Inherit"}}</label>
+                <input type="checkbox" name="persistentZone.parts.{{partRow.index}}.elevation.inherit" data-pz-part-field="elevation.inherit" data-pz-part-elevation-inherit {{#if partRow.elevation.inherit}}checked{{/if}}>
+              </div>
+              <div data-pz-part-elevation-override {{#if partRow.elevation.inherit}}hidden{{/if}}>
+                <div class="form-group">
+                  <label>{{localize "PERSISTENT_ZONES.Activity.Elevation.EnabledPart"}}</label>
+                  <input type="checkbox" name="persistentZone.parts.{{partRow.index}}.elevation.enabled" data-pz-part-field="elevation.enabled" data-pz-part-elevation-enabled {{#if partRow.elevation.enabled}}checked{{/if}}>
+                </div>
+                <div data-pz-part-elevation-bounds {{#unless partRow.elevation.enabled}}hidden{{/unless}}>
+                  <input type="hidden" name="persistentZone.parts.{{partRow.index}}.elevation.units" data-pz-part-field="elevation.units" value="{{partRow.elevation.units}}">
+                  <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Bottom"}} ({{partRow.elevation.unitLabel}})</label><input type="number" step="any" name="persistentZone.parts.{{partRow.index}}.elevation.bottom" data-pz-part-field="elevation.bottom" value="{{partRow.elevation.bottom}}"></div>
+                  <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Top"}} ({{partRow.elevation.unitLabel}})</label><input type="number" step="any" name="persistentZone.parts.{{partRow.index}}.elevation.top" data-pz-part-field="elevation.top" value="{{partRow.elevation.top}}"></div>
+                  <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusive"}}</label><input type="checkbox" name="persistentZone.parts.{{partRow.index}}.elevation.topInclusive" data-pz-part-field="elevation.topInclusive" {{#if partRow.elevation.topInclusive}}checked{{/if}}><p class="hint">{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusiveHint"}}</p></div>
+                </div>
+              </div>
               {{#if ../persistentZoneUsesActiveTerrain}}
               <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Sections.Terrain"}}</div>
               <div class="form-group">
@@ -131,7 +148,12 @@
               </div>
               {{/if}}
               <details class="persistent-zone-activity__part-trigger-section" data-pz-part-trigger-section>
-                <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</summary>
+                <summary class="persistent-zone-activity__part-subtitle persistent-zone-activity__part-subtitle--triggers">
+                  <span class="persistent-zone-activity__trigger-summary-title">{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</span>
+                  <span class="persistent-zone-activity__trigger-summary-lines" data-pz-part-trigger-summary-lines>
+                    {{#each partRow.triggerSummary as |line|}}<span class="persistent-zone-activity__trigger-summary-line">{{line}}</span>{{/each}}
+                  </span>
+                </summary>
                 <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.PartTriggers"}}</p>
                 <div class="persistent-zone-activity__part-trigger-editor" data-pz-part-trigger-editor></div>
               </details>
@@ -164,18 +186,19 @@
         {{selectOptions persistentZoneChoices.geometryTypes selected=persistentZone.geometry.type localize=true}}
       </select>
     </div>
-    <div data-pz-geometry="circle">
+    <div data-pz-geometry="circle emanation">
       <div class="form-group">
-        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
-        <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
-        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.CircleRadius"}}</p>
-      </div>
-    </div>
-    <div data-pz-geometry="emanation">
-      <div class="form-group">
+        {{#if (eq persistentZone.geometry.type "emanation")}}
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.EmanationRadius"}}</label>
+        {{else}}
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.CircleRadius"}}</label>
+        {{/if}}
         <input type="number" name="persistentZone.geometry.radius" value="{{persistentZone.geometry.radius}}" min="0" step="any">
+        {{#if (eq persistentZone.geometry.type "emanation")}}
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.EmanationRadius"}}</p>
+        {{else}}
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.CircleRadius"}}</p>
+        {{/if}}
       </div>
     </div>
     <div data-pz-geometry="rectangle">
@@ -242,6 +265,17 @@
         <input type="number" name="persistentZone.geometry.wallThickness" value="{{persistentZone.geometry.wallThickness}}" min="0" step="any">
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.WallThickness"}}</p>
       </div>
+    </div>
+    <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Elevation.Title"}}</div>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Enabled"}}</label>
+      <input type="checkbox" name="persistentZone.elevation.enabled" data-pz-elevation-enabled {{#if persistentZone.elevation.enabled}}checked{{/if}}>
+    </div>
+    <div data-pz-elevation-bounds {{#unless persistentZone.elevation.enabled}}hidden{{/unless}}>
+      <input type="hidden" name="persistentZone.elevation.units" value="{{persistentZone.elevation.units}}">
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Bottom"}} ({{persistentZone.elevation.unitLabel}})</label><input type="number" step="any" name="persistentZone.elevation.bottom" value="{{persistentZone.elevation.bottom}}"></div>
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Top"}} ({{persistentZone.elevation.unitLabel}})</label><input type="number" step="any" name="persistentZone.elevation.top" value="{{persistentZone.elevation.top}}"></div>
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusive"}}</label><input type="checkbox" name="persistentZone.elevation.topInclusive" {{#if persistentZone.elevation.topInclusive}}checked{{/if}}><p class="hint">{{localize "PERSISTENT_ZONES.Activity.Elevation.TopInclusiveHint"}}</p></div>
     </div>
   </fieldset>
 

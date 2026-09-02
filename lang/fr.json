@@ -29,6 +29,25 @@
           "Web": { "Name": "Toile d'araignée", "Description": "PARTIEL-SÛR — Un carré de 6 m de terrain difficile avec JS de Dextérité, Entravé tant que la cible reste dedans et évasion d'Athlétisme. Ancrage, visibilité réduite et combustion restent manuels." }
         }
       },
+      "Elevation": {
+        "Title": "Élévation",
+        "Enabled": "Limiter verticalement la zone",
+        "Inherit": "Utiliser l’élévation générale",
+        "EnabledPart": "Limiter verticalement cette partie",
+        "Bottom": "Bas",
+        "Top": "Haut",
+        "TopInclusive": "Inclure la limite haute",
+        "TopInclusiveHint": "La hauteur maximale appartient encore à la zone."
+      },
+      "TriggerSummary": {
+        "None": "Aucun",
+        "Damage": "{formula} dégâts de {type}",
+        "Healing": "{formula} soins",
+        "TemporaryHitPoints": "{formula} PV temporaires",
+        "Save": "JDS {ability} {outcome}",
+        "Half": "moitié",
+        "NoneOnSuccess": "aucun"
+      },
       "Help": {
         "ActivityConfig": "Crée une zone persistante unique, ou active les parties pour créer plusieurs zones logiques depuis le même placement.",
         "Multipart": "En mode zone unique, les Déclenchements ci-dessous s'appliquent à cette zone. Avec les parties activées, chaque partie possède ses propres Déclenchements ; Mouvement, Murs liés et Lumières liées restent des réglages généraux du placement.",
@@ -146,7 +165,7 @@
         "LinkedActivity": "Activité à exécuter",
         "StopMovement": "Arrêter le mouvement",
         "MovementInterruption": "Interruption du mouvement",
-        "DifficultTerrain": "Terrain de la zone",
+        "DifficultTerrain": "Terrain difficile",
         "TerrainMultiplier": "Multiplicateur de terrain",
         "CreateWalls": "Créer des murs liés",
         "LinkedWallGeometry": "Géométrie des murs liés",

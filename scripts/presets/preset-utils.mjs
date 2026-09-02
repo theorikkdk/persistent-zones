@@ -92,8 +92,13 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
 
   const sourceUnits = normalizeCanonicalDistanceUnit(geometry.units);
   const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
-  if (sourceUnits === "scene" || sceneUnits === "scene") return resolved;
-
+  if (sourceUnits === "scene" || sceneUnits === "scene") {
+    convertElevationForScene(resolved.elevation, scene, sceneUnits);
+    for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
+      convertElevationForScene(part?.elevation, scene, sceneUnits);
+    }
+    return resolved;
+  }
   for (const field of [
     "width", "height", "radius", "ringReferenceRadius", "ringInnerWidth", "ringOuterWidth",
     "wallLength", "wallThickness"
@@ -108,7 +113,9 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
       if (partGeometry[field] === undefined || partGeometry[field] === null) continue;
       partGeometry[field] = convertCanonicalDistanceToSceneUnits(partGeometry[field], sourceUnits, scene);
     }
+    convertElevationForScene(part?.elevation, scene, sceneUnits);
   }
+  convertElevationForScene(resolved.elevation, scene, sceneUnits);
   if (isObject(resolved.linkedWalls) && resolved.linkedWalls.height !== undefined && resolved.linkedWalls.height !== null) {
     resolved.linkedWalls.height = convertCanonicalDistanceToSceneUnits(resolved.linkedWalls.height, sourceUnits, scene);
   }
@@ -124,6 +131,17 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   }
   geometry.units = sceneUnits;
   return resolved;
+}
+
+function convertElevationForScene(elevation, scene, sceneUnits) {
+  if (!isObject(elevation) || elevation.enabled === false || elevation.inherit === true) return;
+  const sourceUnits = normalizeCanonicalDistanceUnit(elevation.units);
+  if (sourceUnits === "scene" || sceneUnits === "scene") return;
+  for (const field of ["bottom", "top"]) {
+    if (elevation[field] === undefined || elevation[field] === null) continue;
+    elevation[field] = convertCanonicalDistanceToSceneUnits(elevation[field], sourceUnits, scene);
+  }
+  elevation.units = sceneUnits;
 }
 
 export function sanitizePersistentZoneConfiguration(value) {

@@ -20,6 +20,7 @@ const { buildLegacyDefinitionFromPersistentZoneActivity } = await import(
   "../activity/persistent-zone-activity-utils.mjs"
 );
 const { normalizeZoneDefinition } = await import("../runtime/zone-definition.mjs");
+const { resolveRegionElevation } = await import("../runtime/region-factory.mjs");
 const { buildManagedRegionFlags, getRegionRuntime } = await import("../runtime/utils.mjs");
 const {
   buildInitialMultipartPart,
@@ -308,14 +309,62 @@ function normalize(config) {
     ...buildConfig({ schemaVersion: 3 }),
     elevation: { bottom: 0, top: 10, topInclusive: true }
   });
-  assert.deepEqual(submitted.elevation, { bottom: 0, top: 10, topInclusive: true });
+  assert.deepEqual(submitted.elevation, { enabled: true, bottom: 0, top: 10, topInclusive: true, units: "scene" });
   const normalized = normalize(submitted);
   assert.deepEqual(normalized.elevation, { bottom: 0, top: 10, topInclusive: true });
 }
 
 {
+  globalThis.canvas.scene = { grid: { units: "m", distance: 1.5 } };
+  const submitted = normalizePersistentZoneActivitySubmitData({
+    ...buildConfig({ schemaVersion: 3 }),
+    elevation: { enabled: true, bottom: 0, top: 10, topInclusive: false, units: "ft" },
+    parts: [
+      { id: "inherit", geometry: { type: "template" }, elevation: { inherit: true } },
+      { id: "override", geometry: { type: "template" }, elevation: { inherit: false, enabled: true, bottom: 0, top: 5, units: "ft" } },
+      { id: "unlimited", geometry: { type: "template" }, elevation: { inherit: false, enabled: false } }
+    ]
+  });
+  const definition = convert(submitted);
+  const normalized = normalizeZoneDefinition(definition);
+  assert.deepEqual(normalized.elevation, { bottom: 0, top: 3, topInclusive: false });
+  assert.deepEqual(normalized.parts[0].elevation, normalized.elevation, "legacy/missing part override inherits global bounds");
+  assert.deepEqual(normalized.parts[1].elevation, { bottom: 0, top: 1.5, topInclusive: false });
+  assert.equal(normalized.parts[1].elevationInherited, false);
+  assert.equal(normalized.parts[2].elevation, null, "explicit disabled part override is vertically unlimited");
+  assert.equal(normalized.parts[2].elevationInherited, false);
+  assert.deepEqual(resolveRegionElevation({ elevation: normalized.parts[0].elevation }, 0), {
+    bottom: 0, top: 3, topInclusive: false
+  }, "inherited part bounds reach the final Region payload");
+  assert.deepEqual(resolveRegionElevation({ elevation: normalized.parts[1].elevation }, 0), {
+    bottom: 0, top: 1.5, topInclusive: false
+  }, "part override bounds reach the final Region payload");
+  assert.deepEqual(resolveRegionElevation({ elevationOverrideUnlimited: true }, 0), {
+    bottom: null, top: null, topInclusive: false
+  }, "explicit unlimited override clears native Region bounds");
+  globalThis.canvas.scene = null;
+}
+
+{
   const legacy = normalize(buildConfig({ schemaVersion: 3 }));
   assert.equal(legacy.elevation, null, "legacy definitions without vertical bounds remain unchanged");
+}
+
+{
+  const disabled = normalizePersistentZoneActivitySubmitData({
+    ...buildConfig({ schemaVersion: 3 }),
+    elevation: { enabled: false, bottom: 0, top: 8, topInclusive: true, units: "m" }
+  });
+  assert.deepEqual(disabled.elevation, {
+    enabled: false, bottom: 0, top: 8, topInclusive: true, units: "m"
+  }, "disabled UI elevation retains its editable bounds");
+  assert.equal(normalize(disabled).elevation, null, "disabled UI elevation remains mechanically unlimited");
+  const historical = normalizePersistentZoneActivitySubmitData({
+    ...buildConfig({ schemaVersion: 3 }),
+    elevation: { bottom: 0, top: 8, topInclusive: false, units: "m" }
+  });
+  assert.equal(historical.elevation.enabled, true, "pre-UI M11C bounds default to enabled");
+  assert.deepEqual(normalize(historical).elevation, { bottom: 0, top: 8, topInclusive: false });
 }
 
 {

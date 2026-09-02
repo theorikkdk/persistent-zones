@@ -7192,7 +7192,10 @@ function buildRegionCreateData({
   };
 }
 
-function resolveRegionElevation(normalizedDefinition, fallback = 0) {
+export function resolveRegionElevation(normalizedDefinition, fallback = 0) {
+  if (normalizedDefinition?.elevationOverrideUnlimited === true) {
+    return { bottom: null, top: null, topInclusive: false };
+  }
   const configured = normalizedDefinition?.elevation;
   if (configured && typeof configured === "object" &&
       (configured.bottom !== null || configured.top !== null)) {
@@ -9579,6 +9582,10 @@ function buildPartRuntimeDefinition(normalizedDefinition, zonePart, {
     ...duplicateData(normalizedDefinition),
     label: zonePart?.label ?? normalizedDefinition?.label ?? "Persistent Zone",
     geometry: duplicateData(zonePart?.geometry ?? { type: "template" }),
+    elevation: duplicateData(zonePart?.elevationInherited === false
+      ? zonePart?.elevation ?? null
+      : normalizedDefinition?.elevation ?? null),
+    elevationOverrideUnlimited: zonePart?.elevationInherited === false && !zonePart?.elevation,
     interaction: duplicateData(zonePart?.interaction ?? normalizedDefinition?.interaction ?? { mode: "area" }),
     targeting: duplicateData(targetingEffective),
     targetingGlobal,

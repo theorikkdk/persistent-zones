@@ -29,6 +29,25 @@
           "Web": { "Name": "Web", "Description": "PARTIAL-SAFE — A 20-foot square of difficult terrain with Dexterity saves, Restrained while inside, and Athletics escape. Anchoring, reduced visibility, and combustion remain manual." }
         }
       },
+      "Elevation": {
+        "Title": "Elevation",
+        "Enabled": "Limit the zone vertically",
+        "Inherit": "Use global elevation",
+        "EnabledPart": "Limit this part vertically",
+        "Bottom": "Bottom",
+        "Top": "Top",
+        "TopInclusive": "Include the upper limit",
+        "TopInclusiveHint": "The maximum height still belongs to the zone."
+      },
+      "TriggerSummary": {
+        "None": "None",
+        "Damage": "{formula} {type} damage",
+        "Healing": "{formula} healing",
+        "TemporaryHitPoints": "{formula} temporary HP",
+        "Save": "{ability} save {outcome}",
+        "Half": "half",
+        "NoneOnSuccess": "none"
+      },
       "Help": {
         "ActivityConfig": "Create one persistent zone, or enable zone parts to create several logical zones from the same placement.",
         "Multipart": "In single-zone mode, the Triggers below apply to one zone. With zone parts enabled, each part has its own Triggers; Movement, Linked Walls, and Linked Lights remain general placement settings.",
@@ -146,7 +165,7 @@
         "LinkedActivity": "Activity to execute",
         "StopMovement": "Stop movement",
         "MovementInterruption": "Movement interruption",
-        "DifficultTerrain": "Zone terrain",
+        "DifficultTerrain": "Difficult Terrain",
         "TerrainMultiplier": "Terrain multiplier",
         "CreateWalls": "Create linked walls",
         "LinkedWallGeometry": "Linked wall geometry",

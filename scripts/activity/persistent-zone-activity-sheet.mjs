@@ -64,6 +64,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     const config = this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
     const activitySchemaVersion = resolveStoredActivitySchemaVersion(this.activity, config);
     context.persistentZone = normalizePersistentZoneActivitySubmitData(duplicateData(config));
+    context.persistentZone.elevation = prepareElevationForScene(context.persistentZone.elevation);
     context.persistentZoneChoices = buildActivityChoices();
     context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity);
     context.persistentZoneDamageTypes = buildDamageTypeOptions(config?.damage?.type);
@@ -240,10 +241,22 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     foundry.utils.setProperty(submitData, "target.override", true);
     foundry.utils.setProperty(submitData, "target.prompt", true);
     foundry.utils.setProperty(submitData, "target.template", targetTemplate);
-
-    const result = await super._processSubmitData(event, submitData);
-    return result;
+    return super._processSubmitData(event, submitData);
   }
+
+  _prepareSubmitData(event, formData) {
+    const submitData = super._prepareSubmitData(event, formData);
+    const root = this.element?.querySelector?.(".persistent-zone-activity");
+    applyExplicitPersistentZoneCheckboxStates(submitData, root);
+    return submitData;
+  }
+}
+
+export function applyExplicitPersistentZoneCheckboxStates(submitData, root) {
+  root?.querySelectorAll?.("input[type='checkbox'][name^='persistentZone.']:not(:disabled)")?.forEach((checkbox) => {
+    foundry.utils.setProperty(submitData, checkbox.name, checkbox.checked === true);
+  });
+  return submitData;
 }
 
 export function mergePersistentZoneActivitySubmitData(existingDefinition, submittedDefinition) {
@@ -438,6 +451,11 @@ async function patchMultipartFieldById(parts, {
     patchMultipartGeometryDistances(target.geometry, { gap: value });
   } else if (field === "geometry.width") {
     patchMultipartGeometryDistances(target.geometry, { width: value });
+  } else if (field?.startsWith("elevation.")) {
+    target.elevation = target.elevation && typeof target.elevation === "object" && !Array.isArray(target.elevation)
+      ? target.elevation
+      : { inherit: true };
+    foundry.utils.setProperty(target, field, value);
   } else if (field === "terrain.enabled") {
     target.terrain = target.terrain && typeof target.terrain === "object" && !Array.isArray(target.terrain)
       ? target.terrain
@@ -542,6 +560,12 @@ function patchMultipartPartsById(existingParts = [], submittedParts = []) {
         ? patched.terrain
         : {};
       patched.terrain.enabled = Boolean(submittedPart.terrain.enabled);
+    }
+    if (submittedPart?.elevation && typeof submittedPart.elevation === "object" && !Array.isArray(submittedPart.elevation)) {
+      patched.elevation = {
+        ...(patched.elevation && typeof patched.elevation === "object" ? patched.elevation : {}),
+        ...foundry.utils.deepClone(submittedPart.elevation)
+      };
     }
     if (existingIndex === undefined) {
       existingIndexById.set(id, patchedParts.length);
@@ -687,6 +711,8 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       referenceOptions.push({ value: referencePartId, label: referencePartId, selected: true, invalid: true });
     }
     const distances = getMultipartGeometryDistances(part?.geometry ?? {});
+    const elevation = preparePartElevationForScene(part?.elevation);
+    const triggerRows = buildTriggerRows(normalizeActivityTriggers(effectiveTriggers), activity);
     return {
       index,
       number: index + 1,
@@ -694,7 +720,8 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       label: part?.label ?? part?.id ?? "",
       role,
       hasOwnTriggers,
-      triggerRows: buildTriggerRows(normalizeActivityTriggers(effectiveTriggers), activity),
+      triggerRows,
+      triggerSummary: buildMultipartTriggerSummary(triggerRows),
       geometryType,
       derivedGeometry: isDerivedMultipartGeometryType(geometryType),
       geometryCompatibilityWarning: isDerivedMultipartGeometryType(geometryType) && geometryType !== supportedDerivedGeometryType,
@@ -702,11 +729,41 @@ function buildMultipartPartRows(parts = [], mainGeometryType = "circle", activit
       sideOptions: buildMultipartSideOptions(geometryType, part?.geometry?.side),
       gap: distances.gap,
       width: distances.width,
+      elevation,
       terrainEnabled: Boolean(part?.terrain?.enabled),
       roleOptions: buildPreservingChoiceOptions(["primary", "secondary"], role, "PERSISTENT_ZONES.Activity.Parts.Roles"),
       geometryTypeOptions: buildMultipartGeometryTypeOptions(supportedDerivedGeometryType, geometryType)
     };
   });
+}
+
+function prepareElevationForScene(value, scene = globalThis.canvas?.scene ?? null) {
+  const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
+  const sourceUnits = normalizeCanonicalDistanceUnit(value?.units);
+  const enabled = Boolean(value && value.enabled !== false &&
+    (value.bottom !== null || value.top !== null));
+  return {
+    enabled,
+    bottom: value?.bottom === null || value?.bottom === undefined
+      ? 0
+      : convertCanonicalDistanceToSceneUnits(value.bottom, sourceUnits, scene),
+    top: value?.top === null || value?.top === undefined
+      ? (sceneUnits === "m" ? 3 : 10)
+      : convertCanonicalDistanceToSceneUnits(value.top, sourceUnits, scene),
+    topInclusive: Boolean(value?.topInclusive),
+    units: sceneUnits,
+    unitLabel: sceneUnits === "m" ? "m" : sceneUnits === "ft" ? "ft" : String(scene?.grid?.units ?? "")
+  };
+}
+
+function preparePartElevationForScene(value, scene = globalThis.canvas?.scene ?? null) {
+  const inherit = !value || value.inherit !== false;
+  const prepared = prepareElevationForScene(value, scene);
+  return {
+    ...prepared,
+    inherit,
+    enabled: inherit ? false : value?.enabled !== false
+  };
 }
 
 function resolveSupportedDerivedMultipartGeometryType(mainGeometryType) {
@@ -797,11 +854,16 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   if (config.elevation && typeof config.elevation === "object") {
     const bottom = Number(config.elevation.bottom);
     const top = Number(config.elevation.top);
-    if (Number.isFinite(bottom) || Number.isFinite(top)) {
+    const hasBounds = Number.isFinite(bottom) || Number.isFinite(top);
+    const enabled = config.elevation.enabled === true ||
+      (config.elevation.enabled == null && hasBounds);
+    if (hasBounds) {
       config.elevation = {
+        enabled,
         bottom: Number.isFinite(bottom) ? bottom : null,
         top: Number.isFinite(top) ? top : null,
-        topInclusive: Boolean(config.elevation.topInclusive)
+        topInclusive: Boolean(config.elevation.topInclusive),
+        units: normalizeCanonicalDistanceUnit(config.elevation.units)
       };
     } else {
       delete config.elevation;
@@ -861,11 +923,32 @@ function normalizeActivityParts(parts) {
       normalized.role = String(normalized.role ?? (index === 0 ? "primary" : "secondary")).trim();
       normalized.geometry = normalizeActivityPartObject(normalized.geometry);
       normalized.geometry.type = String(normalized.geometry.type ?? "template").trim().toLowerCase();
+      normalized.elevation = normalizeActivityPartElevation(normalized.elevation);
       if (Object.hasOwn(normalized, "terrain")) {
         normalized.terrain = normalizeActivityPartTerrain(normalized.terrain);
       }
       return normalized;
     });
+}
+
+function normalizeActivityPartElevation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { inherit: true };
+  }
+  const inherit = value.inherit !== false;
+  if (inherit) return { ...foundry.utils.deepClone(value), inherit: true };
+  const enabled = value.enabled !== false;
+  const bottom = Number(value.bottom);
+  const top = Number(value.top);
+  return {
+    ...foundry.utils.deepClone(value),
+    inherit: false,
+    enabled,
+    bottom: Number.isFinite(bottom) ? bottom : null,
+    top: Number.isFinite(top) ? top : null,
+    topInclusive: Boolean(value.topInclusive),
+    units: normalizeCanonicalDistanceUnit(value.units)
+  };
 }
 
 function buildUniquePartId(value, index, usedIds) {
@@ -1377,7 +1460,7 @@ function updateConditionalVisibility(root) {
     });
   });
   root.querySelectorAll("[data-pz-geometry]").forEach((element) => {
-    const applicable = element.dataset.pzGeometry === geometry;
+    const applicable = String(element.dataset.pzGeometry ?? "").split(/\s+/).includes(geometry);
     element.hidden = !applicable;
     element.querySelectorAll("input, select, textarea, button").forEach((control) => {
       control.disabled = !applicable;
@@ -1409,7 +1492,15 @@ function updateConditionalVisibility(root) {
         control.disabled = !derivedGeometryEnabled;
       });
     });
+    const elevationInherited = partCard.querySelector("[data-pz-part-elevation-inherit]")?.checked !== false;
+    const elevationEnabled = partCard.querySelector("[data-pz-part-elevation-enabled]")?.checked === true;
+    setConditionalControls(partCard.querySelector("[data-pz-part-elevation-override]"), !elevationInherited);
+    setConditionalControls(partCard.querySelector("[data-pz-part-elevation-bounds]"), !elevationInherited && elevationEnabled);
+    updateMultipartTriggerSummary(partCard);
   });
+
+  const elevationEnabled = root.querySelector("[data-pz-elevation-enabled]")?.checked === true;
+  setConditionalControls(root.querySelector("[data-pz-elevation-bounds]"), elevationEnabled, { disable: false });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
     const enabled = element.querySelector(":scope > .persistent-zone-activity__trigger-header input[type='checkbox']")?.checked === true;
@@ -1468,6 +1559,129 @@ function updateConditionalVisibility(root) {
       field.hidden = !enabled || field.dataset.pzStatusEscapeCheck !== checkType;
     });
   });
+}
+
+export function buildMultipartTriggerSummary(triggerRows = []) {
+  const activeRows = Array.from(triggerRows ?? []).filter((row) => row?.state?.enabled === true);
+  if (!activeRows.length) return [localize("PERSISTENT_ZONES.Activity.TriggerSummary.None")];
+  return activeRows.map((row) => {
+    const fragments = [String(row?.label ?? "").trim()].filter(Boolean);
+    const simple = row?.state?.simpleEffect ?? {};
+    for (const damage of normalizeSummaryEffectEntries(simple.damage)) {
+      if (!damage?.enabled || !damage?.formula) continue;
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Damage", {
+        formula: damage.formula,
+        type: resolveDamageTypeLabel(damage.type)
+      }));
+    }
+    for (const healing of normalizeSummaryEffectEntries(simple.healing)) {
+      if (!healing?.enabled || !healing?.formula) continue;
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Healing", { formula: healing.formula }));
+    }
+    for (const temporaryHitPoints of normalizeSummaryEffectEntries(simple.temporaryHitPoints)) {
+      if (!temporaryHitPoints?.enabled || !temporaryHitPoints?.formula) continue;
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.TemporaryHitPoints", {
+        formula: temporaryHitPoints.formula
+      }));
+    }
+    if (simple.save?.enabled) {
+      const ability = resolveAbilityLabel(simple.save.ability);
+      const outcome = simple.save.onSave === "half"
+        ? localize("PERSISTENT_ZONES.Activity.TriggerSummary.Half")
+        : localize("PERSISTENT_ZONES.Activity.TriggerSummary.NoneOnSuccess");
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Save", { ability, outcome }));
+    }
+    for (const statuses of normalizeSummaryEffectEntries(simple.statuses)) {
+      if (!statuses?.enabled || !statuses?.statusId) continue;
+      fragments.push(resolveStatusLabel(statuses.statusId));
+    }
+    return fragments.join(" • ");
+  });
+}
+
+function normalizeSummaryEffectEntries(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  if (Object.hasOwn(value, "enabled") || Object.hasOwn(value, "formula") || Object.hasOwn(value, "statusId")) return [value];
+  return Object.values(value).filter((entry) => entry && typeof entry === "object");
+}
+
+function formatLocalization(key, data) {
+  return game.i18n?.format?.(key, data) ?? Object.entries(data ?? {}).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    localize(key)
+  );
+}
+
+function resolveAbilityLabel(ability) {
+  const config = CONFIG.DND5E?.abilities?.[ability];
+  return localize(config?.abbreviation ?? config?.label ?? String(ability ?? "").toUpperCase());
+}
+
+function resolveDamageTypeLabel(type) {
+  const config = CONFIG.DND5E?.damageTypes?.[type];
+  return localize(config?.label ?? String(type ?? ""));
+}
+
+function resolveStatusLabel(statusId) {
+  const status = Array.from(CONFIG.statusEffects ?? []).find((entry) => entry?.id === statusId);
+  return localize(status?.name ?? status?.label ?? statusId);
+}
+
+function setConditionalControls(element, visible, { disable = true } = {}) {
+  if (!element) return;
+  element.hidden = !visible;
+  element.querySelectorAll("input, select, textarea, button").forEach((control) => {
+    if (disable) control.disabled = !visible;
+    else control.disabled = false;
+  });
+}
+
+function updateMultipartTriggerSummary(partCard) {
+  const summaryLines = partCard?.querySelector?.("[data-pz-part-trigger-summary-lines]");
+  if (!summaryLines) return;
+  const activeSections = Array.from(partCard.querySelectorAll("[data-pz-part-trigger-editor] [data-pz-trigger]"))
+    .filter((section) => section.querySelector(".persistent-zone-activity__trigger-header input[type='checkbox']")?.checked === true);
+  const lines = [];
+  for (const section of activeSections) {
+    const fragments = [section.querySelector(".persistent-zone-activity__trigger-header label")?.textContent?.trim()].filter(Boolean);
+    const checked = (suffix) => section.querySelector(`input[name$='${suffix}']`)?.checked === true;
+    const value = (suffix) => section.querySelector(`[name$='${suffix}']`)?.value ?? "";
+    const selectedText = (suffix) => section.querySelector(`[name$='${suffix}']`)?.selectedOptions?.[0]?.textContent?.trim() ?? "";
+    if (checked(".simpleEffect.damage.enabled") && value(".simpleEffect.damage.formula")) {
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Damage", {
+        formula: value(".simpleEffect.damage.formula"),
+        type: selectedText(".simpleEffect.damage.type")
+      }));
+    }
+    if (checked(".simpleEffect.healing.enabled") && value(".simpleEffect.healing.formula")) {
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Healing", {
+        formula: value(".simpleEffect.healing.formula")
+      }));
+    }
+    if (checked(".simpleEffect.temporaryHitPoints.enabled") && value(".simpleEffect.temporaryHitPoints.formula")) {
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.TemporaryHitPoints", {
+        formula: value(".simpleEffect.temporaryHitPoints.formula")
+      }));
+    }
+    if (checked(".simpleEffect.save.enabled")) {
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Save", {
+        ability: selectedText(".simpleEffect.save.ability"),
+        outcome: selectedText(".simpleEffect.save.onSave")
+      }));
+    }
+    if (checked(".simpleEffect.statuses.enabled") && value(".simpleEffect.statuses.statusId")) {
+      fragments.push(selectedText(".simpleEffect.statuses.statusId"));
+    }
+    lines.push(fragments.join(" • "));
+  }
+  if (!lines.length) lines.push(localize("PERSISTENT_ZONES.Activity.TriggerSummary.None"));
+  summaryLines.replaceChildren(...lines.map((line) => {
+    const span = summaryLines.ownerDocument.createElement("span");
+    span.className = "persistent-zone-activity__trigger-summary-line";
+    span.textContent = line;
+    return span;
+  }));
 }
 
 function buildSkillOptions() {

@@ -162,7 +162,7 @@ test("replacement removes every stale mono and multipart setting", async () => {
   assert.deepEqual(state.persistentZone.parts, []);
 });
 
-test("visible library contains the validated SRD spell presets", () => {
+test("visible library contains only validated SRD presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
@@ -170,6 +170,31 @@ test("visible library contains the validated SRD spell presets", () => {
     "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
+  assert.equal(ids.some((id) => id.startsWith("test.")), false);
+});
+
+test("preset scene conversion preserves bounded mono and multipart elevation", () => {
+  const fixture = {
+    geometry: { type: "circle", radius: 10, units: "ft" },
+    elevation: { enabled: true, bottom: 0, top: 10, topInclusive: false, units: "ft" },
+    parts: [
+      { id: "primary", geometry: { type: "template" }, elevation: { inherit: true } },
+      {
+        id: "secondary",
+        geometry: { type: "template" },
+        elevation: { inherit: false, enabled: true, bottom: 0, top: 5, topInclusive: false, units: "ft" }
+      }
+    ]
+  };
+  const metric = { grid: { units: "m", distance: 1.5 } };
+  const resolved = resolvePresetPersistentZoneForScene(fixture, metric);
+  assert.deepEqual(resolved.elevation, {
+    enabled: true, bottom: 0, top: 3, topInclusive: false, units: "m"
+  });
+  assert.deepEqual(resolved.parts[0].elevation, { inherit: true });
+  assert.deepEqual(resolved.parts[1].elevation, {
+    inherit: false, enabled: true, bottom: 0, top: 1.5, topInclusive: false, units: "m"
+  });
 });
 
 test("preset extraction and application preserve frequency configuration", async () => {

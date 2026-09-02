@@ -1224,6 +1224,11 @@ function normalizeZonePart(partLikeDefinition, index, {
     partTargetingDefinition ?? {}
   );
   const effectiveTargeting = normalizeTargeting(mergedTargetingDefinition);
+  const elevationOverrideUnlimited = partDefinition?.elevation?.mode === "unlimited";
+  const explicitPartElevation = elevationOverrideUnlimited
+    ? null
+    : normalizeElevationDefinition(partDefinition.elevation);
+  const elevationInherited = !elevationOverrideUnlimited && !explicitPartElevation;
 
   return {
     ...duplicateData(partDefinition),
@@ -1234,6 +1239,10 @@ function normalizeZonePart(partLikeDefinition, index, {
       templateDefinition,
       definition: partDefinition
     }),
+    elevation: elevationInherited
+      ? duplicateData(normalizedDefinition.elevation)
+      : duplicateData(explicitPartElevation),
+    elevationInherited,
     targeting: duplicateData(effectiveTargeting),
     targetingGlobal: duplicateData(globalTargeting),
     targetingPart: duplicateData(partTargeting),

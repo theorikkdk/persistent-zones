@@ -62,6 +62,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const activityId = getActivityId(activity);
   const activityUuid = getActivityUuid(activity);
   const itemUuid = getActivityItem(activity)?.uuid ?? null;
+  const elevation = buildRuntimeElevation(source.elevation);
 
   const definition = {
     schemaVersion: activitySchemaVersion,
@@ -73,9 +74,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     activityUuid,
     activityType: PERSISTENT_ZONE_ACTIVITY_TYPE,
     placement: { mode: placementMode },
-    ...(source.elevation && typeof source.elevation === "object" ? {
-      elevation: duplicate(source.elevation)
-    } : {}),
+    ...(elevation ? { elevation } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {
@@ -134,7 +133,8 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
       save,
       movement,
       itemUuid,
-      activityId
+      activityId,
+      globalElevation: elevation
     });
   }
 
@@ -146,10 +146,19 @@ function buildRuntimePartDefinitions(parts, {
   save = {},
   movement = {},
   itemUuid = null,
-  activityId = null
+  activityId = null,
+  globalElevation = null
 } = {}) {
   return parts.map((part) => {
     const runtimePart = duplicate(part);
+    const partElevation = part?.elevation;
+    if (!partElevation || partElevation.inherit !== false) {
+      delete runtimePart.elevation;
+    } else if (partElevation.enabled === false) {
+      runtimePart.elevation = { mode: "unlimited" };
+    } else {
+      runtimePart.elevation = buildRuntimeElevation(partElevation) ?? duplicate(globalElevation);
+    }
     if (part?.triggers && typeof part.triggers === "object") {
       runtimePart.triggers = buildRuntimePartTriggerDefinitions(part.triggers, {
         damage: part.damage ?? damage,
@@ -161,6 +170,19 @@ function buildRuntimePartDefinitions(parts, {
     }
     return runtimePart;
   });
+}
+
+function buildRuntimeElevation(value, scene = globalThis.canvas?.scene ?? null) {
+  if (!value || typeof value !== "object" || value.enabled === false) return null;
+  const units = normalizeCanonicalDistanceUnit(value.units);
+  const bottom = value.bottom === null || value.bottom === undefined || value.bottom === ""
+    ? null
+    : convertCanonicalDistanceToSceneUnits(value.bottom, units, scene);
+  const top = value.top === null || value.top === undefined || value.top === ""
+    ? null
+    : convertCanonicalDistanceToSceneUnits(value.top, units, scene);
+  if (bottom === null && top === null) return null;
+  return { bottom, top, topInclusive: Boolean(value.topInclusive) };
 }
 
 function buildRuntimePartTriggerDefinitions(triggers, context) {

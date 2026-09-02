@@ -102,9 +102,11 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           })
         }),
         elevation: new fields.SchemaField({
+          enabled: new fields.BooleanField({ required: false, initial: false }),
           bottom: new fields.NumberField({ required: false, nullable: true, initial: null }),
           top: new fields.NumberField({ required: false, nullable: true, initial: null }),
-          topInclusive: new fields.BooleanField({ required: false, initial: false })
+          topInclusive: new fields.BooleanField({ required: false, initial: false }),
+          units: new fields.StringField({ required: false, initial: "scene", choices: ["scene", "ft", "m"] })
         }, { required: false, nullable: true, initial: null }),
         parts: new fields.ArrayField(new fields.ObjectField(), {
           required: false

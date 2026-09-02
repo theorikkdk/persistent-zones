@@ -800,6 +800,27 @@
   font-weight: 600;
 }
 
+.persistent-zone-activity__part-subtitle--triggers {
+  display: list-item;
+}
+
+.persistent-zone-activity__trigger-summary-title {
+  font-weight: 700;
+}
+
+.persistent-zone-activity__trigger-summary-lines {
+  display: grid;
+  gap: 0.15rem;
+  margin-top: 0.15rem;
+}
+
+.persistent-zone-activity__trigger-summary-line {
+  display: block;
+  font-size: 0.82em;
+  font-weight: 400;
+  opacity: 0.78;
+}
+
 .persistent-zone-activity__section {
   background: color-mix(in srgb, var(--color-bg-option, transparent) 28%, transparent);
 }
