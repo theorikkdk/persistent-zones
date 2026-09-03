@@ -98,8 +98,8 @@ const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "a
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, parts, triggers, movement, terrain, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain }),
+const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, parts, triggers, movement, terrain, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain, placement }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -111,7 +111,7 @@ const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, par
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain, placement }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -123,6 +123,54 @@ const MOONBEAM_FREQUENCY_GROUP = "moonbeam-damage";
 const INSECT_PLAGUE_FREQUENCY_GROUP = "insect-plague-save";
 const BLACK_TENTACLES_FREQUENCY_GROUP = "black-tentacles-save";
 const WEB_FREQUENCY_GROUP = "web-restrain";
+const SPIRIT_GUARDIANS_FREQUENCY_GROUP = "spirit-guardians-damage";
+
+const buildSpiritGuardiansTriggers = (type) => ({
+  ...buildDisabledTriggers(),
+  onCreate: buildDamageTrigger({
+    formula: "3d8",
+    type,
+    ability: "wis",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: SPIRIT_GUARDIANS_FREQUENCY_GROUP,
+    targetFilter: "enemies",
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 3, perLevelFormula: "1d8" }
+  }),
+  enter: buildDamageTrigger({
+    formula: "3d8",
+    type,
+    ability: "wis",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: SPIRIT_GUARDIANS_FREQUENCY_GROUP,
+    targetFilter: "enemies",
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 3, perLevelFormula: "1d8" }
+  }),
+  turnEnd: buildDamageTrigger({
+    formula: "3d8",
+    type,
+    ability: "wis",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: SPIRIT_GUARDIANS_FREQUENCY_GROUP,
+    targetFilter: "enemies",
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 3, perLevelFormula: "1d8" }
+  })
+});
+
+const buildSpiritGuardiansPreset = ({ id, name, description, damageType }) => buildSrdPreset({
+  id,
+  name,
+  description,
+  geometry: { type: "emanation", radius: 15, units: "ft" },
+  placement: { mode: "attached-source" },
+  tags: ["abjuration", "emanation", "concentration", "terrain", damageType],
+  obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+  terrain: { enabled: true, multiplier: 2, targetFilter: { mode: "enemies" } },
+  parts: [],
+  triggers: buildSpiritGuardiansTriggers(damageType)
+});
 
 const buildWallOfFireBodyTriggers = () => ({
   ...buildDisabledTriggers(),
@@ -439,6 +487,18 @@ export const BUILTIN_PRESETS = Object.freeze([
       enter: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP }),
       turnEnd: buildDamageTrigger({ formula: "2d10", type: "radiant", ability: "con", half: true, frequency: "once-per-turn", frequencyGroup: MOONBEAM_FREQUENCY_GROUP })
     }
+  }),
+  buildSpiritGuardiansPreset({
+    id: "srd-5.2.1.spirit-guardians-radiant",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpiritGuardiansRadiant.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpiritGuardiansRadiant.Description",
+    damageType: "radiant"
+  }),
+  buildSpiritGuardiansPreset({
+    id: "srd-5.2.1.spirit-guardians-necrotic",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpiritGuardiansNecrotic.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SpiritGuardiansNecrotic.Description",
+    damageType: "necrotic"
   }),
   buildSrdPreset({
     id: "srd-5.2.1.spike-growth",

@@ -38,6 +38,8 @@
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
           "Moonbeam": { "Name": "Moonbeam", "Description": "Persistent 5-foot-radius beam with shared once-per-turn radiant damage triggers." },
+          "SpiritGuardiansRadiant": { "Name": "Spirit Guardians — Radiant", "Description": "A 15-foot attached emanation that hinders enemies and deals once-per-turn radiant damage on creation, entry, or turn end." },
+          "SpiritGuardiansNecrotic": { "Name": "Spirit Guardians — Necrotic", "Description": "A 15-foot attached emanation that hinders enemies and deals once-per-turn necrotic damage on creation, entry, or turn end." },
           "SpikeGrowth": { "Name": "Spike Growth", "Description": "Difficult terrain that deals piercing damage for each distance interval traveled within it." },
           "InsectPlague": { "Name": "Insect Plague", "Description": "A 20-foot-radius sphere of difficult terrain with shared once-per-turn Constitution saves and piercing damage." },
           "Entangle": { "Name": "Entangle", "Description": "A 20-foot square of difficult terrain that restrains creatures other than the caster at creation; escape uses a Strength (Athletics) check." },

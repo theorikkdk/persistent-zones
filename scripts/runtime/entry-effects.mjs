@@ -214,7 +214,13 @@ export async function applyConfiguredTriggerEffect({
     });
   }
 
-  const frequencyDecision = await claimTriggerFrequency({ regionDocument, tokenDocument, triggerConfig: resolvedTrigger, timing: normalizedTiming });
+  const frequencyDecision = await claimTriggerFrequency({
+    regionDocument,
+    tokenDocument,
+    triggerConfig: resolvedTrigger,
+    timing: normalizedTiming,
+    turnContext: context.turnContext ?? null
+  });
   logV14RuntimeDiagnostic("PZ TRIGGER FREQUENCY DECISION", {
     ...baseDiagnostic,
     frequency: frequencyDecision.frequency,

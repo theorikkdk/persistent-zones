@@ -154,7 +154,17 @@ async function processCombatTiming(combat, state, timing) {
         regionDocument,
         tokenDocument,
         triggerConfig,
-        timing: triggerTiming
+        timing: triggerTiming,
+        context: {
+          // updateCombat runs after Foundry has advanced the live Combat. The
+          // end trigger still belongs to the snapshot that just ended.
+          turnContext: {
+            combatId: combat.id,
+            round: state.round,
+            turn: state.turn,
+            combatantId: state.combatantId
+          }
+        }
       });
 
       if (!application.skipped) {

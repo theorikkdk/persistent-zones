@@ -7,28 +7,41 @@ export function normalizeTriggerFrequency(value) {
   return String(value ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited";
 }
 
-export function buildTriggerFrequencyIdentity({ combat = globalThis.game?.combat ?? null, regionDocument = null, tokenDocument = null, triggerConfig = {}, timing = "custom" } = {}) {
-  if (!combat?.started || combat?.round == null || combat?.turn == null || !combat?.combatant) return null;
+export function buildTriggerFrequencyIdentity({ combat = globalThis.game?.combat ?? null, turnContext = null, regionDocument = null, tokenDocument = null, triggerConfig = {}, timing = "custom" } = {}) {
+  const eventCombatId = turnContext?.combatId ?? combat?.id ?? null;
+  const eventRound = turnContext?.round ?? combat?.round;
+  const eventTurn = turnContext?.turn ?? combat?.turn;
+  const eventCombatantId = turnContext?.combatantId ?? combat?.combatant?.id ?? combat?.combatant?.tokenId ?? null;
+  if (!combat?.started || !eventCombatId || eventRound == null || eventTurn == null || !eventCombatantId) return null;
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
-  const frequencyGroup = String(triggerConfig?.frequencyGroup ?? "").trim() || String(timing ?? "custom");
+  const configuredFrequencyGroup = String(triggerConfig?.frequencyGroup ?? "").trim();
+  const frequencyGroup = configuredFrequencyGroup || String(timing ?? "custom");
   const regionScope = String(runtime.groupId ?? regionDocument?.id ?? "unknown-region");
   const targetScope = String(tokenDocument?.uuid ?? tokenDocument?.id ?? "unknown-token");
+  // A declared group is the complete trigger identity within a cast. In
+  // particular, do not retain the current combatant: native Region events can
+  // be delivered after combat has advanced while a turn effect uses its saved
+  // combatant state. The combat/round/turn tuple remains the turn boundary.
+  const keyParts = configuredFrequencyGroup
+    ? [eventCombatId, Number(eventRound), Number(eventTurn), targetScope, regionScope, frequencyGroup]
+    : [eventCombatId, Number(eventRound), Number(eventTurn), eventCombatantId, targetScope, regionScope, frequencyGroup];
   return {
-    key: [combat.id, Number(combat.round), Number(combat.turn), combat.combatant.id ?? combat.combatant.tokenId ?? "unknown-combatant", targetScope, regionScope, frequencyGroup].join("|"),
-    combatId: combat.id,
-    round: Number(combat.round),
-    turn: Number(combat.turn),
-    combatantId: combat.combatant.id ?? null,
+    key: keyParts.join("|"),
+    combatId: eventCombatId,
+    round: Number(eventRound),
+    turn: Number(eventTurn),
+    combatantId: eventCombatantId,
     tokenId: tokenDocument?.id ?? null,
     regionScope,
-    frequencyGroup
+    frequencyGroup,
+    sharedFrequencyGroup: Boolean(configuredFrequencyGroup)
   };
 }
 
-export async function claimTriggerFrequency({ regionDocument, tokenDocument, triggerConfig = {}, timing = "custom", combat = globalThis.game?.combat ?? null } = {}) {
+export async function claimTriggerFrequency({ regionDocument, tokenDocument, triggerConfig = {}, timing = "custom", combat = globalThis.game?.combat ?? null, turnContext = null } = {}) {
   const frequency = normalizeTriggerFrequency(triggerConfig?.frequency);
   if (frequency === "unlimited") return { allowed: true, frequency, reason: "unlimited" };
-  const identity = buildTriggerFrequencyIdentity({ combat, regionDocument, tokenDocument, triggerConfig, timing });
+  const identity = buildTriggerFrequencyIdentity({ combat, turnContext, regionDocument, tokenDocument, triggerConfig, timing });
   if (!identity) return { allowed: true, frequency, reason: "outside-combat-unlimited" };
   const runtime = getRegionRuntimeFlags(regionDocument) ?? {};
   const siblingRegions = Array.from(regionDocument?.parent?.regions?.contents ?? [])

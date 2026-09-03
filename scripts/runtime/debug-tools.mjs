@@ -1,8 +1,10 @@
 import {
   DEFINITION_FLAG_KEY,
   MODULE_ID,
-  NORMALIZED_DEFINITION_VERSION
+  NORMALIZED_DEFINITION_VERSION,
+  PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
+import { getPersistentZonePreset } from "../presets/preset-library.mjs";
 import {
   debug,
   duplicateData,
@@ -52,6 +54,7 @@ export function createPersistentZonesDebugApi() {
     inspectManagedRingRegions,
     inspectSelectedRegion,
     createNativeRingFromSelectedRegion,
+    createSpiritGuardiansTestItem,
     markNextMovement
   });
 }
@@ -71,6 +74,50 @@ export function buildInfo() {
       "scripts/runtime/debug-tools.mjs:buildInfo",
       "scripts/runtime/debug-tools.mjs:createNativeRingFromSelectedRegion"
     ]
+  };
+}
+
+/** Create a ready-to-cast level-three spell with both Spirit Guardians variants. */
+export async function createSpiritGuardiansTestItem({ actor = null } = {}) {
+  if (!assertDebugGM("createSpiritGuardiansTestItem")) return null;
+
+  const radiant = getPersistentZonePreset("srd-5.2.1.spirit-guardians-radiant");
+  const necrotic = getPersistentZonePreset("srd-5.2.1.spirit-guardians-necrotic");
+  if (!radiant || !necrotic) {
+    return { ok: false, error: "Spirit Guardians debug presets are unavailable." };
+  }
+
+  const owner = actor ?? globalThis.canvas?.tokens?.controlled?.[0]?.actor ?? globalThis.game?.user?.character ?? null;
+  const itemSource = {
+    name: "Debug/Test — Spirit Guardians",
+    type: "spell",
+    system: {
+      level: 3,
+      activation: { type: "action", value: 1 },
+      duration: { value: 10, units: "minute", concentration: true },
+      range: { units: "self" },
+      preparation: { mode: "always", prepared: true }
+    }
+  };
+  let item = null;
+  if (owner && typeof owner.createEmbeddedDocuments === "function") {
+    item = (await owner.createEmbeddedDocuments("Item", [itemSource]))?.[0] ?? null;
+  } else if (typeof globalThis.Item?.create === "function") {
+    item = await globalThis.Item.create(itemSource);
+  }
+  if (!item || typeof item.createEmbeddedDocuments !== "function") {
+    return { ok: false, error: "Could not create an Item that supports embedded Activities." };
+  }
+
+  const activities = await item.createEmbeddedDocuments("Activity", [
+    buildSpiritGuardiansDebugActivitySource(radiant),
+    buildSpiritGuardiansDebugActivitySource(necrotic)
+  ]);
+  return {
+    ok: Array.isArray(activities) && activities.length === 2,
+    item,
+    itemUuid: item.uuid ?? null,
+    activityIds: Array.from(activities ?? []).map((activity) => activity.id ?? null)
   };
 }
 
@@ -727,6 +774,21 @@ function assertDebugGM(actionName) {
 
   debug("Blocked persistent-zones debug action for non-GM user.", { actionName });
   return false;
+}
+
+function buildSpiritGuardiansDebugActivitySource(preset) {
+  return {
+    name: localize(preset.name),
+    type: PERSISTENT_ZONE_ACTIVITY_TYPE,
+    duration: { value: 10, units: "minute", concentration: true },
+    target: { prompt: false, template: { type: "circle", size: 15, units: "ft" } },
+    persistentZone: duplicateData(preset.persistentZone)
+  };
+}
+
+function localize(key) {
+  const localized = globalThis.game?.i18n?.localize?.(key);
+  return localized && localized !== key ? localized : String(key ?? "Persistent Zone");
 }
 
 function getSelectedRegionDocument() {
