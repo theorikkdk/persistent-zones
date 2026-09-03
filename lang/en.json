@@ -1,5 +1,10 @@
 {
   "PERSISTENT_ZONES": {
+    "Debug": {
+      "Obscuration": {
+        "Name": "Debug/Test — Heavily Obscured Zone"
+      }
+    },
     "ZoneSuffix": "Persistent Zone",
     "Activity": {
       "TypeLabel": "Persistent Zone",
@@ -48,6 +53,7 @@
         }
       },
       "Obstacles": { "Title": "Obstacles", "Enabled": "Restrict the zone by walls", "RestrictionType": "Restriction type", "Priority": "Priority", "Hint": "Uses Foundry wall channels; this does not automatically represent D&D Total Cover.", "Types": { "Sight": "Sight", "Move": "Movement", "Light": "Light", "Darkness": "Darkness", "Sound": "Sound" } },
+      "Obscuration": { "Title": "Obscuration", "Mode": "Obscuration", "Modes": { "None": "None", "HeavilyObscured": "Heavily Obscured" } },
       "Elevation": {
         "Title": "Elevation",
         "Enabled": "Limit the zone vertically",

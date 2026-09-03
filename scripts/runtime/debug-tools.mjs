@@ -11,6 +11,7 @@ import {
   fromUuidSafe
 } from "./utils.mjs";
 import { markNextMovementMode } from "./entry-runtime.mjs";
+import { createHeavilyObscuredTestZone } from "./obscuration-runtime.mjs";
 import {
   collectTemplateSourceDebugSnapshot,
   resolveTemplateSourceContext
@@ -55,6 +56,7 @@ export function createPersistentZonesDebugApi() {
     inspectSelectedRegion,
     createNativeRingFromSelectedRegion,
     createSpiritGuardiansTestItem,
+    createHeavilyObscuredTestZone,
     markNextMovement
   });
 }

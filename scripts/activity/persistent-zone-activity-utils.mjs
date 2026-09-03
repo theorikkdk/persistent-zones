@@ -68,6 +68,9 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     restrictionType: ["sight", "move", "light", "darkness", "sound"].includes(source.obstacles.restrictionType) ? source.obstacles.restrictionType : "sight",
     priority: Math.max(0, Number.isInteger(Number(source.obstacles.priority)) ? Number(source.obstacles.priority) : 0)
   } : null;
+  const obscuration = source.obscuration && typeof source.obscuration === "object" ? {
+    mode: source.obscuration.mode === "heavily-obscured" ? "heavily-obscured" : "none"
+  } : null;
 
   const definition = {
     schemaVersion: activitySchemaVersion,
@@ -81,6 +84,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     placement: { mode: placementMode },
     ...(elevation ? { elevation } : {}),
     ...(obstacles ? { obstacles } : {}),
+    ...(obscuration ? { obscuration } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {

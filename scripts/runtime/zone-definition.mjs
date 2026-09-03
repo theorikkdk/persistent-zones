@@ -335,6 +335,7 @@ export function normalizeZoneDefinition(
       definition
     }),
     elevation: normalizeElevationDefinition(definition.elevation),
+    obscuration: normalizeObscurationDefinition(definition.obscuration),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -1129,6 +1130,14 @@ function normalizeElevationDefinition(value) {
     bottom,
     top,
     topInclusive: Boolean(value.topInclusive)
+  };
+}
+
+function normalizeObscurationDefinition(value) {
+  return {
+    mode: isPlainObject(value) && value.mode === "heavily-obscured"
+      ? "heavily-obscured"
+      : "none"
   };
 }
 

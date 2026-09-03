@@ -1,5 +1,10 @@
 {
   "PERSISTENT_ZONES": {
+    "Debug": {
+      "Obscuration": {
+        "Name": "Debug/Test — Zone fortement obscurcie"
+      }
+    },
     "ZoneSuffix": "Zone persistante",
     "Activity": {
       "TypeLabel": "Zone persistante",
@@ -48,6 +53,7 @@
         }
       },
       "Obstacles": { "Title": "Obstacles", "Enabled": "Restreindre la zone par les murs", "RestrictionType": "Type de restriction", "Priority": "Priorité", "Hint": "Utilise les canaux de murs Foundry ; ne représente pas automatiquement le couvert total D&D.", "Types": { "Sight": "Vision", "Move": "Mouvement", "Light": "Lumière", "Darkness": "Ténèbres", "Sound": "Son" } },
+      "Obscuration": { "Title": "Obscurcissement", "Mode": "Obscurcissement", "Modes": { "None": "Aucun", "HeavilyObscured": "Fortement obscurci" } },
       "Elevation": {
         "Title": "Élévation",
         "Enabled": "Limiter verticalement la zone",

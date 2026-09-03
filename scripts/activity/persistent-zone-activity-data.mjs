@@ -113,6 +113,9 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           restrictionType: new fields.StringField({ required: false, initial: "sight", choices: ["sight", "move", "light", "darkness", "sound"] }),
           priority: new fields.NumberField({ required: false, initial: 0, integer: true, min: 0 })
         }, { required: false, nullable: true, initial: null }),
+        obscuration: new fields.SchemaField({
+          mode: new fields.StringField({ required: false, initial: "none", choices: ["none", "heavily-obscured"] })
+        }, { required: false, nullable: true, initial: null }),
         parts: new fields.ArrayField(new fields.ObjectField(), {
           required: false
         }),

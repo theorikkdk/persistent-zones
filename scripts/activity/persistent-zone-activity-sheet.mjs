@@ -903,6 +903,9 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = normalizeMovementCostMultiplier(config.terrain.multiplier);
   config.terrain.targetFilter = { mode: normalizeTriggerTargetFilterMode(config.terrain.targetFilter?.mode) };
+  config.obscuration = {
+    mode: config.obscuration?.mode === "heavily-obscured" ? "heavily-obscured" : "none"
+  };
   config.linkedWalls ??= {};
   config.linkedWalls.preset = String(config.linkedWalls.preset ?? "solid").trim().toLowerCase() || "solid";
   config.linkedWalls.geometry = String(config.linkedWalls.geometry ?? "centerline");
@@ -1294,6 +1297,10 @@ export function buildTargetTemplateFromPersistentZoneConfig(config, activity) {
 
 function buildActivityChoices() {
   return {
+    obscurationModes: [
+      { value: "none", label: "PERSISTENT_ZONES.Activity.Obscuration.Modes.None" },
+      { value: "heavily-obscured", label: "PERSISTENT_ZONES.Activity.Obscuration.Modes.HeavilyObscured" }
+    ],
     obstacleTypes: [
       { value: "sight", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Sight" },
       { value: "move", label: "PERSISTENT_ZONES.Activity.Obstacles.Types.Move" },
