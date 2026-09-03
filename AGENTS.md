@@ -71,6 +71,14 @@ Utiliser le resolver générique de scaling PZ pour dégâts, soins et PV tempor
 
 Les presets officiels ont des IDs stables : ne pas modifier un ID publié sans migration nécessaire. Séparer les presets de production/SRD des presets et helpers Debug/Test.
 
+### Sélection des sorts Persistent Zones
+
+Persistent Zones n’est pas un moteur générique pour toutes les AoE D&D5e. Un sort est un bon candidat lorsqu’une zone reste présente après sa résolution initiale et continue d’automatiser la scène ou les créatures : entrée, sortie, mouvement, tours, dégâts ou JDS répétés, conditions, terrain, obscurcissement, murs, lumière, aura ou émanation.
+
+Une AoE ponctuelle (dégâts, soin, JDS ou effet unique, simple gabarit de lancement) doit normalement rester une Activity D&D5e classique. Les sorts `Instantaneous` sont hors priorité PZ par défaut, même s’ils modifient narrativement le monde ; une exception exige de justifier une automatisation de combat persistante réellement utile. La partie narrative de Plant Growth lancée en 8 heures n’est pas une Persistent Zone.
+
+Avant tout nouveau preset, vérifier : « Après le lancement initial, cette zone doit-elle encore automatiser quelque chose pendant plusieurs instants ou tours ? » Si non, utiliser une Activity classique ou ne rien automatiser avec PZ.
+
 ## Rapports Codex
 
 Terminer par un rapport court et actionnable : modifications, fichiers concernés, tests, test Foundry à effectuer, état du worktree et confirmation explicite d’un commit ou de son absence.
