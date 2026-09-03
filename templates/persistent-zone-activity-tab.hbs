@@ -276,6 +276,18 @@
         <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.WallThickness"}}</p>
       </div>
     </div>
+    <div data-pz-geometry="circle emanation">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.RadiusScaling"}}</label>
+        <select name="persistentZone.geometry.scaling.mode">
+          <option value="none" {{#if (eq persistentZone.geometry.scaling.mode "none")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.RadiusScaling.None"}}</option>
+          <option value="per-level" {{#if (eq persistentZone.geometry.scaling.mode "per-level")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.RadiusScaling.PerLevel"}}</option>
+        </select>
+      </div>
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.RadiusScalingBaseLevelMode"}}</label><select name="persistentZone.geometry.scaling.baseLevelMode"><option value="item" {{#if (eq persistentZone.geometry.scaling.baseLevelMode "item")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.RadiusScaling.ItemLevel"}}</option><option value="fixed" {{#if (eq persistentZone.geometry.scaling.baseLevelMode "fixed")}}selected{{/if}}>{{localize "PERSISTENT_ZONES.Activity.RadiusScaling.FixedLevel"}}</option></select></div>
+      {{#if (eq persistentZone.geometry.scaling.baseLevelMode "fixed")}}<div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.RadiusScalingBaseLevel"}}</label><input type="number" name="persistentZone.geometry.scaling.baseLevel" min="1" step="1" value="{{persistentZone.geometry.scaling.baseLevel}}"></div>{{/if}}
+      <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.RadiusScalingPerLevel"}}</label><input type="number" name="persistentZone.geometry.scaling.radiusPerLevel" min="0" step="any" value="{{persistentZone.geometry.scaling.radiusPerLevel}}"></div>
+    </div>
     <div class="persistent-zone-activity__part-subtitle">{{localize "PERSISTENT_ZONES.Activity.Elevation.Title"}}</div>
     <div class="form-group">
       <label>{{localize "PERSISTENT_ZONES.Activity.Elevation.Enabled"}}</label>
@@ -471,8 +483,8 @@
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Save"}}</legend>
+              <fieldset>
+                <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Save"}}</legend>
               <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.Save"}}</p>
               <div class="form-group">
                 <label>{{localize "PERSISTENT_ZONES.Activity.Fields.SaveEnabled"}}</label>
@@ -504,8 +516,9 @@
                   </select>
                   <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.SaveResult"}}</p>
                 </div>
-              </div>
-            </fieldset>
+                </div>
+                <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.EndConcentration"}}</label><input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.endConcentration.enabled" {{#if triggerRow.state.simpleEffect.endConcentration.enabled}}checked{{/if}}></div>
+              </fieldset>
 
             <fieldset>
               <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Statuses"}}</legend>
@@ -533,6 +546,8 @@
                     {{/if}}
                   </select>
                 </div>
+                <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.RestrictAction"}}</label><input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.actionRestrictions.action" {{#if triggerRow.state.simpleEffect.statuses.actionRestrictions.action}}checked{{/if}}></div>
+                <div class="form-group"><label>{{localize "PERSISTENT_ZONES.Activity.Fields.RestrictBonusAction"}}</label><input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.actionRestrictions.bonusAction" {{#if triggerRow.state.simpleEffect.statuses.actionRestrictions.bonusAction}}checked{{/if}}></div>
                 <fieldset data-pz-status-recovery>
                   <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.StatusRecovery"}}</legend>
                   <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.StatusRecovery"}}</p>

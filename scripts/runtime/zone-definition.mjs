@@ -27,6 +27,7 @@ import {
 import { normalizeStatusRecovery } from "./status-recovery.mjs";
 import { normalizeStatusEscape } from "./status-escape.mjs";
 import { normalizeDamageScaling } from "./damage-scaling.mjs";
+import { resolveScaledRadius } from "./radius-scaling.mjs";
 
 export function getZoneDefinitionFromItem(item) {
   if (!item) {
@@ -332,7 +333,9 @@ export function normalizeZoneDefinition(
     geometry: normalizeGeometryDefinition(definition.geometry, {
       templateDocument,
       templateDefinition,
-      definition
+      definition,
+      castLevel,
+      itemBaseLevel: safeGet(item, ["system", "level"])
     }),
     elevation: normalizeElevationDefinition(definition.elevation),
     obscuration: normalizeObscurationDefinition(definition.obscuration),
@@ -1536,7 +1539,9 @@ function resolveRingRadiiFromReferenceMode({
 function normalizeGeometryDefinition(geometryLikeDefinition, {
   templateDocument = null,
   templateDefinition = {},
-  definition = {}
+  definition = {},
+  castLevel = null,
+  itemBaseLevel = null
 } = {}) {
   const geometryDefinition = isPlainObject(geometryLikeDefinition) ? geometryLikeDefinition : {};
   const geometryType = String(
@@ -1557,24 +1562,26 @@ function normalizeGeometryDefinition(geometryLikeDefinition, {
   }
 
   if (geometryType === "circle") {
+    const baseRadius = coerceNumber(
+      pickFirstDefined(geometryDefinition.radius, templateDefinition.distance, definition.distance, templateDocument?.distance),
+      null
+    );
+    const scaled = resolveScaledRadius({ radius: baseRadius, scaling: geometryDefinition.scaling, castLevel, itemBaseLevel });
     return {
       type: "circle",
-      radius: coerceNumber(
-        pickFirstDefined(
-          geometryDefinition.radius,
-          templateDefinition.distance,
-          definition.distance,
-          templateDocument?.distance
-        ),
-        null
-      )
+      radius: scaled.radius,
+      scaling: scaled.scaling,
+      resolvedRadius: scaled.radius
     };
   }
 
   if (geometryType === "emanation") {
+    const scaled = resolveScaledRadius({ radius: geometryDefinition.radius, scaling: geometryDefinition.scaling, castLevel, itemBaseLevel });
     return {
       type: "emanation",
-      radius: coerceNumber(geometryDefinition.radius, null),
+      radius: scaled.radius,
+      scaling: scaled.scaling,
+      resolvedRadius: scaled.radius,
       units: String(geometryDefinition.units ?? "scene").trim().toLowerCase() || "scene"
     };
   }
@@ -1774,6 +1781,11 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     : isPlainObject(definition.statuses)
       ? definition.statuses
       : {};
+  const endConcentrationDefinition = isPlainObject(simpleEffectDefinition.endConcentration)
+    ? simpleEffectDefinition.endConcentration
+    : isPlainObject(definition.endConcentration)
+      ? definition.endConcentration
+      : {};
   const damageDefinition = isPlainObject(definition.damage)
     ? definition.damage
     : isPlainObject(simpleEffectDefinition.damage)
@@ -1920,8 +1932,10 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
         statusId: String(statusesDefinition.statusId ?? "").trim() || null,
         persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
         recovery: normalizeStatusRecovery(statusesDefinition.recovery),
-        escape: normalizeStatusEscape(statusesDefinition.escape)
-      }
+        escape: normalizeStatusEscape(statusesDefinition.escape),
+        actionRestrictions: normalizeActionRestrictions(statusesDefinition.actionRestrictions)
+      },
+      endConcentration: { enabled: coerceBoolean(endConcentrationDefinition.enabled, false) && mode === "simple" }
     },
     damage: {
       enabled: coerceBoolean(
@@ -1975,8 +1989,10 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
       statusId: String(statusesDefinition.statusId ?? "").trim() || null,
       persistenceMode: normalizeStatusPersistenceMode(statusesDefinition.persistenceMode),
       recovery: normalizeStatusRecovery(statusesDefinition.recovery),
-      escape: normalizeStatusEscape(statusesDefinition.escape)
+      escape: normalizeStatusEscape(statusesDefinition.escape),
+      actionRestrictions: normalizeActionRestrictions(statusesDefinition.actionRestrictions)
     },
+    endConcentration: { enabled: coerceBoolean(endConcentrationDefinition.enabled, false) && mode === "simple" },
     activity
   };
 }
@@ -2393,9 +2409,17 @@ function normalizeSimpleEffectType(value) {
 }
 
 function normalizeStatusPersistenceMode(value) {
-  return String(value ?? "persistent").trim().toLowerCase() === "while-inside-region"
-    ? "while-inside-region"
+  const normalized = String(value ?? "persistent").trim().toLowerCase();
+  return ["while-inside-region", "until-end-of-current-turn"].includes(normalized)
+    ? normalized
     : "persistent";
+}
+
+function normalizeActionRestrictions(value) {
+  return {
+    action: coerceBoolean(value?.action, false),
+    bonusAction: coerceBoolean(value?.bonusAction, false)
+  };
 }
 
 function inferTriggerEffectMode(definition, {

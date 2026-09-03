@@ -98,8 +98,8 @@ const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "a
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, parts, triggers, movement, terrain, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain, placement }),
+const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obscuration = null, parts, triggers, movement, terrain, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, placement }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -111,7 +111,7 @@ const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, par
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, parts, triggers, movement, terrain, placement }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, placement }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -124,6 +124,26 @@ const INSECT_PLAGUE_FREQUENCY_GROUP = "insect-plague-save";
 const BLACK_TENTACLES_FREQUENCY_GROUP = "black-tentacles-save";
 const WEB_FREQUENCY_GROUP = "web-restrain";
 const SPIRIT_GUARDIANS_FREQUENCY_GROUP = "spirit-guardians-damage";
+const SLEET_STORM_FREQUENCY_GROUP = "sleet-storm-save";
+
+const buildSleetStormTrigger = () => ({
+  ...buildDisabledTrigger(), enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: SLEET_STORM_FREQUENCY_GROUP,
+  simpleEffect: {
+    ...buildDisabledTrigger().simpleEffect,
+    save: { enabled: true, ability: "dex", dcMode: "inherit", dc: null, onSave: "none" },
+    statuses: { enabled: true, statusId: "prone", persistenceMode: "persistent", recovery: { mode: "none" } },
+    endConcentration: { enabled: true }
+  }
+});
+
+const buildStinkingCloudTrigger = () => ({
+  ...buildDisabledTrigger(), enabled: true, mode: "simple-effect",
+  simpleEffect: {
+    ...buildDisabledTrigger().simpleEffect,
+    save: { enabled: true, ability: "con", dcMode: "inherit", dc: null, onSave: "none" },
+    statuses: { enabled: true, statusId: "poisoned", persistenceMode: "until-end-of-current-turn", recovery: { mode: "none" }, actionRestrictions: { action: true, bonusAction: true } }
+  }
+});
 
 const buildSpiritGuardiansTriggers = (type) => ({
   ...buildDisabledTriggers(),
@@ -206,7 +226,7 @@ const wallOfFireLinkedLights = {
   color: "#ff9b42"
 };
 
-const base = ({ id, name, description, category, geometry, elevation = null, obstacles = null, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
+const base = ({ id, name, description, category, geometry, elevation = null, obstacles = null, obscuration = null, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -222,6 +242,7 @@ const base = ({ id, name, description, category, geometry, elevation = null, obs
     geometry,
     ...(elevation ? { elevation } : {}),
     ...(obstacles ? { obstacles } : {}),
+    ...(obscuration ? { obscuration } : {}),
     parts,
     triggers,
     movement: movement ?? { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "scene", accumulateRemainder: false, aggregateApplications: true, cellStep: 1 },
@@ -407,6 +428,39 @@ export const BUILTIN_PRESETS = Object.freeze([
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWallsTerrain.Name",
     description: "PERSISTENT_ZONES.Activity.Presets.Debug.RectangleWallsTerrain.Description",
     terrain: true
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.fog-cloud",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.FogCloud.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.FogCloud.Description",
+    geometry: { type: "circle", radius: 20, units: "ft", scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 1, radiusPerLevel: 20 } },
+    tags: ["conjuration", "obscuration", "concentration"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+    obscuration: { mode: "heavily-obscured" },
+    triggers: buildDisabledTriggers(),
+    terrain: { enabled: false, multiplier: 2 }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.sleet-storm",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.SleetStorm.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.SleetStorm.Description",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    tags: ["conjuration", "obscuration", "terrain", "concentration", "partial-2d"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+    terrain: { enabled: true, multiplier: 2 },
+    triggers: { ...buildDisabledTriggers(), enter: buildSleetStormTrigger(), turnStart: buildSleetStormTrigger() },
+    obscuration: { mode: "heavily-obscured" }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.stinking-cloud",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.StinkingCloud.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.StinkingCloud.Description",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    tags: ["conjuration", "obscuration", "concentration"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+    terrain: { enabled: false, multiplier: 2 },
+    triggers: { ...buildDisabledTriggers(), turnStart: buildStinkingCloudTrigger() },
+    obscuration: { mode: "heavily-obscured" }
   }),
   {
     id: "srd-5.2.1.grease",

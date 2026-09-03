@@ -138,10 +138,13 @@ test("Spirit Guardians debug helper creates one level-three spell with both sibl
   const captured = { item: null, activities: null };
   const item = {
     uuid: "Item.debug-spirit-guardians",
-    async createEmbeddedDocuments(type, sources) {
-      assert.equal(type, "Activity");
-      captured.activities = sources;
-      return sources.map((source, index) => ({ id: `activity-${index}`, ...source }));
+    system: { activities: new Map() },
+    async createActivity(type, source, options) {
+      assert.equal(type, "persistent-zone");
+      assert.equal(options.renderSheet, false);
+      captured.activities ??= [];
+      captured.activities.push(source);
+      this.system.activities.set(`activity-${captured.activities.length - 1}`, { id: `activity-${captured.activities.length - 1}`, ...source });
     }
   };
   globalThis.Item = { create: async (source) => { captured.item = source; return item; } };

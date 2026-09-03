@@ -9,6 +9,7 @@ export function resolveTriggerActionConfiguration({
   const statuses = config.statuses ?? simpleEffect.statuses ?? {};
   const healing = config.healing ?? simpleEffect.healing ?? {};
   const temporaryHitPoints = config.temporaryHitPoints ?? simpleEffect.temporaryHitPoints ?? {};
+  const endConcentration = config.endConcentration ?? simpleEffect.endConcentration ?? {};
   const linkedActivity = config.linkedActivity ?? config.activity ?? {};
 
   return {
@@ -23,6 +24,7 @@ export function resolveTriggerActionConfiguration({
     statuses,
     healing,
     temporaryHitPoints,
+    endConcentration: { enabled: Boolean(endConcentration.enabled) },
     linkedActivity: {
       id: linkedActivity.id ?? linkedActivity.activityId ?? null,
       uuid: linkedActivity.uuid ?? linkedActivity.activityUuid ?? null

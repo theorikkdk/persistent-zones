@@ -99,6 +99,12 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             required: false,
             initial: "outer-edge",
             choices: ["outer-edge", "centerline", "inner-edge"]
+          }),
+          scaling: new fields.SchemaField({
+            mode: new fields.StringField({ required: false, initial: "none", choices: ["none", "per-level"] }),
+            baseLevelMode: new fields.StringField({ required: false, nullable: true, initial: null, choices: ["item", "fixed"] }),
+            baseLevel: new fields.NumberField({ required: false, integer: true, initial: 1, min: 1 }),
+            radiusPerLevel: new fields.NumberField({ required: false, initial: 0, min: 0 })
           })
         }),
         elevation: new fields.SchemaField({
@@ -290,15 +296,16 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
   }
 
   static transformTypeData(source, activityData, options) {
+    const configuredTemplate = activityData?.target?.template ?? {};
     return foundry.utils.mergeObject(activityData, {
       target: {
         override: true,
-        prompt: true,
+        prompt: activityData?.target?.prompt ?? true,
         template: {
-          type: "circle",
-          size: source.system?.target?.value ?? 10,
-          width: "",
-          units: source.system?.target?.units ?? "ft"
+          type: configuredTemplate.type ?? "circle",
+          size: configuredTemplate.size ?? source.system?.target?.value ?? 10,
+          width: configuredTemplate.width ?? "",
+          units: configuredTemplate.units ?? source.system?.target?.units ?? "ft"
         }
       }
     }, { inplace: false });
@@ -343,9 +350,12 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
     simpleEffect: new fields.SchemaField({
       damage: createDamageSchema(fields),
       healing: createHealingSchema(fields),
-      temporaryHitPoints: createTemporaryHitPointsSchema(fields),
-      save: createSaveSchema(fields),
-      statuses: createStatusesSchema(fields, exitTrigger)
+    temporaryHitPoints: createTemporaryHitPointsSchema(fields),
+    save: createSaveSchema(fields),
+    statuses: createStatusesSchema(fields, exitTrigger),
+    endConcentration: new fields.SchemaField({
+      enabled: new fields.BooleanField({ required: false, initial: false })
+    })
     }),
     linkedActivity: new fields.SchemaField({
       id: new fields.StringField({
@@ -460,7 +470,7 @@ function createStatusesSchema(fields, exitTrigger) {
     persistenceMode: new fields.StringField({
       required: false,
       initial: exitTrigger ? "persistent" : "persistent",
-      choices: exitTrigger ? ["persistent"] : ["persistent", "while-inside-region"]
+      choices: exitTrigger ? ["persistent"] : ["persistent", "while-inside-region", "until-end-of-current-turn"]
     }),
     recovery: new fields.SchemaField({
       mode: new fields.StringField({
@@ -529,6 +539,10 @@ function createStatusesSchema(fields, exitTrigger) {
         title: new fields.StringField({ required: false, nullable: true, initial: null }),
         message: new fields.StringField({ required: false, nullable: true, initial: null })
       })
+    }),
+    actionRestrictions: new fields.SchemaField({
+      action: new fields.BooleanField({ required: false, initial: false }),
+      bonusAction: new fields.BooleanField({ required: false, initial: false })
     })
   });
 }

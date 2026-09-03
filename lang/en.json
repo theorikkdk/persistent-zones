@@ -3,6 +3,14 @@
     "Debug": {
       "Obscuration": {
         "Name": "Debug/Test — Heavily Obscured Zone"
+      },
+      "ObscuringSpells": {
+        "Unavailable": "Obscuring spell presets are unavailable.",
+        "SelectToken": "Select a token with an Actor first.",
+        "CreationFailed": "The Debug/Test obscuring spell Items could not be created.",
+        "FogCloud": "Debug/Test — Fog Cloud",
+        "SleetStorm": "Debug/Test — Sleet Storm",
+        "StinkingCloud": "Debug/Test — Stinking Cloud"
       }
     },
     "ZoneSuffix": "Persistent Zone",
@@ -39,6 +47,9 @@
           "TemporaryHitPointsScaling": { "Name": "Debug/Test — Temporary HP scaling", "Description": "Enter the circle after casting at higher slots to verify scalable temporary hit points." }
         },
         "Builtins": {
+          "FogCloud": { "Name": "Fog Cloud", "Description": "A 2D 20-foot-radius heavily obscured fog footprint, expanding by 20 feet per higher spell slot." },
+          "SleetStorm": { "Name": "Sleet Storm", "Description": "2D combat footprint: heavily obscured difficult terrain; Dexterity save on entry or turn start avoids Prone and concentration loss." },
+          "StinkingCloud": { "Name": "Stinking Cloud", "Description": "A 2D heavily obscured cloud; a failed Constitution save at turn start causes Poisoned until that turn ends and prevents Actions and Bonus Actions." },
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },
           "WallOfFireLine": { "Name": "Wall of Fire — Line", "Description": "Persistent line wall with a configurable damaging side." },
           "WallOfFireRing": { "Name": "Wall of Fire — Ring", "Description": "Persistent ring wall with a configurable inner or outer damaging side." },
@@ -157,6 +168,10 @@
         "ReferenceRadiusMode": "Reference radius mode",
         "WallLength": "Wall length",
         "WallThickness": "Wall thickness",
+        "RadiusScaling": "Radius scaling",
+        "RadiusScalingBaseLevelMode": "Reference level",
+        "RadiusScalingBaseLevel": "Reference spell slot level",
+        "RadiusScalingPerLevel": "Additional radius per level",
         "MovementDistanceStep": "Damage distance interval",
         "MovementDistanceUnits": "Distance unit",
         "AccumulateMovementRemainder": "Accumulate partial distance",
@@ -174,9 +189,12 @@
         "TempHpFormula": "Temporary HP formula",
         "SaveEnabled": "Use save",
         "SaveResult": "On successful save",
+        "EndConcentration": "End the target's concentration on a failed save",
         "StatusesEnabled": "Apply statuses",
         "StatusId": "Status or effect",
         "PersistenceMode": "Persistence mode",
+        "RestrictAction": "Prevent Action",
+        "RestrictBonusAction": "Prevent Bonus Action",
         "StatusRecoveryMode": "Recovery",
         "StatusRecoveryAbility": "Saving Throw Ability",
         "StatusRecoveryDcMode": "Save DC",
@@ -322,8 +340,11 @@
       },
       "PersistenceModes": {
         "Persistent": "Persistent",
-        "WhileInsideRegion": "While inside the region"
+        "WhileInsideRegion": "While inside the region",
+        "UntilEndCurrentTurn": "Until the end of the current turn"
       },
+      "RadiusScaling": { "None": "None", "PerLevel": "Per higher spell slot level", "ItemLevel": "Automatic — spell level", "FixedLevel": "Manual" },
+      "ActionRestrictions": { "Action": "Action", "BonusAction": "Bonus Action", "Blocked": "You cannot take a {action} while affected by this effect." },
       "LinkedActivity": {
         "None": "None"
       },

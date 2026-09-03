@@ -869,6 +869,9 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.geometry.type = ["rect", "square"].includes(geometryType) ? "rectangle" : geometryType;
   config.geometry.units = normalizeCanonicalDistanceUnit(config.geometry.units);
   config.geometry.placement = "center";
+  if (config.geometry.scaling && typeof config.geometry.scaling === "object") {
+    config.geometry.scaling = normalizeUiRadiusScaling(config.geometry.scaling);
+  }
   if (config.elevation && typeof config.elevation === "object") {
     const bottom = Number(config.elevation.bottom);
     const top = Number(config.elevation.top);
@@ -1123,6 +1126,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
   const temporaryHitPoints = simpleEffect.temporaryHitPoints ?? trigger.temporaryHitPoints ?? {};
   const save = simpleEffect.save ?? trigger.save ?? globalSave ?? {};
   const statuses = simpleEffect.statuses ?? trigger.statuses ?? {};
+  const endConcentration = simpleEffect.endConcentration ?? trigger.endConcentration ?? {};
   const linkedActivity = trigger.linkedActivity ?? trigger.activity ?? {};
 
   return {
@@ -1171,8 +1175,13 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
           ? "persistent"
           : String(statuses.persistenceMode ?? "persistent"),
         recovery: normalizeUiStatusRecovery(statuses.recovery),
-        escape: normalizeStatusEscape(statuses.escape)
-      }
+        escape: normalizeStatusEscape(statuses.escape),
+        actionRestrictions: {
+          action: Boolean(statuses.actionRestrictions?.action),
+          bonusAction: Boolean(statuses.actionRestrictions?.bonusAction)
+        }
+      },
+      endConcentration: { enabled: Boolean(endConcentration.enabled) }
     },
     linkedActivity: {
       ...foundry.utils.deepClone(linkedActivity),
@@ -1205,6 +1214,16 @@ function normalizeUiFormulaScaling(value = {}) {
     baseLevelMode: String(source.baseLevelMode ?? "").trim().toLowerCase() === "fixed" ? "fixed" : "item",
     baseLevel: Math.max(1, Math.floor(Number(source.baseLevel) || 1)),
     perLevelFormula: String(source.perLevelFormula ?? "")
+  };
+}
+
+function normalizeUiRadiusScaling(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    mode: String(source.mode ?? "none").trim().toLowerCase() === "per-level" ? "per-level" : "none",
+    baseLevelMode: String(source.baseLevelMode ?? "").trim().toLowerCase() === "fixed" ? "fixed" : "item",
+    baseLevel: Math.max(1, Math.floor(Number(source.baseLevel) || 1)),
+    radiusPerLevel: Math.max(0, Number(source.radiusPerLevel) || 0)
   };
 }
 
@@ -1411,7 +1430,8 @@ function buildActivityChoices() {
     ],
     persistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" },
-      { value: "while-inside-region", label: "PERSISTENT_ZONES.Activity.PersistenceModes.WhileInsideRegion" }
+      { value: "while-inside-region", label: "PERSISTENT_ZONES.Activity.PersistenceModes.WhileInsideRegion" },
+      { value: "until-end-of-current-turn", label: "PERSISTENT_ZONES.Activity.PersistenceModes.UntilEndCurrentTurn" }
     ],
     exitPersistenceModes: [
       { value: "persistent", label: "PERSISTENT_ZONES.Activity.PersistenceModes.Persistent" }

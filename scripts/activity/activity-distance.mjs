@@ -13,9 +13,23 @@ export function convertCanonicalDistanceToSceneUnits(value, unit = "scene", scen
   const sourceUnit = normalizeCanonicalDistanceUnit(unit);
   const sceneUnit = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit ?? "scene");
   if (sourceUnit === "scene" || sceneUnit === "scene" || sourceUnit === sceneUnit) return numeric;
+  const convertLength = globalThis.dnd5e?.utils?.convertLength;
+  if (typeof convertLength === "function") {
+    try {
+      const converted = Number(convertLength(numeric, sourceUnit, sceneUnit, { strict: false }));
+      if (Number.isFinite(converted)) return converted;
+    } catch {
+      // A lightweight test environment or an older system can omit the D&D5e helper.
+    }
+  }
   if (sourceUnit === "ft" && sceneUnit === "m") return numeric * METERS_PER_FOOT;
   if (sourceUnit === "m" && sceneUnit === "ft") return numeric / METERS_PER_FOOT;
   return numeric;
+}
+
+/** Resolve a canonical preset distance for the active scene without using UI locale. */
+export function resolvePresetDistance(value, unit = "ft", scene = globalThis.canvas?.scene ?? null) {
+  return convertCanonicalDistanceToSceneUnits(value, unit, scene);
 }
 
 export function distanceToScenePixels(value, unit = "scene", scene = globalThis.canvas?.scene ?? null) {

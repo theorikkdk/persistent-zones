@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 25);
+  assert.equal(BUILTIN_PRESETS.length, 28);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -277,9 +277,9 @@ test("visible library separates validated SRD and debug movement-cost presets", 
     "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self",
-    "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.grease",
-    "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.spike-growth", "srd-5.2.1.spirit-guardians-necrotic", "srd-5.2.1.spirit-guardians-radiant",
-    "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
+    "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.fog-cloud", "srd-5.2.1.grease",
+    "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.sleet-storm", "srd-5.2.1.spike-growth", "srd-5.2.1.spirit-guardians-necrotic", "srd-5.2.1.spirit-guardians-radiant",
+    "srd-5.2.1.stinking-cloud", "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
   for (const id of [
@@ -373,6 +373,40 @@ test("preset scene conversion preserves bounded mono and multipart elevation", (
   assert.deepEqual(resolved.parts[1].elevation, {
     inherit: false, enabled: true, bottom: 0, top: 1.5, topInclusive: false, units: "m"
   });
+});
+
+test("every SRD preset with canonical feet resolves its scene-facing dimensions in metric worlds", () => {
+  const metric = { grid: { units: "m" } };
+  const expectations = {
+    "srd-5.2.1.fog-cloud": { radius: 6 },
+    "srd-5.2.1.sleet-storm": { radius: 6 },
+    "srd-5.2.1.stinking-cloud": { radius: 6 },
+    "srd-5.2.1.grease": { width: 3, height: 3 },
+    "srd-5.2.1.wall-of-fire-line": { wallLength: 18, wallThickness: 0.3, partOffsetEnd: 3 },
+    "srd-5.2.1.wall-of-fire-ring": { ringReferenceRadius: 3, ringInnerWidth: 0.3, partOffsetEnd: 3 },
+    "srd-5.2.1.moonbeam": { radius: 1.5, dim: 1.5 },
+    "srd-5.2.1.spirit-guardians-radiant": { radius: 4.5 },
+    "srd-5.2.1.spirit-guardians-necrotic": { radius: 4.5 },
+    "srd-5.2.1.spike-growth": { radius: 6, distanceStep: 1.5 },
+    "srd-5.2.1.insect-plague": { radius: 6 },
+    "srd-5.2.1.entangle": { width: 6, height: 6 },
+    "srd-5.2.1.black-tentacles": { width: 6, height: 6 },
+    "srd-5.2.1.web": { width: 6, height: 6 }
+  };
+  for (const [id, expected] of Object.entries(expectations)) {
+    const resolved = resolvePresetPersistentZoneForScene(getPersistentZonePreset(id).persistentZone, metric);
+    for (const [field, value] of Object.entries(expected)) {
+      const actual = field === "partOffsetEnd"
+        ? resolved.parts[1].geometry.offsetEnd
+        : field === "dim"
+          ? resolved.linkedLights.dim
+          : field === "distanceStep"
+            ? resolved.movement.distanceStep
+            : resolved.geometry[field];
+      assert.equal(actual, value, `${id} ${field}`);
+    }
+    assert.equal(resolved.geometry.units, "m", `${id} geometry units`);
+  }
 });
 
 test("preset extraction and application preserve frequency configuration", async () => {

@@ -6,8 +6,11 @@ import {
 import { PersistentZoneActivity } from "./persistent-zone-activity.mjs";
 import { PersistentZoneActivitySheet } from "./persistent-zone-activity-sheet.mjs";
 import { centerRectanglePosition, convertCanonicalDistanceToSceneUnits, distanceToScenePixels } from "./activity-distance.mjs";
+import { resolvePersistentZoneCastLevel } from "./cast-level.mjs";
+import { applyResolvedRadiusToTemplateData, resolveScaledRadius } from "../runtime/radius-scaling.mjs";
 
 let rectanglePlacementHooksRegistered = false;
+const pendingScaledRadiusPlacements = new Map();
 
 export function registerPersistentZoneActivityType() {
   const activityTypes = CONFIG?.DND5E?.activityTypes;
@@ -43,7 +46,64 @@ function registerRectanglePlacementHooks() {
   if (rectanglePlacementHooksRegistered) return;
   rectanglePlacementHooksRegistered = true;
   Hooks.on("dnd5e.preCreateActivityTemplate", preparePersistentZoneRectangleTemplate);
+  Hooks.on("dnd5e.preCreateActivityTemplate", preparePersistentZoneScaledRadiusTemplate);
   Hooks.on("dnd5e.createActivityTemplate", centerPersistentZoneRectangleTemplates);
+  Hooks.on("dnd5e.createActivityTemplate", clearPersistentZoneScaledRadiusPlacement);
+  Hooks.on("dnd5e.preActivityConsumption", capturePersistentZoneScaledRadius);
+}
+
+/**
+ * D&D5e finalizes usageConfig.scaling after its configuration dialog, then calls this
+ * hook before consumption and template placement. This is the first stable upcast context.
+ */
+export function capturePersistentZoneScaledRadius(activity, usageConfig) {
+  const geometry = activity?.persistentZone?.geometry ?? activity?._source?.persistentZone?.geometry ?? {};
+  if (String(activity?.type ?? "") !== PERSISTENT_ZONE_ACTIVITY_TYPE) return;
+  if (!["circle", "emanation"].includes(String(geometry.type ?? "").toLowerCase())) return;
+  const cast = resolvePersistentZoneCastLevel({ usage: usageConfig, item: activity.item, actor: activity.actor });
+  const resolved = resolveScaledRadius({
+    radius: geometry.radius,
+    scaling: geometry.scaling,
+    castLevel: cast.castLevel,
+    itemBaseLevel: activity.item?.system?.level
+  });
+  if (resolved.scaling.mode !== "per-level") return;
+  const scene = globalThis.canvas?.scene ?? null;
+  const radius = convertCanonicalDistanceToSceneUnits(resolved.radius, geometry.units, scene);
+  pendingScaledRadiusPlacements.set(getActivityPlacementKey(activity), {
+    cast,
+    radius,
+    geometry: foundry.utils.deepClone(geometry)
+  });
+}
+
+/**
+ * AbilityTemplate.fromActivity consumes templateData.distance in scene units.
+ * This hook is intentionally after the usage configuration has selected the slot
+ * and immediately before D&D5e constructs the MeasuredTemplate Document.
+ */
+export function preparePersistentZoneScaledRadiusTemplate(activity, templateData) {
+  const placement = pendingScaledRadiusPlacements.get(getActivityPlacementKey(activity));
+  const geometry = placement?.geometry ?? activity?.persistentZone?.geometry ?? activity?._source?.persistentZone?.geometry ?? {};
+  if (String(activity?.type ?? "") !== PERSISTENT_ZONE_ACTIVITY_TYPE || geometry?.scaling?.mode !== "per-level") return;
+  const scene = globalThis.canvas?.scene ?? null;
+  const cast = placement?.cast ?? resolvePersistentZoneCastLevel({ item: activity.item, actor: activity.actor });
+  const resolved = placement?.radius ?? convertCanonicalDistanceToSceneUnits(resolveScaledRadius({
+    radius: geometry.radius,
+    scaling: geometry.scaling,
+    castLevel: cast.castLevel,
+    itemBaseLevel: activity.item?.system?.level
+  }).radius, geometry.units, scene);
+  if (!Number.isFinite(Number(resolved)) || Number(resolved) <= 0) return;
+  applyResolvedRadiusToTemplateData(templateData, Number(resolved));
+}
+
+function clearPersistentZoneScaledRadiusPlacement(activity) {
+  pendingScaledRadiusPlacements.delete(getActivityPlacementKey(activity));
+}
+
+function getActivityPlacementKey(activity) {
+  return String(activity?.uuid ?? `${activity?.item?.uuid ?? "Item.unknown"}.Activity.${activity?.id ?? "unknown"}`);
 }
 
 export function preparePersistentZoneRectangleTemplate(activity, templateData) {

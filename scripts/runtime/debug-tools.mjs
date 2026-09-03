@@ -5,6 +5,8 @@ import {
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
 import { getPersistentZonePreset } from "../presets/preset-library.mjs";
+import { resolvePresetPersistentZoneForScene } from "../presets/preset-utils.mjs";
+import { resolvePresetDistance } from "../activity/activity-distance.mjs";
 import {
   debug,
   duplicateData,
@@ -56,6 +58,7 @@ export function createPersistentZonesDebugApi() {
     inspectSelectedRegion,
     createNativeRingFromSelectedRegion,
     createSpiritGuardiansTestItem,
+    createObscuringSpellsTestItems,
     createHeavilyObscuredTestZone,
     markNextMovement
   });
@@ -107,20 +110,66 @@ export async function createSpiritGuardiansTestItem({ actor = null } = {}) {
   } else if (typeof globalThis.Item?.create === "function") {
     item = await globalThis.Item.create(itemSource);
   }
-  if (!item || typeof item.createEmbeddedDocuments !== "function") {
+  if (!item || typeof item.createActivity !== "function") {
     return { ok: false, error: "Could not create an Item that supports embedded Activities." };
   }
-
-  const activities = await item.createEmbeddedDocuments("Activity", [
-    buildSpiritGuardiansDebugActivitySource(radiant),
-    buildSpiritGuardiansDebugActivitySource(necrotic)
-  ]);
+  let activities;
+  try {
+    activities = [
+      await createItemActivity(item, buildSpiritGuardiansDebugActivitySource(radiant)),
+      await createItemActivity(item, buildSpiritGuardiansDebugActivitySource(necrotic))
+    ];
+  } catch (error) {
+    await cleanupCreatedDebugItems(owner, [item]);
+    return { ok: false, error: "Could not create the Spirit Guardians Activities.", cause: String(error?.message ?? error) };
+  }
   return {
     ok: Array.isArray(activities) && activities.length === 2,
     item,
     itemUuid: item.uuid ?? null,
     activityIds: Array.from(activities ?? []).map((activity) => activity.id ?? null)
   };
+}
+
+/** Create the complete Fog Cloud, Sleet Storm, and Stinking Cloud test spells on one Actor. */
+export async function createObscuringSpellsTestItems({ actor = null } = {}) {
+  if (!assertDebugGM("createObscuringSpellsTestItems")) return null;
+  const ids = ["srd-5.2.1.fog-cloud", "srd-5.2.1.sleet-storm", "srd-5.2.1.stinking-cloud"];
+  const presets = ids.map(getPersistentZonePreset);
+  if (presets.some((preset) => !preset)) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.ObscuringSpells.Unavailable") };
+  const owner = actor ?? globalThis.canvas?.tokens?.controlled?.[0]?.actor ?? globalThis.game?.user?.character ?? null;
+  if (!owner?.createEmbeddedDocuments) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.ObscuringSpells.SelectToken") };
+  const scene = globalThis.canvas?.scene ?? null;
+  const persistentZones = presets.map((preset) => resolvePresetPersistentZoneForScene(preset.persistentZone, scene));
+  const sceneUnits = String(scene?.grid?.units ?? "ft");
+  const ranges = [120, 150, 90].map((value) => resolvePresetDistance(value, "ft", scene));
+  const debugNames = [
+    "PERSISTENT_ZONES.Debug.ObscuringSpells.FogCloud",
+    "PERSISTENT_ZONES.Debug.ObscuringSpells.SleetStorm",
+    "PERSISTENT_ZONES.Debug.ObscuringSpells.StinkingCloud"
+  ];
+  const itemSources = presets.map((preset, index) => ({
+    name: localize(debugNames[index]), type: "spell",
+    system: { level: index === 0 ? 1 : 3, activation: { type: "action", value: 1 }, duration: { value: 1, units: index === 0 ? "hour" : "minute", concentration: true }, range: { value: ranges[index], units: sceneUnits }, preparation: { mode: "always", prepared: true } }
+  }));
+  let items = [];
+  try {
+    items = Array.from(await owner.createEmbeddedDocuments("Item", itemSources) ?? []);
+    if (items.length !== presets.length) throw new Error("D&D5e did not create every Debug/Test spell Item.");
+    const activities = [];
+    for (const [index, item] of items.entries()) {
+      activities.push(await createItemActivity(item, {
+        name: localize(debugNames[index]), type: PERSISTENT_ZONE_ACTIVITY_TYPE,
+        duration: { value: 1, units: index === 0 ? "hour" : "minute", concentration: true },
+        target: { prompt: true, template: { type: "circle", size: persistentZones[index].geometry.radius, units: persistentZones[index].geometry.units } },
+        persistentZone: persistentZones[index]
+      }));
+    }
+    return { ok: true, items, itemUuids: items.map((item) => item.uuid), activityIds: activities.map((activity) => activity.id) };
+  } catch (error) {
+    await cleanupCreatedDebugItems(owner, items);
+    return { ok: false, error: localize("PERSISTENT_ZONES.Debug.ObscuringSpells.CreationFailed"), cause: String(error?.message ?? error) };
+  }
 }
 
 export function inspectSelectedRegion() {
@@ -779,13 +828,33 @@ function assertDebugGM(actionName) {
 }
 
 function buildSpiritGuardiansDebugActivitySource(preset) {
+  const persistentZone = resolvePresetPersistentZoneForScene(preset.persistentZone, globalThis.canvas?.scene ?? null);
   return {
     name: localize(preset.name),
     type: PERSISTENT_ZONE_ACTIVITY_TYPE,
     duration: { value: 10, units: "minute", concentration: true },
-    target: { prompt: false, template: { type: "circle", size: 15, units: "ft" } },
-    persistentZone: duplicateData(preset.persistentZone)
+    target: { prompt: false, template: { type: "circle", size: persistentZone.geometry.radius, units: persistentZone.geometry.units } },
+    persistentZone
   };
+}
+
+/** D&D5e Activities are serialized in Item.system.activities, not an embedded Document collection. */
+async function createItemActivity(item, source) {
+  if (typeof item?.createActivity !== "function") throw new Error("Item#createActivity is unavailable.");
+  const before = new Set(Array.from(item.system?.activities?.keys?.() ?? []));
+  await item.createActivity(source.type, source, { renderSheet: false });
+  const created = Array.from(item.system?.activities?.values?.() ?? []).find((activity) => !before.has(activity?.id));
+  if (!created) throw new Error("D&D5e did not retain the created Activity.");
+  return created;
+}
+
+async function cleanupCreatedDebugItems(owner, items) {
+  const ids = Array.from(items ?? []).map((item) => item?.id).filter(Boolean);
+  if (ids.length && typeof owner?.deleteEmbeddedDocuments === "function") {
+    await owner.deleteEmbeddedDocuments("Item", ids, { persistentZonesDebugCleanup: true });
+    return;
+  }
+  await Promise.allSettled(Array.from(items ?? []).map((item) => item?.delete?.({ persistentZonesDebugCleanup: true })));
 }
 
 function localize(key) {

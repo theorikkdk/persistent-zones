@@ -1,4 +1,5 @@
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
+import { cleanupStatusesUntilEndOfTurn } from "./action-restrictions.mjs";
 import {
   debug,
   evaluateManagedRegionTargetFilter,
@@ -84,6 +85,8 @@ async function processCombatTiming(combat, state, timing) {
   if (!scene || !tokenDocument?.actor) {
     return;
   }
+
+  if (timing === "end") await cleanupStatusesUntilEndOfTurn(combat, state);
 
   const managedRegions = findManagedRegions(scene);
   if (!managedRegions.length) {

@@ -3,6 +3,14 @@
     "Debug": {
       "Obscuration": {
         "Name": "Debug/Test — Zone fortement obscurcie"
+      },
+      "ObscuringSpells": {
+        "Unavailable": "Les presets des sorts d’obscurcissement ne sont pas disponibles.",
+        "SelectToken": "Sélectionnez d’abord un token possédant un Actor.",
+        "CreationFailed": "Les Items debug/test des sorts d’obscurcissement n’ont pas pu être créés.",
+        "FogCloud": "Debug/Test — Nuage de brouillard",
+        "SleetStorm": "Debug/Test — Tempête de grésil",
+        "StinkingCloud": "Debug/Test — Nuage nauséabond"
       }
     },
     "ZoneSuffix": "Zone persistante",
@@ -39,6 +47,9 @@
           "TemporaryHitPointsScaling": { "Name": "Debug/Test — Scaling des PV temporaires", "Description": "Entrez dans le cercle après un lancement à un emplacement supérieur pour vérifier les PV temporaires évolutifs." }
         },
         "Builtins": {
+          "FogCloud": { "Name": "Nuage de brouillard", "Description": "Empreinte de combat 2D fortement obscurcie de 6 m de rayon, augmentant de 6 m par emplacement supérieur." },
+          "SleetStorm": { "Name": "Tempête de grésil", "Description": "Empreinte de combat 2D : terrain difficile fortement obscurci ; un JS de Dextérité à l’entrée ou au début du tour évite À terre et la perte de concentration." },
+          "StinkingCloud": { "Name": "Nuage nauséabond", "Description": "Nuage 2D fortement obscurci : un JS de Constitution raté au début du tour empoisonne jusqu’à la fin de ce tour et interdit Action et Action bonus." },
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
           "WallOfFireLine": { "Name": "Mur de feu — Ligne", "Description": "Mur persistant en ligne avec un côté dangereux configurable." },
           "WallOfFireRing": { "Name": "Mur de feu — Anneau", "Description": "Mur persistant en anneau avec un côté dangereux intérieur ou extérieur configurable." },
@@ -157,6 +168,10 @@
         "ReferenceRadiusMode": "Mode du rayon de référence",
         "WallLength": "Longueur du mur",
         "WallThickness": "Épaisseur du mur",
+        "RadiusScaling": "Scaling du rayon",
+        "RadiusScalingBaseLevelMode": "Niveau de référence",
+        "RadiusScalingBaseLevel": "Niveau d’emplacement de référence",
+        "RadiusScalingPerLevel": "Rayon supplémentaire par niveau",
         "MovementDistanceStep": "Intervalle de distance des dégâts",
         "MovementDistanceUnits": "Unité de distance",
         "AccumulateMovementRemainder": "Cumuler la distance partielle",
@@ -174,9 +189,12 @@
         "TempHpFormula": "Formule de PV temporaires",
         "SaveEnabled": "Utiliser une sauvegarde",
         "SaveResult": "En cas de sauvegarde réussie",
+        "EndConcentration": "Mettre fin à la concentration de la cible en cas d’échec",
         "StatusesEnabled": "Appliquer des états",
         "StatusId": "État ou effet",
         "PersistenceMode": "Mode de persistance",
+        "RestrictAction": "Interdire l’Action",
+        "RestrictBonusAction": "Interdire l’Action bonus",
         "StatusRecoveryMode": "Récupération",
         "StatusRecoveryAbility": "Caractéristique du jet de sauvegarde",
         "StatusRecoveryDcMode": "DD du jet de sauvegarde",
@@ -322,8 +340,11 @@
       },
       "PersistenceModes": {
         "Persistent": "Persistant",
-        "WhileInsideRegion": "Tant que le token est dans la région"
+        "WhileInsideRegion": "Tant que le token est dans la région",
+        "UntilEndCurrentTurn": "Jusqu’à la fin du tour courant"
       },
+      "RadiusScaling": { "None": "Aucun", "PerLevel": "Par niveau d’emplacement supérieur", "ItemLevel": "Automatique — niveau du sort", "FixedLevel": "Manuel" },
+      "ActionRestrictions": { "Action": "Action", "BonusAction": "Action bonus", "Blocked": "Vous ne pouvez pas effectuer {action} tant que cet effet vous affecte." },
       "LinkedActivity": {
         "None": "Aucune"
       },

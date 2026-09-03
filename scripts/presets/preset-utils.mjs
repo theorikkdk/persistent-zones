@@ -7,7 +7,7 @@ export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
   "schemaVersion", "enabled", "geometry", "parts", "triggers", "damage", "save", "effects",
-  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles"
+  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles", "obscuration"
 ]);
 
 const RUNTIME_IDENTITY_KEYS = new Set([
@@ -105,6 +105,13 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   ]) {
     if (geometry[field] === undefined || geometry[field] === null) continue;
     geometry[field] = convertCanonicalDistanceToSceneUnits(geometry[field], sourceUnits, scene);
+  }
+  if (isObject(geometry.scaling) && geometry.scaling.radiusPerLevel !== undefined && geometry.scaling.radiusPerLevel !== null) {
+    geometry.scaling.radiusPerLevel = convertCanonicalDistanceToSceneUnits(
+      geometry.scaling.radiusPerLevel,
+      sourceUnits,
+      scene
+    );
   }
   for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
     const partGeometry = part?.geometry;

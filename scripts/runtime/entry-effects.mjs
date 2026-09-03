@@ -69,11 +69,13 @@ export async function applyConfiguredTriggerEffect({
     statuses: actionConfig.statuses,
     healing: actionConfig.healing,
     temporaryHitPoints: actionConfig.temporaryHitPoints,
+    endConcentration: actionConfig.endConcentration,
     simpleEffect: {
       ...(configuredTrigger.simpleEffect ?? {}),
       healing: actionConfig.healing,
       temporaryHitPoints: actionConfig.temporaryHitPoints,
-      statuses: actionConfig.statuses
+      statuses: actionConfig.statuses,
+      endConcentration: actionConfig.endConcentration
     },
     linkedActivity: actionConfig.linkedActivity,
     activity: actionConfig.linkedActivity
@@ -296,13 +298,15 @@ export async function applyConfiguredTriggerEffect({
   const temporaryHitPointsEnabled = Boolean(
     resolvedTrigger.temporaryHitPoints?.enabled && resolvedTrigger.temporaryHitPoints?.formula
   );
+  const endConcentrationEnabled = Boolean(resolvedTrigger.endConcentration?.enabled);
   if (
     simpleEffect.type === "damage" &&
     !resolvedTrigger.damage?.enabled &&
     !resolvedTrigger.save?.enabled &&
     !statusesEnabled &&
     !healingEnabled &&
-    !temporaryHitPointsEnabled
+    !temporaryHitPointsEnabled &&
+    !endConcentrationEnabled
   ) {
     logPzEffectSkipped("no-effect-configured", baseDiagnostic, resolvedTrigger, simpleEffect);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
@@ -472,7 +476,14 @@ export async function applyConfiguredTriggerEffect({
       triggerConfig: resolvedTrigger,
       timing: normalizedTiming,
       saveResult,
-      baseDiagnostic
+      baseDiagnostic,
+      context
+    });
+    const concentrationResult = await applyTriggeredEndConcentration({
+      actor,
+      config: resolvedTrigger.endConcentration,
+      saveEnabled: Boolean(resolvedTrigger.save?.enabled),
+      saveResult
     });
     const healingResult = await applySimpleRecoveryEffect({
       actor,
@@ -498,6 +509,7 @@ export async function applyConfiguredTriggerEffect({
       saveResult ||
       resolvedTrigger.damage?.enabled ||
       statusResult.applied ||
+      concentrationResult.applied ||
       healingResult.applied ||
       temporaryHitPointsResult.applied
     );
@@ -570,6 +582,7 @@ export async function applyConfiguredTriggerEffect({
       save: saveResult,
       damage: damageResult,
       statuses: statusResult,
+      endConcentration: concentrationResult,
       healing: healingResult,
       temporaryHitPoints: temporaryHitPointsResult,
       appliedDamage,
@@ -1003,13 +1016,38 @@ async function applyActivityTriggerEffect({
   }
 }
 
+export async function applyTriggeredEndConcentration({ actor, config = {}, saveEnabled = false, saveResult = null } = {}) {
+  if (!config?.enabled || !actor?.endConcentration) return { applied: false, skipped: true };
+  if (saveEnabled && saveResult?.success !== false) return { applied: false, skipped: true, reason: "save-not-failed" };
+  const effects = actor?.concentration?.effects;
+  const effect = effects?.first?.() ?? Array.from(effects ?? [])[0] ?? null;
+  if (!effect) return { applied: false, skipped: true, reason: "not-concentrating" };
+  const deleted = await actor.endConcentration(effect);
+  return { applied: Array.isArray(deleted) && deleted.length > 0, deletedEffectIds: Array.from(deleted ?? []).map((entry) => entry?.id).filter(Boolean) };
+}
+
+function resolveStatusTurnContext(tokenDocument, context = {}) {
+  if (context?.turnContext?.combatId) return { ...context.turnContext, tokenUuid: tokenDocument?.uuid ?? null };
+  const combat = game.combat ?? null;
+  const combatant = combat?.combatant ?? null;
+  const sameToken = combatant?.token?.uuid === tokenDocument?.uuid || combatant?.tokenId === tokenDocument?.id;
+  return sameToken ? {
+    combatId: combat.id,
+    round: Number(combat.round ?? 0),
+    turn: Number(combat.turn ?? -1),
+    combatantId: combatant?.id ?? null,
+    tokenUuid: tokenDocument?.uuid ?? null
+  } : null;
+}
+
 async function applyTriggeredStatuses({
   regionDocument,
   tokenDocument,
   triggerConfig,
   timing,
   saveResult = null,
-  baseDiagnostic = {}
+  baseDiagnostic = {},
+  context = {}
 } = {}) {
   const actor = tokenDocument?.actor ?? null;
   const statusConfig = triggerConfig?.statuses ?? triggerConfig?.simpleEffect?.statuses ?? {};
@@ -1038,6 +1076,10 @@ async function applyTriggeredStatuses({
     statusId,
     castInstanceId: runtime.castInstanceId ?? runtime.ringOperationId ?? null
   };
+  const actionRestrictions = statusConfig?.actionRestrictions ?? {};
+  const durationContext = persistenceMode === "until-end-of-current-turn"
+    ? resolveStatusTurnContext(tokenDocument, context)
+    : null;
 
   if (triggerId === "enter") {
     console.log(
@@ -1140,6 +1182,11 @@ async function applyTriggeredStatuses({
   const recoveryGroupKey = recoverySourceIdentity
     ? buildRecoveryGroupKey({
         ...identity,
+        ...(durationContext ? { turnDuration: durationContext } : {}),
+        actionRestrictions: {
+          action: Boolean(actionRestrictions.action),
+          bonusAction: Boolean(actionRestrictions.bonusAction)
+        },
         ...recoverySourceIdentity,
         statusRecovery: recoveryConfig
       })
@@ -1161,6 +1208,11 @@ async function applyTriggeredStatuses({
     flags: {
       [MODULE_ID]: {
         ...identity,
+        ...(durationContext ? { turnDuration: durationContext } : {}),
+        actionRestrictions: {
+          action: Boolean(actionRestrictions.action),
+          bonusAction: Boolean(actionRestrictions.bonusAction)
+        },
         ...(statusEscape ? { statusEscape } : {}),
         ...(recoveryConfig
           ? {
@@ -2052,8 +2104,9 @@ function resolveStatusEffectData(statusId) {
 }
 
 function normalizeStatusPersistenceMode(value) {
-  return String(value ?? "persistent").trim().toLowerCase() === "while-inside-region"
-    ? "while-inside-region"
+  const normalized = String(value ?? "persistent").trim().toLowerCase();
+  return ["while-inside-region", "until-end-of-current-turn"].includes(normalized)
+    ? normalized
     : "persistent";
 }
 

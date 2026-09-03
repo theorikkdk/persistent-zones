@@ -294,7 +294,8 @@ export function buildGeometryDefinition(geometryType, geometry, {
     return {
       type: "emanation",
       radius: numberOrNull(geometry.radius),
-      units: normalizeCanonicalDistanceUnit(geometry.units)
+      units: normalizeCanonicalDistanceUnit(geometry.units),
+      ...(geometry.scaling && typeof geometry.scaling === "object" ? { scaling: duplicate(geometry.scaling) } : {})
     };
   }
   if (geometryType === "ring") {
@@ -345,7 +346,8 @@ export function buildGeometryDefinition(geometryType, geometry, {
 
   return {
     type: "circle",
-    radius: numberOrNull(geometry.radius)
+    radius: numberOrNull(geometry.radius),
+    ...(geometry.scaling && typeof geometry.scaling === "object" ? { scaling: duplicate(geometry.scaling) } : {})
   };
 }
 
@@ -436,6 +438,7 @@ function buildTriggerConfig(triggerSource = {}, {
   const perTriggerTemporaryHitPoints = simpleEffect.temporaryHitPoints ?? trigger.temporaryHitPoints ?? null;
   const perTriggerSave = simpleEffect.save ?? trigger.save ?? null;
   const perTriggerStatuses = simpleEffect.statuses ?? trigger.statuses ?? null;
+  const perTriggerEndConcentration = simpleEffect.endConcentration ?? trigger.endConcentration ?? null;
   const linkedActivity = trigger.linkedActivity ?? trigger.activity ?? {};
   const damageConfig = perTriggerDamage ?? (inheritGlobalActions ? damage : {});
   const saveConfig = perTriggerSave ?? (inheritGlobalActions ? save : {});
@@ -491,6 +494,9 @@ function buildTriggerConfig(triggerSource = {}, {
       formula: String(perTriggerTemporaryHitPoints?.formula ?? "").trim(),
       scaling: duplicate(perTriggerTemporaryHitPoints?.scaling ?? {})
     },
+    endConcentration: {
+      enabled: mode === "simple" && Boolean(perTriggerEndConcentration?.enabled)
+    },
     save: {
       enabled: mode === "simple" && Boolean(saveConfig?.enabled),
       ability: String(saveConfig?.ability ?? "dex").trim() || "dex",
@@ -516,7 +522,11 @@ function buildTriggerConfig(triggerSource = {}, {
         statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
         persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
         recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery),
-        escape: normalizeStatusEscape(perTriggerStatuses?.escape)
+        escape: normalizeStatusEscape(perTriggerStatuses?.escape),
+        actionRestrictions: normalizeActionRestrictions(perTriggerStatuses?.actionRestrictions)
+      },
+      endConcentration: {
+        enabled: mode === "simple" && Boolean(perTriggerEndConcentration?.enabled)
       }
     },
     statuses: {
@@ -524,7 +534,8 @@ function buildTriggerConfig(triggerSource = {}, {
       statusId: String(perTriggerStatuses?.statusId ?? "").trim() || null,
       persistenceMode: normalizeStatusPersistenceMode(perTriggerStatuses?.persistenceMode, triggerId),
       recovery: normalizeStatusRecovery(perTriggerStatuses?.recovery),
-      escape: normalizeStatusEscape(perTriggerStatuses?.escape)
+      escape: normalizeStatusEscape(perTriggerStatuses?.escape),
+      actionRestrictions: normalizeActionRestrictions(perTriggerStatuses?.actionRestrictions)
     },
     activity: {
       id: mode === "activity" ? String(linkedActivity?.id ?? linkedActivity?.activityId ?? "").trim() || null : null,
@@ -553,7 +564,11 @@ function normalizeStatusPersistenceMode(value, triggerId) {
   if (triggerId === "exit") {
     return "persistent";
   }
-  return normalized === "while-inside-region" ? "while-inside-region" : "persistent";
+  return ["while-inside-region", "until-end-of-current-turn"].includes(normalized) ? normalized : "persistent";
+}
+
+function normalizeActionRestrictions(value) {
+  return { action: Boolean(value?.action), bonusAction: Boolean(value?.bonusAction) };
 }
 
 function hasPerTriggerActionConfig(trigger) {
@@ -563,12 +578,14 @@ function hasPerTriggerActionConfig(trigger) {
     trigger?.simpleEffect?.temporaryHitPoints ||
     trigger?.simpleEffect?.save ||
     trigger?.simpleEffect?.statuses ||
+    trigger?.simpleEffect?.endConcentration ||
     trigger?.linkedActivity ||
     trigger?.damage ||
     trigger?.healing ||
     trigger?.temporaryHitPoints ||
     trigger?.save ||
     trigger?.statuses ||
+    trigger?.endConcentration ||
     trigger?.activity
   );
 }
