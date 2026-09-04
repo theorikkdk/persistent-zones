@@ -4,6 +4,12 @@
       "Obscuration": {
         "Name": "Debug/Test — Heavily Obscured Zone"
       },
+      "Cloudkill": {
+        "Name": "Debug/Test — Cloudkill",
+        "Unavailable": "The Cloudkill preset is unavailable.",
+        "SelectToken": "Select a token with an Actor first.",
+        "CreationFailed": "The Debug/Test Cloudkill Item could not be created."
+      },
       "ObscuringSpells": {
         "Unavailable": "Obscuring spell presets are unavailable.",
         "SelectToken": "Select a token with an Actor first.",
@@ -12,6 +18,9 @@
         "SleetStorm": "Debug/Test — Sleet Storm",
         "StinkingCloud": "Debug/Test — Stinking Cloud"
       }
+    },
+    "Runtime": {
+      "TranslationCoincidentOrigin": "The persistent zone cannot move because its center coincides with its source."
     },
     "ZoneSuffix": "Persistent Zone",
     "Activity": {
@@ -49,6 +58,7 @@
         },
         "Builtins": {
           "FogCloud": { "Name": "Fog Cloud", "Description": "A 2D 20-foot-radius heavily obscured fog footprint, expanding by 20 feet per higher spell slot." },
+          "Cloudkill": { "Name": "Cloudkill", "Description": "A 2D 20-foot-radius heavily obscured poisonous cloud that moves 10 feet away from its source at the start of each of the source's turns." },
           "SleetStorm": { "Name": "Sleet Storm", "Description": "2D combat footprint: heavily obscured difficult terrain; Dexterity save on entry or turn start avoids Prone and concentration loss." },
           "StinkingCloud": { "Name": "Stinking Cloud", "Description": "A 2D heavily obscured cloud; a failed Constitution save at turn start causes Poisoned until that turn ends and prevents Actions and Bonus Actions." },
           "Grease": { "Name": "Grease", "Description": "SRD 5.2.1 Grease: a centered 10-foot square of difficult terrain with Dexterity saves against Prone." },

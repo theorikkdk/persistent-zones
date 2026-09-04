@@ -58,6 +58,7 @@ export function createPersistentZonesDebugApi() {
     inspectSelectedRegion,
     createNativeRingFromSelectedRegion,
     createSpiritGuardiansTestItem,
+    createCloudkillTestItem,
     createObscuringSpellsTestItems,
     createHeavilyObscuredTestZone,
     markNextMovement
@@ -129,6 +130,49 @@ export async function createSpiritGuardiansTestItem({ actor = null } = {}) {
     itemUuid: item.uuid ?? null,
     activityIds: Array.from(activities ?? []).map((activity) => activity.id ?? null)
   };
+}
+
+/** Create a ready-to-cast fifth-level Cloudkill spell with its PZ Activity. */
+export async function createCloudkillTestItem({ actor = null } = {}) {
+  if (!assertDebugGM("createCloudkillTestItem")) return null;
+
+  const preset = getPersistentZonePreset("srd-5.2.1.cloudkill");
+  if (!preset) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.Cloudkill.Unavailable") };
+
+  const owner = actor ?? globalThis.canvas?.tokens?.controlled?.[0]?.actor ?? globalThis.game?.user?.character ?? null;
+  if (!owner?.createEmbeddedDocuments) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.Cloudkill.SelectToken") };
+
+  const scene = globalThis.canvas?.scene ?? null;
+  const persistentZone = resolvePresetPersistentZoneForScene(preset.persistentZone, scene);
+  const sceneUnits = String(scene?.grid?.units ?? "ft");
+  const itemSource = {
+    name: localize("PERSISTENT_ZONES.Debug.Cloudkill.Name"),
+    type: "spell",
+    system: {
+      level: 5,
+      activation: { type: "action", value: 1 },
+      duration: { value: 10, units: "minute", concentration: true },
+      range: { value: resolvePresetDistance(120, "ft", scene), units: sceneUnits },
+      preparation: { mode: "always", prepared: true }
+    }
+  };
+
+  let item = null;
+  try {
+    item = (await owner.createEmbeddedDocuments("Item", [itemSource]))?.[0] ?? null;
+    if (!item) throw new Error("D&D5e did not create the Cloudkill Debug/Test Item.");
+    const activity = await createItemActivity(item, {
+      name: localize("PERSISTENT_ZONES.Debug.Cloudkill.Name"),
+      type: PERSISTENT_ZONE_ACTIVITY_TYPE,
+      duration: { value: 10, units: "minute", concentration: true },
+      target: { prompt: true, template: { type: "circle", size: persistentZone.geometry.radius, units: persistentZone.geometry.units } },
+      persistentZone
+    });
+    return { ok: true, item, itemUuid: item.uuid ?? null, activityId: activity.id ?? null };
+  } catch (error) {
+    await cleanupCreatedDebugItems(owner, [item]);
+    return { ok: false, error: localize("PERSISTENT_ZONES.Debug.Cloudkill.CreationFailed"), cause: String(error?.message ?? error) };
+  }
 }
 
 /** Create the complete Fog Cloud, Sleet Storm, and Stinking Cloud test spells on one Actor. */

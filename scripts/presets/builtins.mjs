@@ -98,8 +98,8 @@ const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "a
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obscuration = null, parts, triggers, movement, terrain, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, placement }),
+const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obscuration = null, parts, triggers, movement, terrain, translation = null, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, placement }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -111,7 +111,7 @@ const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obs
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, placement }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, placement }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -125,6 +125,7 @@ const BLACK_TENTACLES_FREQUENCY_GROUP = "black-tentacles-save";
 const WEB_FREQUENCY_GROUP = "web-restrain";
 const SPIRIT_GUARDIANS_FREQUENCY_GROUP = "spirit-guardians-damage";
 const SLEET_STORM_FREQUENCY_GROUP = "sleet-storm-save";
+const CLOUDKILL_FREQUENCY_GROUP = "cloudkill-damage";
 
 const buildSleetStormTrigger = () => ({
   ...buildDisabledTrigger(), enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: SLEET_STORM_FREQUENCY_GROUP,
@@ -143,6 +144,37 @@ const buildStinkingCloudTrigger = () => ({
     save: { enabled: true, ability: "con", dcMode: "inherit", dc: null, onSave: "none" },
     statuses: { enabled: true, statusId: "poisoned", persistenceMode: "until-end-of-current-turn", recovery: { mode: "none" }, actionRestrictions: { action: true, bonusAction: true } }
   }
+});
+
+const buildCloudkillTriggers = () => ({
+  ...buildDisabledTriggers(),
+  onCreate: buildDamageTrigger({
+    formula: "5d8",
+    type: "poison",
+    ability: "con",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: CLOUDKILL_FREQUENCY_GROUP,
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 5, perLevelFormula: "1d8" }
+  }),
+  enter: buildDamageTrigger({
+    formula: "5d8",
+    type: "poison",
+    ability: "con",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: CLOUDKILL_FREQUENCY_GROUP,
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 5, perLevelFormula: "1d8" }
+  }),
+  turnEnd: buildDamageTrigger({
+    formula: "5d8",
+    type: "poison",
+    ability: "con",
+    half: true,
+    frequency: "once-per-turn",
+    frequencyGroup: CLOUDKILL_FREQUENCY_GROUP,
+    scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 5, perLevelFormula: "1d8" }
+  })
 });
 
 const buildSpiritGuardiansTriggers = (type) => ({
@@ -452,6 +484,18 @@ export const BUILTIN_PRESETS = Object.freeze([
     obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
     obscuration: { mode: "heavily-obscured" },
     triggers: buildDisabledTriggers(),
+    terrain: { enabled: false, multiplier: 2 }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.cloudkill",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.Cloudkill.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Cloudkill.Description",
+    geometry: { type: "circle", radius: 20, units: "ft" },
+    tags: ["conjuration", "obscuration", "damage", "concentration", "translation", "poison"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+    obscuration: { mode: "heavily-obscured" },
+    translation: { enabled: true, trigger: "source-turn-start", distance: 10, units: "ft", direction: "away-from-source" },
+    triggers: buildCloudkillTriggers(),
     terrain: { enabled: false, multiplier: 2 }
   }),
   buildSrdPreset({

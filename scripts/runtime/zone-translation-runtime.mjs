@@ -79,6 +79,9 @@ export async function translateRegionAwayFromSource(regionDocument, sourceToken,
   const vector = { x: origin.x - sourceCenter.x, y: origin.y - sourceCenter.y };
   const magnitude = Math.hypot(vector.x, vector.y);
   if (!(magnitude > 1e-6)) {
+    const message = globalThis.game?.i18n?.localize?.("PERSISTENT_ZONES.Runtime.TranslationCoincidentOrigin")
+      ?? "The persistent zone cannot move because its center coincides with its source.";
+    globalThis.ui?.notifications?.warn?.(message);
     console.warn(`[${MODULE_ID}] Zone translation skipped: source and zone center coincide.`, { regionId: regionDocument?.id ?? null, sourceTokenId: sourceToken?.id ?? null });
     return { moved: false, reason: "coincident-origin" };
   }

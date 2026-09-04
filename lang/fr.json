@@ -4,6 +4,12 @@
       "Obscuration": {
         "Name": "Debug/Test — Zone fortement obscurcie"
       },
+      "Cloudkill": {
+        "Name": "Debug/Test — Nuage mortel",
+        "Unavailable": "Le preset Nuage mortel est indisponible.",
+        "SelectToken": "Sélectionnez d’abord un token possédant un Actor.",
+        "CreationFailed": "L’Item Debug/Test Nuage mortel n’a pas pu être créé."
+      },
       "ObscuringSpells": {
         "Unavailable": "Les presets des sorts d’obscurcissement ne sont pas disponibles.",
         "SelectToken": "Sélectionnez d’abord un token possédant un Actor.",
@@ -12,6 +18,9 @@
         "SleetStorm": "Debug/Test — Tempête de grésil",
         "StinkingCloud": "Debug/Test — Nuage nauséabond"
       }
+    },
+    "Runtime": {
+      "TranslationCoincidentOrigin": "La zone persistante ne peut pas se déplacer car son centre coïncide avec sa source."
     },
     "ZoneSuffix": "Zone persistante",
     "Activity": {
@@ -49,6 +58,7 @@
         },
         "Builtins": {
           "FogCloud": { "Name": "Nuage de brouillard", "Description": "Empreinte de combat 2D fortement obscurcie de 6 m de rayon, augmentant de 6 m par emplacement supérieur." },
+          "Cloudkill": { "Name": "Nuage mortel", "Description": "Nuage empoisonné 2D fortement obscurci de 6 m de rayon, qui s’éloigne de 3 m de sa source au début de chacun des tours de celle-ci." },
           "SleetStorm": { "Name": "Tempête de grésil", "Description": "Empreinte de combat 2D : terrain difficile fortement obscurci ; un JS de Dextérité à l’entrée ou au début du tour évite À terre et la perte de concentration." },
           "StinkingCloud": { "Name": "Nuage nauséabond", "Description": "Nuage 2D fortement obscurci : un JS de Constitution raté au début du tour empoisonne jusqu’à la fin de ce tour et interdit Action et Action bonus." },
           "Grease": { "Name": "Graisse", "Description": "Graisse du SRD 5.2.1 : un carré centré de 3 m de terrain difficile avec JDS de Dextérité contre À terre." },
