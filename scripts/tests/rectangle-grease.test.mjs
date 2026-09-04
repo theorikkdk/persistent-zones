@@ -135,10 +135,11 @@ test("rectangle placement identity matches native rectangle and polygon Regions"
     userId: "user", sceneId: "scene", itemUuid: "Item.grease",
     activityId: "grease", activityUuid: "Item.grease.Activity.grease",
     activityType: "persistent-zone", geometryType: "rectangle",
-    sourceTokenUuid: "Scene.scene.Token.caster", sourceDisposition: 1
+    sourceTokenUuid: "Scene.scene.Token.caster", sourceTokenId: "caster", sourceDisposition: 1
   });
   assert.ok(context);
   assert.equal(context.sourceTokenUuid, "Scene.scene.Token.caster");
+  assert.equal(context.sourceTokenId, "caster");
   assert.equal(context.sourceDisposition, 1);
   assert.equal(findPersistentZonePlacementContext({ userId: "user", sceneId: "scene", itemUuid: "Item.grease", regionShapeType: "rectangle" })?.activityId, "grease");
   assert.equal(findPersistentZonePlacementContext({ userId: "user", sceneId: "scene", itemUuid: "Item.grease", regionShapeType: "polygon" })?.activityId, "grease");
@@ -293,7 +294,7 @@ test("real V14 direct Region path adopts a square-shaped line as Rectangle witho
     userId: "user-real", sceneId: scene.id, itemUuid: item.uuid,
     activityId: activity.id, activityUuid: activity.uuid, activityType: activity.type,
     geometryType: "rectangle", targetTemplateType: "square", nativeTemplateType: "rect",
-    sourceTokenUuid: "Scene.scene-real.Token.caster", sourceDisposition: 1
+    sourceTokenUuid: "Scene.scene-real.Token.caster", sourceTokenId: "caster", sourceDisposition: 1
   });
 
   assert.equal(getRegionRuntime(region), null);
@@ -304,6 +305,7 @@ test("real V14 direct Region path adopts a square-shaped line as Rectangle witho
   assert.equal(runtime.itemUuid, item.uuid);
   assert.equal(runtime.activityId, activity.id);
   assert.equal(runtime.sourceTokenUuid, "Scene.scene-real.Token.caster");
+  assert.equal(runtime.sourceTokenId, "caster");
   assert.equal(runtime.sourceDisposition, 1);
   assert.equal(runtime.normalizedDefinition.geometry.type, "rectangle");
   assert.equal(runtime.normalizedDefinition.triggers.onCreate.save.ability, "dex");

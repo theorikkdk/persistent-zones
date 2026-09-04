@@ -12,7 +12,7 @@ import {
 } from "../presets/preset-utils.mjs";
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 28);
+  assert.equal(BUILTIN_PRESETS.length, 29);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -276,7 +276,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   assert.deepEqual(ids, [
     "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
-    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self",
+    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.zone-translation",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.entangle", "srd-5.2.1.fog-cloud", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.sleet-storm", "srd-5.2.1.spike-growth", "srd-5.2.1.spirit-guardians-necrotic", "srd-5.2.1.spirit-guardians-radiant",
     "srd-5.2.1.stinking-cloud", "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
@@ -285,12 +285,46 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   for (const id of [
     "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.temporary-hit-points-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
-    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self"
+    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.zone-translation"
   ]) {
     const preset = getPersistentZonePreset(id);
     assert.equal(preset.source, "builtin");
     assert.equal(preset.category, "debug-tests");
   }
+});
+
+test("debug zone translation preset applies canonical movement and resolves it for metric scenes", async () => {
+  const preset = getPersistentZonePreset("debug.zone-translation");
+  assert.ok(preset);
+  assert.equal(preset.category, "debug-tests");
+  assert.deepEqual(preset.persistentZone.geometry, { type: "circle", radius: 10, units: "ft" });
+  assert.deepEqual(preset.persistentZone.obstacles, { mode: "wall-restricted", restrictionType: "move", priority: 0 });
+  assert.deepEqual(preset.persistentZone.translation, {
+    enabled: true,
+    trigger: "source-turn-start",
+    distance: 10,
+    units: "ft",
+    direction: "away-from-source"
+  });
+  assert.ok(Object.values(preset.persistentZone.triggers).every((trigger) => trigger.enabled === false));
+
+  const metric = { grid: { units: "m", distance: 1.5, size: 100 } };
+  const resolved = resolvePresetPersistentZoneForScene(preset.persistentZone, metric);
+  assert.deepEqual(resolved.geometry, { type: "circle", radius: 3, units: "m" });
+  assert.deepEqual(resolved.translation, {
+    enabled: true,
+    trigger: "source-turn-start",
+    distance: 3,
+    units: "m",
+    direction: "away-from-source"
+  });
+
+  const captured = [];
+  const activity = { id: "zone-translation", item: { async updateActivity(_id, updates) { captured.push(updates); } } };
+  const result = await applyPresetToActivity(activity, preset, { scene: metric });
+  assert.equal(result.persistentZone.translation.distance, 3);
+  assert.equal(result.persistentZone.translation.units, "m");
+  assert.deepEqual(captured.at(-1).persistentZone.translation, result.persistentZone.translation);
 });
 
 test("debug movement-cost presets apply their explicit terrain and obstacle configuration", async () => {

@@ -68,6 +68,7 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
       targetTemplateType,
       nativeTemplateType: normalizeNativeTemplateType(targetTemplateType),
       sourceTokenUuid: sourceToken?.uuid ?? null,
+      sourceTokenId: sourceToken?.id ?? null,
       sourceDisposition: sourceToken?.disposition ?? sourceToken?.document?.disposition ?? null,
       castLevel: castLevel?.castLevel ?? null,
       castLevelSource: castLevel?.source ?? null
@@ -76,8 +77,18 @@ export class PersistentZoneActivity extends dnd5e.documents.activity.ActivityMix
 }
 
 function resolveActivitySourceToken(activity, usage = {}) {
-  const explicit = usage?.tokenDocument ?? usage?.token?.document ?? usage?.token ?? activity?.actor?.token ?? null;
-  if (explicit?.uuid) return explicit;
+  const candidates = [
+    usage?.tokenDocument,
+    usage?.token?.document,
+    usage?.token,
+    usage?.workflow?.token?.document,
+    usage?.workflow?.token,
+    usage?.config?.token?.document,
+    usage?.config?.token,
+    activity?.actor?.token
+  ];
+  const explicit = candidates.find((candidate) => candidate?.uuid) ?? null;
+  if (explicit) return explicit;
   const actorUuid = activity?.actor?.uuid ?? activity?.item?.actor?.uuid ?? null;
   const controlled = Array.from(globalThis.canvas?.tokens?.controlled ?? [])
     .map((placeable) => placeable?.document ?? placeable)

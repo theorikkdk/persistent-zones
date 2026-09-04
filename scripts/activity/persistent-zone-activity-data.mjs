@@ -198,6 +198,13 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
             min: 1
           })
         }),
+        translation: new fields.SchemaField({
+          enabled: new fields.BooleanField({ required: false, initial: false }),
+          trigger: new fields.StringField({ required: false, initial: "source-turn-start", choices: ["source-turn-start"] }),
+          distance: new fields.NumberField({ required: false, nullable: true, initial: 0, min: 0 }),
+          units: new fields.StringField({ required: false, initial: "scene", choices: ["scene", "ft", "m"] }),
+          direction: new fields.StringField({ required: false, initial: "away-from-source", choices: ["away-from-source"] })
+        }, { required: false, nullable: true, initial: null }),
         terrain: new fields.SchemaField({
           enabled: new fields.BooleanField({
             required: false,

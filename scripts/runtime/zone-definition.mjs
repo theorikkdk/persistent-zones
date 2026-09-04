@@ -339,6 +339,9 @@ export function normalizeZoneDefinition(
     }),
     elevation: normalizeElevationDefinition(definition.elevation),
     obscuration: normalizeObscurationDefinition(definition.obscuration),
+    translation: normalizeZoneTranslationDefinition(definition.translation, {
+      scene: templateDocument?.parent ?? canvas?.scene ?? null
+    }),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -1141,6 +1144,23 @@ function normalizeObscurationDefinition(value) {
     mode: isPlainObject(value) && value.mode === "heavily-obscured"
       ? "heavily-obscured"
       : "none"
+  };
+}
+
+function normalizeZoneTranslationDefinition(value, { scene = null } = {}) {
+  if (!isPlainObject(value) || value.enabled !== true) {
+    return { enabled: false, trigger: "source-turn-start", distance: 0, units: "scene", direction: "away-from-source" };
+  }
+  const units = ["scene", "ft", "m"].includes(String(value.units ?? "scene").toLowerCase())
+    ? String(value.units ?? "scene").toLowerCase()
+    : "scene";
+  return {
+    enabled: true,
+    trigger: "source-turn-start",
+    distance: Math.max(0, coerceNumber(value.distance, 0)),
+    units,
+    direction: "away-from-source",
+    sceneUnits: scene?.grid?.units ?? null
   };
 }
 

@@ -7,7 +7,7 @@ export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
   "schemaVersion", "enabled", "geometry", "parts", "triggers", "damage", "save", "effects",
-  "placement", "movement", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles", "obscuration"
+  "placement", "movement", "translation", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles", "obscuration"
 ]);
 
 const RUNTIME_IDENTITY_KEYS = new Set([
@@ -93,6 +93,7 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   const sourceUnits = normalizeCanonicalDistanceUnit(geometry.units);
   const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
   if (sourceUnits === "scene" || sceneUnits === "scene") {
+    convertTranslationForScene(resolved.translation, scene, sceneUnits);
     convertElevationForScene(resolved.elevation, scene, sceneUnits);
     for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
       convertElevationForScene(part?.elevation, scene, sceneUnits);
@@ -136,8 +137,17 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
     resolved.movement.distanceStep = convertCanonicalDistanceToSceneUnits(resolved.movement.distanceStep, sourceUnits, scene);
     resolved.movement.units = sceneUnits;
   }
+  convertTranslationForScene(resolved.translation, scene, sceneUnits);
   geometry.units = sceneUnits;
   return resolved;
+}
+
+function convertTranslationForScene(translation, scene, sceneUnits) {
+  if (!isObject(translation) || translation.distance === undefined || translation.distance === null) return;
+  const sourceUnits = normalizeCanonicalDistanceUnit(translation.units);
+  if (sourceUnits === "scene" || sceneUnits === "scene") return;
+  translation.distance = convertCanonicalDistanceToSceneUnits(translation.distance, sourceUnits, scene);
+  translation.units = sceneUnits;
 }
 
 function convertElevationForScene(elevation, scene, sceneUnits) {

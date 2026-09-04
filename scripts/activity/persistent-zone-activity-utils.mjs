@@ -71,6 +71,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   const obscuration = source.obscuration && typeof source.obscuration === "object" ? {
     mode: source.obscuration.mode === "heavily-obscured" ? "heavily-obscured" : "none"
   } : null;
+  const translation = buildRuntimeTranslation(source.translation);
 
   const definition = {
     schemaVersion: activitySchemaVersion,
@@ -85,6 +86,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     ...(elevation ? { elevation } : {}),
     ...(obstacles ? { obstacles } : {}),
     ...(obscuration ? { obscuration } : {}),
+    ...(translation ? { translation } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {
@@ -149,6 +151,19 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
   }
 
   return definition;
+}
+
+function buildRuntimeTranslation(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    enabled: value.enabled === true,
+    trigger: "source-turn-start",
+    distance: Math.max(0, Number(value.distance) || 0),
+    units: ["scene", "ft", "m"].includes(String(value.units ?? "scene").toLowerCase())
+      ? String(value.units ?? "scene").toLowerCase()
+      : "scene",
+    direction: "away-from-source"
+  };
 }
 
 function buildRuntimePartDefinitions(parts, {

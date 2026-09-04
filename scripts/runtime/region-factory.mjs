@@ -255,6 +255,7 @@ export async function createAttachedEmanationFromActivity(activity, sourceToken,
     caster: activity?.actor ?? item?.actor ?? null,
     activity,
     sourceTokenUuid: sourceToken.uuid ?? null,
+    sourceTokenId: sourceToken.id ?? null,
     sourceDisposition: sourceToken.disposition ?? null
   };
   const radius = Math.max(0, convertCanonicalDistanceToSceneUnits(
@@ -4354,11 +4355,20 @@ export async function createRegionFromTemplate(
   }
 
   const resolvedContext = await resolveTemplateSourceContext(templateDocument);
+  const placementContext = findPersistentZonePlacementContext({
+    userId,
+    sceneId: scene.id,
+    itemUuid: item?.uuid ?? resolvedContext.item?.uuid ?? null,
+    regionShapeType: getTemplateType(templateDocument)
+  });
   const sourceContext = {
     item: item ?? resolvedContext.item ?? null,
     actor: actor ?? item?.actor ?? resolvedContext.actor ?? null,
     caster: caster ?? resolvedContext.caster ?? actor ?? item?.actor ?? null,
-    activity: resolvedContext.activity ?? null
+    activity: resolvedContext.activity ?? null,
+    sourceTokenUuid: placementContext?.sourceTokenUuid ?? null,
+    sourceTokenId: placementContext?.sourceTokenId ?? null,
+    sourceDisposition: placementContext?.sourceDisposition ?? null
   };
   logRingCastDiagnostic("ringCastSourceResolved", {
     entryPoint: "createRegionFromTemplate",
@@ -7426,6 +7436,7 @@ function buildManagedRegionRuntimeFlags({
     actorUuid: normalizedDefinition?.actorUuid ?? sourceContext?.actor?.uuid ?? null,
     casterUuid: normalizedDefinition?.casterUuid ?? sourceContext?.caster?.uuid ?? null,
     sourceTokenUuid: existingRuntime?.sourceTokenUuid ?? sourceContext?.sourceTokenUuid ?? null,
+    sourceTokenId: existingRuntime?.sourceTokenId ?? sourceContext?.sourceTokenId ?? null,
     sourceDisposition: existingRuntime?.sourceDisposition ?? sourceContext?.sourceDisposition ?? null,
     activityId: normalizedDefinition?.activityId ?? sourceContext?.activity?.id ?? null,
     activityUuid: normalizedDefinition?.activityUuid ?? sourceContext?.activity?.uuid ?? null,
@@ -8360,7 +8371,10 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
       item: contextItem ?? null,
       actor: contextItem?.actor ?? null,
       caster: contextItem?.actor ?? null,
-      activity: contextActivity ?? null
+      activity: contextActivity ?? null,
+      sourceTokenUuid: directPlacementContext.sourceTokenUuid ?? null,
+      sourceTokenId: directPlacementContext.sourceTokenId ?? null,
+      sourceDisposition: directPlacementContext.sourceDisposition ?? null
     };
     const configuration = resolvePersistentZoneConfiguration({
       actor: sourceContext.actor,
@@ -8622,6 +8636,7 @@ async function buildRuntimeFlagsForUnmanagedCreatedRegion(regionDocument, {
   selected.sourceContext = {
     ...selected.sourceContext,
     sourceTokenUuid: sourcePlacementContext?.sourceTokenUuid ?? selected.sourceContext?.sourceTokenUuid ?? null,
+    sourceTokenId: sourcePlacementContext?.sourceTokenId ?? selected.sourceContext?.sourceTokenId ?? null,
     sourceDisposition: sourcePlacementContext?.sourceDisposition ?? selected.sourceContext?.sourceDisposition ?? null
   };
   logActivityIdentityHandoff({

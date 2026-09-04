@@ -226,7 +226,7 @@ const wallOfFireLinkedLights = {
   color: "#ff9b42"
 };
 
-const base = ({ id, name, description, category, geometry, elevation = null, obstacles = null, obscuration = null, parts = [], triggers = buildDisabledTriggers(), movement = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
+const base = ({ id, name, description, category, geometry, elevation = null, obstacles = null, obscuration = null, parts = [], triggers = buildDisabledTriggers(), movement = null, translation = null, terrain = { enabled: false, multiplier: 2 }, placement = null }) => ({
   id,
   version: PRESET_SCHEMA_VERSION,
   source: "builtin",
@@ -246,6 +246,7 @@ const base = ({ id, name, description, category, geometry, elevation = null, obs
     parts,
     triggers,
     movement: movement ?? { stopOnTrigger: false, stopMode: "off", movementMode: "any", stepMode: "distance", distanceStep: 5, units: "scene", accumulateRemainder: false, aggregateApplications: true, cellStep: 1 },
+    ...(translation ? { translation } : {}),
     terrain,
     linkedWalls: { enabled: false, preset: "solid", geometry: "centerline" },
     linkedLights: { enabled: false, preset: "glow", bright: null, dim: null, max: 24, color: "#ffd88a" },
@@ -276,6 +277,18 @@ const buildRectangleWallsDebugPreset = ({ id, name, description, terrain = false
   geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
   obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
   terrain: { enabled: terrain, multiplier: 2 },
+  triggers: buildDisabledTriggers()
+});
+
+const buildZoneTranslationDebugPreset = () => base({
+  id: "debug.zone-translation",
+  name: "PERSISTENT_ZONES.Activity.Presets.Debug.ZoneTranslation.Name",
+  description: "PERSISTENT_ZONES.Activity.Presets.Debug.ZoneTranslation.Description",
+  category: "debug-tests",
+  geometry: { type: "circle", radius: 10, units: "ft" },
+  obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+  translation: { enabled: true, trigger: "source-turn-start", distance: 10, units: "ft", direction: "away-from-source" },
+  terrain: { enabled: false, multiplier: 2 },
   triggers: buildDisabledTriggers()
 });
 
@@ -327,6 +340,7 @@ const buildRecoveryScalingDebugPreset = ({ id, name, description, recoveryType, 
 };
 
 export const BUILTIN_PRESETS = Object.freeze([
+  buildZoneTranslationDebugPreset(),
   buildDamageScalingDebugPreset({
     id: "debug.damage-scaling-3d8",
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScaling3d8.Name",

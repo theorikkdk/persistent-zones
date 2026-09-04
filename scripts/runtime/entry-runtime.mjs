@@ -2322,6 +2322,47 @@ async function applyMoveTriggerIfNeeded(tokenDocument, regionDocument, onMove, {
   return appliedCount > 0;
 }
 
+/** Snapshot membership immediately before a Region geometry translation. */
+export function captureRegionMembership(regionDocument) {
+  const scene = regionDocument?.parent ?? null;
+  const tokens = Array.from(scene?.tokens?.contents ?? scene?.tokens ?? []);
+  return new Map(tokens.map((tokenDocument) => [
+    tokenDocument?.id,
+    testTokenInsideManagedRegion(tokenDocument, regionDocument, snapshotTokenState(tokenDocument))
+  ]));
+}
+
+/**
+ * A Region moving under its own rule is not a Token update, so reconcile the
+ * same transition semantics explicitly. This is intentionally scoped to the
+ * translated Region and does not alter ordinary token-movement processing.
+ */
+export async function reconcileRegionMembershipAfterTranslation(regionDocument, previousMembership, { combat = null, state = null } = {}) {
+  const scene = regionDocument?.parent ?? null;
+  const runtime = getRegionRuntimeFlags(regionDocument);
+  const definition = runtime?.normalizedDefinition ?? null;
+  const tokens = Array.from(scene?.tokens?.contents ?? scene?.tokens ?? []);
+  const results = [];
+  for (const tokenDocument of tokens) {
+    const wasInside = previousMembership?.get(tokenDocument?.id) === true;
+    const isInside = testTokenInsideManagedRegion(tokenDocument, regionDocument, snapshotTokenState(tokenDocument));
+    if (wasInside === isInside) continue;
+    const timing = isInside ? "onEnter" : "onExit";
+    const triggerConfig = isInside ? definition?.triggers?.onEnter : definition?.triggers?.onExit;
+    if (!isInside) await cleanupWhileInsideStatusesForRegionToken({ regionDocument, tokenDocument, cleanupReason: "region-translation-exit" });
+    if (triggerConfig?.enabled) {
+      results.push(await applyConfiguredTriggerEffect({
+        regionDocument,
+        tokenDocument,
+        triggerConfig,
+        timing,
+        context: { turnContext: combat && state ? { combatId: combat.id, round: state.round, turn: state.turn, combatantId: state.combatantId } : null }
+      }));
+    }
+  }
+  return results;
+}
+
 function resolveMovementDistanceProgress({ regionDocument, tokenDocument, insideDistance, interval, toInside }) {
   const safeInterval = Math.max(coerceNumber(interval, 0), 0);
   const key = buildMovementDistanceRemainderKey(regionDocument, tokenDocument);

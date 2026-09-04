@@ -31,6 +31,7 @@
         "Applied": "Le preset {preset} a été appliqué.",
         "Categories": { "SrdSpells": "Sorts SRD 5.2.1", "DebugTests": "Presets debug/test" },
         "Debug": {
+          "ZoneTranslation": { "Name": "Debug/Test — Déplacement de zone", "Description": "Un cercle neutre de 3 m qui s’éloigne de 3 m de sa source au début du tour de celle-ci." },
           "MovementCostX2": { "Name": "Debug/Test — Coût de déplacement ×2", "Description": "Un cercle neutre avec terrain difficile standard ×2." },
           "MovementCostX4": { "Name": "Debug/Test — Coût de déplacement ×4", "Description": "Un cercle neutre utilisant le comportement natif Foundry de coût de déplacement ×4." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." },

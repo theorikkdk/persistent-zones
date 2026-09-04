@@ -15,6 +15,7 @@ export function registerPersistentZonePlacementContext({
   targetTemplateType = null,
   nativeTemplateType = null,
   sourceTokenUuid = null,
+  sourceTokenId = null,
   sourceDisposition = null,
   castLevel = null,
   castLevelSource = null
@@ -32,6 +33,7 @@ export function registerPersistentZonePlacementContext({
     targetTemplateType: normalizeIdentifier(targetTemplateType)?.toLowerCase() ?? null,
     nativeTemplateType: normalizeIdentifier(nativeTemplateType)?.toLowerCase() ?? null,
     sourceTokenUuid: normalizeIdentifier(sourceTokenUuid),
+    sourceTokenId: normalizeIdentifier(sourceTokenId),
     sourceDisposition: normalizeDisposition(sourceDisposition),
     castLevel: normalizePositiveInteger(castLevel),
     castLevelSource: normalizeIdentifier(castLevelSource),

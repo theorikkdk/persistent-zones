@@ -31,6 +31,7 @@
         "Applied": "Applied the {preset} preset.",
         "Categories": { "SrdSpells": "SRD 5.2.1 Spells", "DebugTests": "Debug/Test Presets" },
         "Debug": {
+          "ZoneTranslation": { "Name": "Debug/Test — Zone Translation", "Description": "A neutral 10-foot circle that moves 10 feet away from its source at the start of the source's turn." },
           "MovementCostX2": { "Name": "Debug/Test — Movement Cost ×2", "Description": "A neutral circle with standard ×2 difficult terrain." },
           "MovementCostX4": { "Name": "Debug/Test — Movement Cost ×4", "Description": "A neutral circle using Foundry's native ×4 movement cost behavior." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Movement Cost ×4 + Walls", "Description": "A neutral ×4 circle restricted by movement-blocking walls." },

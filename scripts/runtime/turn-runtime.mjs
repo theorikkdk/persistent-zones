@@ -1,5 +1,6 @@
 import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 import { cleanupStatusesUntilEndOfTurn } from "./action-restrictions.mjs";
+import { processSourceTurnZoneTranslations } from "./zone-translation-runtime.mjs";
 import {
   debug,
   evaluateManagedRegionTargetFilter,
@@ -87,6 +88,10 @@ async function processCombatTiming(combat, state, timing) {
   }
 
   if (timing === "end") await cleanupStatusesUntilEndOfTurn(combat, state);
+
+  // A zone's automatic translation belongs to its source creature's turn,
+  // before ordinary start-of-turn effects inspect membership.
+  if (timing === "start") await processSourceTurnZoneTranslations(combat, state, tokenDocument);
 
   const managedRegions = findManagedRegions(scene);
   if (!managedRegions.length) {
