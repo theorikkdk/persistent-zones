@@ -22,6 +22,7 @@
     "Runtime": {
       "TranslationCoincidentOrigin": "La zone persistante ne peut pas se déplacer car son centre coïncide avec sa source.",
       "MidiUnavailableFallback": "Midi-QOL est indisponible ; Persistent Zones utilise la résolution native."
+      ,"DebugTargetingFeedback": "Persistent Zones {mode} : {token}"
     },
     "ControlledMovement": {
       "Prompt": "Choisissez une destination à portée, puis cliquez ou touchez-la.",
@@ -51,6 +52,7 @@
         "Debug": {
           "ZoneTranslation": { "Name": "Debug/Test — Déplacement de zone", "Description": "Un cercle neutre de 3 m qui s’éloigne de 3 m de sa source au début du tour de celle-ci." },
           "ControlledMovement": { "Name": "Debug/Test — Déplacement contrôlé", "Description": "Un cercle neutre de 3 m avec une commande d’Action bonus prête à l’emploi, limitée à 9 m." },
+          "PhysicalContactProximity": { "Name": "Debug/Test — Contact physique et proximité", "Description": "Un cercle neutre avec un corps physique de 0,75 m, déplacement contrôlé et retour de proximité à 1,5 m." },
           "TokenMembership50": { "Name": "Debug/Test — Membership Token 50 %", "Description": "Un rectangle neutre pour comparer moins de la moitié, exactement la moitié et plus de la moitié du footprint d’un Token dans une zone." },
           "NativeResolution": { "Name": "Debug/Test — Résolution native", "Description": "Un cercle neutre avec JDS de Dextérité et dégâts de feu typés, pour tester les mitigations D&D5e." },
           "MidiResolution": { "Name": "Debug/Test — Résolution Midi-QOL", "Description": "Un cercle neutre avec un JDS de Dextérité et 2d6 feu, pour tester le moteur de résolution sélectionné." },

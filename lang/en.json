@@ -22,6 +22,7 @@
     "Runtime": {
       "TranslationCoincidentOrigin": "The persistent zone cannot move because its center coincides with its source.",
       "MidiUnavailableFallback": "Midi-QOL is unavailable; Persistent Zones is using native resolution."
+      ,"DebugTargetingFeedback": "Persistent Zones {mode}: {token}"
     },
     "ControlledMovement": {
       "Prompt": "Choose a destination within range, then tap or click.",
@@ -51,6 +52,7 @@
         "Debug": {
           "ZoneTranslation": { "Name": "Debug/Test — Zone Translation", "Description": "A neutral 10-foot circle that moves 10 feet away from its source at the start of the source's turn." },
           "ControlledMovement": { "Name": "Debug/Test — Controlled Movement", "Description": "A neutral 10-foot circle with a ready-to-use Bonus Action movement command, limited to 30 feet." },
+          "PhysicalContactProximity": { "Name": "Debug/Test — Physical Contact and Proximity", "Description": "A neutral circle with a 2.5-foot physical body, controlled movement, and 5-foot proximity feedback." },
           "TokenMembership50": { "Name": "Debug/Test — 50% Token Membership", "Description": "A neutral rectangle for comparing less than half, exactly half, and more than half of a Token footprint inside a zone." },
           "NativeResolution": { "Name": "Debug/Test — Native Resolution", "Description": "A neutral circle with a Dexterity save and typed fire damage, for testing D&D5e damage mitigation." },
           "MidiResolution": { "Name": "Debug/Test — Midi-QOL Resolution", "Description": "A neutral circle with one Dexterity save and 2d6 fire damage, for testing the selected resolution engine." },

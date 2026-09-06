@@ -344,6 +344,10 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
         choices: ["all", "allies", "enemies", "self", "others"]
       })
     }),
+    targeting: new fields.SchemaField({
+      mode: new fields.StringField({ required: false, initial: "membership", choices: ["membership", "physical-contact", "proximity"] }),
+      distance: new fields.NumberField({ required: false, nullable: true, initial: null })
+    }),
     frequency: new fields.StringField({
       required: false,
       initial: "unlimited",
@@ -353,6 +357,7 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       required: false,
       initial: ""
     }),
+    debugFeedback: new fields.BooleanField({ required: false, initial: false }),
     requiredAbsentStatuses: new fields.ArrayField(new fields.StringField(), {
       required: false,
       initial: []

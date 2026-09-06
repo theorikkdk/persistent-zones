@@ -1920,8 +1920,10 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     enabled,
     mode: enabled ? mode : "none",
     targetFilter: { mode: normalizeTriggerTargetFilterMode(definition.targetFilter?.mode) },
+    targeting: normalizeTriggerTargeting(definition.targeting),
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
+    debugFeedback: Boolean(definition.debugFeedback),
     requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(definition.requiredAbsentSourceStatuses),
     interruptionMode: normalizeMovementInterruptionMode(definition.interruptionMode),
@@ -2453,6 +2455,12 @@ function normalizeStatusPersistenceMode(value) {
   return ["while-inside-region", "until-end-of-current-turn"].includes(normalized)
     ? normalized
     : "persistent";
+}
+
+function normalizeTriggerTargeting(value) {
+  const mode = ["physical-contact", "proximity"].includes(String(value?.mode ?? "").trim()) ? String(value.mode).trim() : "membership";
+  const distance = Number(value?.distance);
+  return { mode, distance: mode === "proximity" && Number.isFinite(distance) ? Math.max(0, distance) : null };
 }
 
 function normalizeActionRestrictions(value) {

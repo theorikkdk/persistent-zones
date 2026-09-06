@@ -62,8 +62,10 @@ export async function applyConfiguredTriggerEffect({
     ...configuredTrigger,
     mode: actionConfig.mode,
     targetFilter: actionConfig.targetFilter,
+    targeting: actionConfig.targeting,
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
+    debugFeedback: actionConfig.debugFeedback,
     requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
     requiredAbsentSourceStatuses: actionConfig.requiredAbsentSourceStatuses,
     damage: actionConfig.damage,
@@ -83,6 +85,12 @@ export async function applyConfiguredTriggerEffect({
     activity: actionConfig.linkedActivity
   };
   const triggerMode = actionConfig.mode;
+  if (actionConfig.debugFeedback) {
+    globalThis.ui?.notifications?.info?.(globalThis.game?.i18n?.format?.("PERSISTENT_ZONES.Runtime.DebugTargetingFeedback", {
+      token: tokenDocument?.name ?? tokenDocument?.document?.name ?? tokenDocument?.id ?? "Token",
+      mode: actionConfig.targeting?.mode ?? "membership"
+    }) ?? `Persistent Zones target: ${tokenDocument?.name ?? tokenDocument?.id ?? "Token"}`);
+  }
   const isV14RingRuntime = runtime.regionSourceStrategy === "v14-region-native-segment-group" ||
     String(runtime.geometryType ?? runtime.normalizedDefinition?.geometry?.type ?? "").toLowerCase() === "ring";
   const baseDiagnostic = {

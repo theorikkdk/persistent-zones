@@ -497,8 +497,10 @@ function buildTriggerConfig(triggerSource = {}, {
     mode,
     triggerId,
     targetFilter: { mode: normalizeTriggerTargetFilterMode(trigger.targetFilter?.mode) },
+    targeting: normalizeTriggerTargeting(trigger.targeting),
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
+    debugFeedback: Boolean(trigger.debugFeedback),
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(trigger.requiredAbsentSourceStatuses),
     interruptionMode: String(movement.interruptionMode ?? "inherit").trim().toLowerCase() || "inherit",
@@ -595,6 +597,12 @@ function normalizeStatusPersistenceMode(value, triggerId) {
     return "persistent";
   }
   return ["while-inside-region", "until-end-of-current-turn"].includes(normalized) ? normalized : "persistent";
+}
+
+function normalizeTriggerTargeting(value) {
+  const mode = ["physical-contact", "proximity"].includes(String(value?.mode ?? "").trim()) ? String(value.mode).trim() : "membership";
+  const distance = Number(value?.distance);
+  return { mode, distance: mode === "proximity" && Number.isFinite(distance) ? Math.max(0, distance) : null };
 }
 
 function normalizeActionRestrictions(value) {

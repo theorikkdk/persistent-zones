@@ -12,6 +12,7 @@ const {
   analyzeControlledTokenCollision,
   openControlledZoneMovementSession,
   preventControlledMovementConcentration,
+  resolveControlledMovementDestination,
   resolveControlledTokenCollision,
   startControlledZoneMovementFromActivity,
   validateDestination
@@ -32,6 +33,23 @@ test("controlled movement normalizes a configurable maximum distance without cha
     sceneUnits: "m"
   });
   assert.equal(normalized.translation.enabled, false);
+});
+
+test("effective move-trigger targeting selects the physical solver for a controlled Region", () => {
+  const { scene, region } = setupScene({
+    physicalRadius: 0.75,
+    onMove: { enabled: true, targeting: { mode: "physical-contact", distance: null } }
+  });
+  const target = mockToken("physical-target", scene, { x: 500, y: 50 });
+  scene.tokens.contents = [target];
+  const resolution = resolveControlledMovementDestination({
+    scene, regionDocument: region, origin: { x: 100, y: 100 }, destination: { x: 800, y: 100 }, physicalRadius: 50
+  });
+  assert.equal(resolution.collisionAnalysis.testMode, "physical-contact");
+  assert.equal(resolution.tokenCollision?.tokenUuid, target.uuid);
+  assert.ok(resolution.resolvedDestination.x < 500, "the physical body stops before the Token footprint");
+  assert.equal(resolution.stopReason, "physical-contact");
+  assert.equal(resolution.collisionAnalysis.testMode, "physical-contact", "membership is not selected in this branch");
 });
 
 test("controlled movement accepts an in-range destination, persists the selected Region, and leaves another Region unchanged", async () => {
@@ -390,7 +408,7 @@ test("a non-owner cannot open a controlled-movement session or gain Region updat
   assert.equal(opened.reason, "permission-denied");
 });
 
-function setupScene({ physicalRadius = 0 } = {}) {
+function setupScene({ physicalRadius = 0, onMove = null } = {}) {
   globalThis.game = {
     version: "14.367",
     user: { id: "gm", isGM: true },
@@ -406,7 +424,8 @@ function setupScene({ physicalRadius = 0 } = {}) {
     normalizedDefinition: normalizeZoneDefinition({
       enabled: true,
       geometry: { type: "circle", radius: 3, units: "m" },
-      controlledMovement: { enabled: true, activationActivityId: "move-zone", maxDistance: 9, physicalRadius, units: "m" }
+      controlledMovement: { enabled: true, activationActivityId: "move-zone", maxDistance: 9, physicalRadius, units: "m" },
+      ...(onMove ? { triggers: { onMove } } : {})
     }, { item: { name: "Controlled", system: { level: 1 } } })
   };
   const region = mockRegion("controlled", scene, runtime, 100, 100);

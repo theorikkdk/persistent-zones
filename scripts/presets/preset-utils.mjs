@@ -135,6 +135,7 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   if (sourceUnits === "scene" || sceneUnits === "scene") {
     convertTranslationForScene(resolved.translation, scene, sceneUnits);
     convertControlledMovementForScene(resolved.controlledMovement, scene, sceneUnits);
+    convertTriggerTargetingForScene(resolved.triggers, scene, sceneUnits, sourceUnits);
     convertElevationForScene(resolved.elevation, scene, sceneUnits);
     for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
       convertElevationForScene(part?.elevation, scene, sceneUnits);
@@ -180,6 +181,7 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   }
   convertTranslationForScene(resolved.translation, scene, sceneUnits);
   convertControlledMovementForScene(resolved.controlledMovement, scene, sceneUnits);
+  convertTriggerTargetingForScene(resolved.triggers, scene, sceneUnits, sourceUnits);
   geometry.units = sceneUnits;
   return resolved;
 }
@@ -201,6 +203,17 @@ function convertControlledMovementForScene(controlledMovement, scene, sceneUnits
     controlledMovement[field] = convertCanonicalDistanceToSceneUnits(controlledMovement[field], sourceUnits, scene);
   }
   controlledMovement.units = sceneUnits;
+}
+
+function convertTriggerTargetingForScene(triggers, scene, sceneUnits, sourceUnits = null) {
+  if (!isObject(triggers)) return;
+  for (const trigger of Object.values(triggers)) {
+    const targeting = trigger?.targeting;
+    if (!isObject(targeting) || targeting.mode !== "proximity" || targeting.distance === undefined || targeting.distance === null) continue;
+    const units = sourceUnits ?? normalizeCanonicalDistanceUnit(trigger?.units ?? "ft");
+    if (units === "scene" || sceneUnits === "scene") continue;
+    targeting.distance = convertCanonicalDistanceToSceneUnits(targeting.distance, units, scene);
+  }
 }
 
 function convertElevationForScene(elevation, scene, sceneUnits) {

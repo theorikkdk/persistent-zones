@@ -5,11 +5,14 @@ import {
   debug,
   evaluateManagedRegionTargetFilter,
   findManagedRegions,
+  distanceToPixels,
   getRegionRuntimeFlags,
   getTokenCenter,
   isPrimaryGM,
   testTokenInsideManagedRegion
 } from "./utils.mjs";
+import { getRegionLogicalCenter } from "./zone-translation-runtime.mjs";
+import { measureCircleTokenProximity } from "./physical-targeting.mjs";
 
 const combatStateCache = new Map();
 const processedTurnEffects = new Map();
@@ -118,11 +121,7 @@ async function processCombatTiming(combat, state, timing) {
       regionDocument,
       normalizedDefinition
     );
-    const tokenInside = testTokenInsideManagedRegion(
-      tokenDocument,
-      regionDocument,
-      snapshotTokenState(tokenDocument)
-    );
+    const tokenInside = testTurnTriggerTargeting({ tokenDocument, regionDocument, normalizedDefinition, triggerConfig, scene });
     const dedupeKey = buildTurnEffectKey(combat, state, timing, tokenDocument, regionDocument);
     const alreadyApplied = processedTurnEffects.has(dedupeKey);
 
@@ -214,6 +213,14 @@ async function processCombatTiming(combat, state, timing) {
       reason: !filterResult.allowed ? filterResult.reason : null
     });
   }
+}
+
+export function testTurnTriggerTargeting({ tokenDocument, regionDocument, normalizedDefinition, triggerConfig, scene }) {
+  const targeting = triggerConfig?.targeting ?? { mode: "membership" };
+  if (targeting.mode !== "proximity") return testTokenInsideManagedRegion(tokenDocument, regionDocument, snapshotTokenState(tokenDocument));
+  const radius = distanceToPixels(normalizedDefinition?.controlledMovement?.physicalRadius ?? normalizedDefinition?.geometry?.radius ?? 0, scene);
+  const distance = distanceToPixels(targeting.distance ?? 0, scene);
+  return measureCircleTokenProximity({ center: getRegionLogicalCenter(regionDocument), radius, token: tokenDocument, scene }).distance <= distance + 1e-6;
 }
 
 function snapshotCombatState(combat) {

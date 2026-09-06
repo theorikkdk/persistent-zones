@@ -16,6 +16,8 @@ import {
   translateManagedRegionByVector
 } from "./zone-translation-runtime.mjs";
 import { translateRegionShapeData } from "./region-factory.mjs";
+import { sweepPhysicalBodyAgainstTokens } from "./physical-targeting.mjs";
+import { applyConfiguredTriggerEffect } from "./entry-effects.mjs";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SESSION_TTL_MS = 60_000;
@@ -105,6 +107,7 @@ export async function openControlledZoneMovementSession({
   const scene = regionDocument.parent ?? globalThis.canvas?.scene ?? null;
   const maxPixels = distanceToPixels(config.maxDistance, scene);
   if (!(maxPixels > 0)) return fail("invalid-max-distance");
+  const targeting = getControlledMovementTargeting(runtime, config, scene);
 
   const session = {
     id: randomId(),
@@ -116,7 +119,10 @@ export async function openControlledZoneMovementSession({
     openedAt: Date.now(),
     expiresAt: Date.now() + SESSION_TTL_MS,
     maxDistance: config.maxDistance,
-    physicalRadius: distanceToPixels(config.physicalRadius ?? 0, scene),
+    targetingMode: targeting.mode,
+    moveTrigger: targeting.trigger,
+    physicalBody: targeting.body,
+    physicalRadius: targeting.body?.radius ?? distanceToPixels(config.physicalRadius ?? 0, scene),
     units: config.units ?? "scene",
     maxPixels,
     origin: getRegionLogicalCenter(regionDocument),
@@ -137,6 +143,22 @@ function resolveControlledRegionFromActivity(activity, usage, bridge, sourceToke
     primaryActivityId: bridge?.primaryActivityId ?? null,
     sourceTokenUuid: sourceToken?.uuid ?? null
   });
+}
+
+/**
+ * The move trigger owns targeting semantics. Controlled movement only supplies
+ * the path and optional physical body; it never keeps a competing mode field.
+ */
+function getControlledMovementTargeting(runtime, config, scene) {
+  const trigger = runtime?.normalizedDefinition?.triggers?.onMove ?? runtime?.normalizedDefinition?.triggers?.move ?? null;
+  const requestedMode = trigger?.targeting?.mode;
+  const mode = requestedMode === "physical-contact" ? "physical-contact" : "membership";
+  const radius = distanceToPixels(config?.physicalRadius ?? 0, scene);
+  return {
+    mode,
+    trigger,
+    body: mode === "physical-contact" ? { type: "circle", radius } : null
+  };
 }
 
 /** Commit a chosen scene-space destination after enforcing the configured limit. */
@@ -210,14 +232,17 @@ export async function executeControlledZoneMovement(payload = {}) {
   const check = validateDestination(session, payload.destination);
   if (!check.ok) return check;
   const origin = session.origin;
+  const scene = regionDocument.parent ?? globalThis.canvas?.scene ?? null;
+  const targeting = getControlledMovementTargeting(runtime, config, scene);
   // Preserve the validated center-to-wall behavior first, then sweep the
   // configured candidate Region geometry along the still-reachable segment.
   const resolution = resolveControlledMovementDestination({
-    scene: regionDocument.parent ?? globalThis.canvas?.scene ?? null,
+    scene,
     regionDocument,
     origin,
     destination: check.destination,
-    physicalRadius: session.physicalRadius
+    physicalRadius: targeting.body?.radius ?? session.physicalRadius,
+    targeting
   });
   const tokenCollision = resolution.tokenCollision;
   const resolvedDestination = resolution.resolvedDestination;
@@ -230,6 +255,10 @@ export async function executeControlledZoneMovement(payload = {}) {
       persistentZonesControlledMovementContext: { sessionId: payload.sessionId, userId: payload.userId }
     }
   });
+  const contactTrigger = targeting.trigger;
+  if (tokenCollision?.token && targeting.mode === "physical-contact" && contactTrigger?.enabled) {
+    await applyConfiguredTriggerEffect({ regionDocument, tokenDocument: tokenCollision.token, triggerConfig: contactTrigger, timing: "onMove", context: { targetingMode: "physical-contact", physicalContact: tokenCollision } });
+  }
   gmAuthorizations.delete(payload.sessionId);
   return {
     ok: Boolean(result?.moved),
@@ -241,27 +270,37 @@ export async function executeControlledZoneMovement(payload = {}) {
   };
 }
 
-function resolveControlledMovementDestination({ scene, regionDocument, origin, destination, physicalRadius }) {
+export function resolveControlledMovementDestination({ scene, regionDocument, origin, destination, physicalRadius, targeting = null }) {
   const vector = { x: destination.x - origin.x, y: destination.y - origin.y };
   const wallResolved = resolveMoveCollision(origin, vector, { scene, regionDocument });
   const wallDestination = wallResolved.finalDestination ?? {
     x: origin.x + wallResolved.dx,
     y: origin.y + wallResolved.dy
   };
-  const collisionAnalysis = analyzeControlledTokenCollision({
-    scene,
-    regionDocument,
-    origin,
-    destination: wallDestination,
-    physicalRadius
-  });
-  const tokenCollision = collisionAnalysis.collision;
+  const runtime = getRegionRuntimeFlags(regionDocument, { silent: true });
+  const config = runtime?.normalizedDefinition?.controlledMovement ?? {};
+  const effectiveTargeting = targeting ?? getControlledMovementTargeting(runtime, config, scene);
+  const physicalContact = effectiveTargeting.mode === "physical-contact";
+  const tokenCollection = physicalContact ? collectControlledMovementTokens(scene) : null;
+  const tokenCollision = physicalContact
+    ? sweepPhysicalBodyAgainstTokens({ origin, destination: wallDestination, body: effectiveTargeting.body ?? { type: "circle", radius: physicalRadius }, tokens: tokenCollection.tokens, scene })
+    : analyzeControlledTokenCollision({ scene, regionDocument, origin, destination: wallDestination, physicalRadius }).collision;
+  const collisionAnalysis = physicalContact
+    ? { collision: tokenCollision, testMode: "physical-contact", candidateTokenCount: tokenCollection.tokens.length }
+    : analyzeControlledTokenCollision({ scene, regionDocument, origin, destination: wallDestination, physicalRadius });
+  const resolvedDestination = tokenCollision?.resolvedDestination ?? tokenCollision?.destination ?? wallDestination;
+  const stopReason = tokenCollision
+    ? "physical-contact"
+    : (wallResolved.reason === "full-distance" ? "none" : "wall");
   return {
     wallResolved,
     wallDestination,
     collisionAnalysis,
     tokenCollision,
-    resolvedDestination: tokenCollision?.resolvedDestination ?? wallDestination
+    // Physical sweep returns the first contact point as `destination`; keep
+    // the legacy membership solver's `resolvedDestination` shape too.
+    resolvedDestination,
+    stopReason
   };
 }
 
@@ -862,7 +901,12 @@ function updatePreview(session, preview, destination) {
       regionDocument: session.regionDocument,
       origin: session.origin,
       destination: validation.destination,
-      physicalRadius: session.physicalRadius
+      physicalRadius: session.physicalRadius,
+      targeting: {
+        mode: session.targetingMode ?? "membership",
+        trigger: session.moveTrigger ?? null,
+        body: session.physicalBody ?? null
+      }
     })
     : null;
   const collision = resolution?.tokenCollision ?? null;
@@ -878,10 +922,24 @@ function updatePreview(session, preview, destination) {
     graphics.endFill?.();
     graphics.moveTo?.(session.origin.x, session.origin.y);
     graphics.lineTo?.(resolvedDestination.x, resolvedDestination.y);
+    drawPhysicalBodyPreview(graphics, session, resolvedDestination);
   } else if (typeof graphics.circle === "function") {
     graphics.circle(resolvedDestination.x, resolvedDestination.y, radius).stroke?.({ color, width: 3, alpha: 0.95 });
+    drawPhysicalBodyPreview(graphics, session, resolvedDestination);
   }
-  return { ...validation, collision, resolvedDestination };
+  return { ...validation, collision, resolvedDestination, stopReason: resolution?.stopReason ?? "none" };
+}
+
+/** Non-persistent overlay of the exact body used by physical-contact. */
+function drawPhysicalBodyPreview(graphics, session, center) {
+  const body = session?.physicalBody;
+  if (session?.targetingMode !== "physical-contact" || body?.type !== "circle" || !(body.radius > 0)) return;
+  if (typeof graphics.lineStyle === "function") {
+    graphics.lineStyle(2, 0x6ec8ff, 1);
+    graphics.drawCircle?.(center.x, center.y, body.radius);
+  } else if (typeof graphics.circle === "function") {
+    graphics.circle(center.x, center.y, body.radius).stroke?.({ color: 0x6ec8ff, width: 2, alpha: 1 });
+  }
 }
 
 function getPreviewRadius(regionDocument) {

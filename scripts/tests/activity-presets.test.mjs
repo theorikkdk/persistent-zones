@@ -15,7 +15,7 @@ import {
 globalThis.foundry ??= { utils: { deepClone: structuredClone } };
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 34);
+  assert.equal(BUILTIN_PRESETS.length, 35);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -277,7 +277,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
     "debug.controlled-zone-movement", "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.midi-qol-resolution",
-    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.physical-contact-proximity", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.cloudkill", "srd-5.2.1.entangle", "srd-5.2.1.fog-cloud", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.sleet-storm", "srd-5.2.1.spike-growth", "srd-5.2.1.spirit-guardians-necrotic", "srd-5.2.1.spirit-guardians-radiant",
@@ -286,7 +286,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
   for (const id of [
     "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.midi-qol-resolution", "debug.temporary-hit-points-scaling",
-    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
+    "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.physical-contact-proximity", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
     "debug.controlled-zone-movement", "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation"
   ]) {
     const preset = getPersistentZonePreset(id);
@@ -336,6 +336,33 @@ test("debug zone translation preset applies canonical movement and resolves it f
   assert.equal(result.persistentZone.translation.distance, 3);
   assert.equal(result.persistentZone.translation.units, "m");
   assert.deepEqual(captured.at(-1).persistentZone.translation, result.persistentZone.translation);
+});
+
+test("physical-contact Debug/Test preset survives Activity serialization into the runtime move trigger", async () => {
+  const preset = getPersistentZonePreset("debug.physical-contact-proximity");
+  const metric = { grid: { units: "m", distance: 1.5, size: 100 } };
+  const activities = new Map();
+  let activityCounter = 0;
+  const activity = {
+    id: "physical-targeting-zone",
+    type: "persistent-zone",
+    item: {
+      system: { activities },
+      async updateActivity() {},
+      async createActivity(type, source) {
+        const id = `utility-${++activityCounter}`;
+        activities.set(id, { id, type, flags: structuredClone(source.flags), _source: structuredClone(source) });
+      }
+    }
+  };
+  const applied = await applyPresetToActivity(activity, preset, { scene: metric });
+  activity.persistentZone = applied.persistentZone;
+  const definition = getPersistentZoneActivityDefinition(activity);
+  assert.equal(applied.persistentZone.controlledMovement.physicalRadius, 0.75);
+  assert.equal(definition.controlledMovement.physicalRadius, 0.75);
+  assert.equal(definition.triggers.onMove.targeting.mode, "physical-contact");
+  assert.equal(definition.triggers.onEndTurn.targeting.mode, "proximity");
+  assert.equal(definition.triggers.onEndTurn.targeting.distance, 1.5);
 });
 
 test("controlled movement debug preset creates one linked Bonus Action utility without creating an Item", async () => {

@@ -15,8 +15,10 @@ export function resolveTriggerActionConfiguration({
   return {
     mode,
     targetFilter: { mode: normalizeTriggerTargetFilterMode(config.targetFilter?.mode) },
+    targeting: normalizeTriggerTargeting(config.targeting),
     frequency: normalizeTriggerFrequency(config.frequency),
     frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
+    debugFeedback: Boolean(config.debugFeedback),
     requiredAbsentStatuses: normalizeStatusIdList(config.requiredAbsentStatuses ?? config.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(config.requiredAbsentSourceStatuses),
     damage: config.damage ?? simpleEffect.damage ?? {},
@@ -65,6 +67,12 @@ function getTriggerFromZoneConfiguration(zoneConfiguration, triggerId) {
     default:
       return null;
   }
+}
+
+function normalizeTriggerTargeting(value) {
+  const mode = ["physical-contact", "proximity"].includes(String(value?.mode ?? "").trim()) ? String(value.mode).trim() : "membership";
+  const distance = Number(value?.distance);
+  return { mode, distance: mode === "proximity" && Number.isFinite(distance) ? Math.max(0, distance) : null };
 }
 
 function normalizeTriggerTargetFilterMode(value) {

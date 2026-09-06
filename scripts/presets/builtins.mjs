@@ -339,6 +339,22 @@ const buildControlledMovementDebugPreset = () => base({
   triggers: buildDisabledTriggers()
 });
 
+const buildPhysicalTargetingDebugPreset = () => base({
+  id: "debug.physical-contact-proximity",
+  name: "PERSISTENT_ZONES.Activity.Presets.Debug.PhysicalContactProximity.Name",
+  description: "PERSISTENT_ZONES.Activity.Presets.Debug.PhysicalContactProximity.Description",
+  category: "debug-tests",
+  geometry: { type: "circle", radius: 10, units: "ft" },
+  obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+  controlledMovement: { enabled: true, maxDistance: 30, physicalRadius: 2.5, units: "ft" },
+  terrain: { enabled: false, multiplier: 2 },
+  triggers: {
+    ...buildDisabledTriggers(),
+    move: { ...buildDisabledTrigger(), enabled: true, mode: "simple-effect", targeting: { mode: "physical-contact", distance: null }, debugFeedback: true },
+    turnEnd: { ...buildDisabledTrigger(), enabled: true, mode: "simple-effect", targeting: { mode: "proximity", distance: 5 }, debugFeedback: true }
+  }
+});
+
 const buildTokenMembershipDebugPreset = () => base({
   id: "debug.token-membership-50",
   name: "PERSISTENT_ZONES.Activity.Presets.Debug.TokenMembership50.Name",
@@ -430,6 +446,7 @@ const buildRecoveryScalingDebugPreset = ({ id, name, description, recoveryType, 
 export const BUILTIN_PRESETS = Object.freeze([
   buildZoneTranslationDebugPreset(),
   buildControlledMovementDebugPreset(),
+  buildPhysicalTargetingDebugPreset(),
   buildTokenMembershipDebugPreset(),
   buildNativeResolutionDebugPreset(),
   buildMidiResolutionDebugPreset(),
