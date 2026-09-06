@@ -5,7 +5,7 @@ import {
   PERSISTENT_ZONE_ACTIVITY_TYPE
 } from "../constants.mjs";
 import { getPersistentZonePreset } from "../presets/preset-library.mjs";
-import { resolvePresetPersistentZoneForScene } from "../presets/preset-utils.mjs";
+import { applyPresetToActivity, resolvePresetPersistentZoneForScene } from "../presets/preset-utils.mjs";
 import { resolvePresetDistance } from "../activity/activity-distance.mjs";
 import {
   debug,
@@ -59,6 +59,7 @@ export function createPersistentZonesDebugApi() {
     createNativeRingFromSelectedRegion,
     createSpiritGuardiansTestItem,
     createCloudkillTestItem,
+    createFlamingSphereTestItem,
     createObscuringSpellsTestItems,
     createHeavilyObscuredTestZone,
     markNextMovement
@@ -172,6 +173,43 @@ export async function createCloudkillTestItem({ actor = null } = {}) {
   } catch (error) {
     await cleanupCreatedDebugItems(owner, [item]);
     return { ok: false, error: localize("PERSISTENT_ZONES.Debug.Cloudkill.CreationFailed"), cause: String(error?.message ?? error) };
+  }
+}
+
+/** Create a ready-to-cast second-level Flaming Sphere spell with its PZ Activity. */
+export async function createFlamingSphereTestItem({ actor = null } = {}) {
+  if (!assertDebugGM("createFlamingSphereTestItem")) return null;
+  const preset = getPersistentZonePreset("srd-5.2.1.flaming-sphere");
+  if (!preset) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.FlamingSphere.Unavailable") };
+  const owner = actor ?? globalThis.canvas?.tokens?.controlled?.[0]?.actor ?? globalThis.game?.user?.character ?? null;
+  if (!owner?.createEmbeddedDocuments) return { ok: false, error: localize("PERSISTENT_ZONES.Debug.FlamingSphere.SelectToken") };
+  const scene = globalThis.canvas?.scene ?? null;
+  const persistentZone = resolvePresetPersistentZoneForScene(preset.persistentZone, scene);
+  const sceneUnits = String(scene?.grid?.units ?? "ft");
+  const itemSource = {
+    name: localize("PERSISTENT_ZONES.Debug.FlamingSphere.Name"), type: "spell",
+    system: {
+      level: 2, activation: { type: "action", value: 1 },
+      duration: { value: 1, units: "minute", concentration: true },
+      range: { value: resolvePresetDistance(60, "ft", scene), units: sceneUnits },
+      preparation: { mode: "always", prepared: true }
+    }
+  };
+  let item = null;
+  try {
+    item = (await owner.createEmbeddedDocuments("Item", [itemSource]))?.[0] ?? null;
+    if (!item) throw new Error("D&D5e did not create the Flaming Sphere Debug/Test Item.");
+    const activity = await createItemActivity(item, {
+      name: localize("PERSISTENT_ZONES.Debug.FlamingSphere.Name"), type: PERSISTENT_ZONE_ACTIVITY_TYPE,
+      duration: { value: 1, units: "minute", concentration: true },
+      target: { prompt: true, template: { type: "circle", size: persistentZone.geometry.radius, units: persistentZone.geometry.units } },
+      persistentZone
+    });
+    const applied = await applyPresetToActivity(activity, preset, { scene });
+    return { ok: true, item, itemUuid: item.uuid ?? null, activityId: activity.id ?? null, utilityActivityId: applied.controlledMovementActivity?.id ?? null };
+  } catch (error) {
+    await cleanupCreatedDebugItems(owner, [item]);
+    return { ok: false, error: localize("PERSISTENT_ZONES.Debug.FlamingSphere.CreationFailed"), cause: String(error?.message ?? error) };
   }
 }
 

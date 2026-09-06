@@ -86,7 +86,7 @@ export async function applyPresetToActivity(activity, presetOrData, {
   const controlledMovement = persistentZone?.controlledMovement;
   if (controlledMovement?.enabled !== true) return { preset, persistentZone };
 
-  const companion = await ensureControlledMovementCompanionActivity(item, activity.id);
+  const companion = await ensureControlledMovementCompanionActivity(item, activity.id, controlledMovement);
   const resolvedPersistentZone = clone(persistentZone);
   resolvedPersistentZone.controlledMovement = {
     ...resolvedPersistentZone.controlledMovement,
@@ -97,7 +97,7 @@ export async function applyPresetToActivity(activity, presetOrData, {
 }
 
 /** Ensure one native D&D5e Utility Activity controls this exact PZ Activity. */
-export async function ensureControlledMovementCompanionActivity(item, primaryActivityId) {
+export async function ensureControlledMovementCompanionActivity(item, primaryActivityId, controlledMovement = {}) {
   if (!item?.createActivity || !item?.updateActivity || !primaryActivityId) {
     throw new Error("The Persistent Zone Activity is not embedded in an updateable Item.");
   }
@@ -106,7 +106,7 @@ export async function ensureControlledMovementCompanionActivity(item, primaryAct
     return activity?.type === "utility" && config?.enabled === true && config?.primaryActivityId === primaryActivityId;
   });
   const source = {
-    name: localize("PERSISTENT_ZONES.ControlledMovement.ActivityName", "Move Zone"),
+    name: localize(String(controlledMovement?.utilityName ?? "").trim() || "PERSISTENT_ZONES.ControlledMovement.ActivityName", "Move Zone"),
     type: "utility",
     activation: { type: "bonus", value: 1 },
     // This Utility is a command for an already-active cast, never a second concentration use.

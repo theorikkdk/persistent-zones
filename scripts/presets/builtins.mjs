@@ -98,8 +98,8 @@ const buildRestrainingSaveTrigger = ({ ability, damage = null, targetFilter = "a
 });
 
 // SRD presets automate explicit rules; visual defaults must not invent mechanical effects absent from the SRD.
-const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obscuration = null, parts, triggers, movement, terrain, translation = null, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
-  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, placement }),
+const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obscuration = null, parts, triggers, movement, terrain, translation = null, controlledMovement = null, placement = null, linkedWalls, linkedLights, tags = [] }) => ({
+  ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, controlledMovement, placement }),
   source: "srd-5.2.1",
   rulesVersion: "2024",
   spell: true,
@@ -111,7 +111,7 @@ const buildSrdPreset = ({ id, name, description, geometry, obstacles = null, obs
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/legalcode"
   },
   persistentZone: {
-    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, placement }).persistentZone,
+    ...base({ id, name, description, category: "srd-5.2.1-spells", geometry, obstacles, obscuration, parts, triggers, movement, terrain, translation, controlledMovement, placement }).persistentZone,
     ...(linkedWalls ? { linkedWalls } : {}),
     ...(linkedLights ? { linkedLights } : {})
   }
@@ -126,6 +126,24 @@ const WEB_FREQUENCY_GROUP = "web-restrain";
 const SPIRIT_GUARDIANS_FREQUENCY_GROUP = "spirit-guardians-damage";
 const SLEET_STORM_FREQUENCY_GROUP = "sleet-storm-save";
 const CLOUDKILL_FREQUENCY_GROUP = "cloudkill-damage";
+
+const buildFlamingSphereTriggers = () => ({
+  ...buildDisabledTriggers(),
+  move: {
+    ...buildDamageTrigger({
+      formula: "2d6", type: "fire", ability: "dex", half: true,
+      scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 2, perLevelFormula: "1d6" }
+    }),
+    targeting: { mode: "physical-contact", distance: null }
+  },
+  turnEnd: {
+    ...buildDamageTrigger({
+      formula: "2d6", type: "fire", ability: "dex", half: true,
+      scaling: { mode: "per-level", baseLevelMode: "item", baseLevel: 2, perLevelFormula: "1d6" }
+    }),
+    targeting: { mode: "proximity", distance: 5 }
+  }
+});
 
 const buildSleetStormTrigger = () => ({
   ...buildDisabledTrigger(), enabled: true, mode: "simple-effect", frequency: "once-per-turn", frequencyGroup: SLEET_STORM_FREQUENCY_GROUP,
@@ -573,6 +591,24 @@ export const BUILTIN_PRESETS = Object.freeze([
     obscuration: { mode: "heavily-obscured" },
     translation: { enabled: true, trigger: "source-turn-start", distance: 10, units: "ft", direction: "away-from-source" },
     triggers: buildCloudkillTriggers(),
+    terrain: { enabled: false, multiplier: 2 }
+  }),
+  buildSrdPreset({
+    id: "srd-5.2.1.flaming-sphere",
+    name: "PERSISTENT_ZONES.Activity.Presets.Builtins.FlamingSphere.Name",
+    description: "PERSISTENT_ZONES.Activity.Presets.Builtins.FlamingSphere.Description",
+    geometry: { type: "circle", radius: 2.5, units: "ft" },
+    tags: ["conjuration", "concentration", "controlled-movement", "physical-contact", "proximity", "fire"],
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
+    controlledMovement: {
+      enabled: true,
+      maxDistance: 30,
+      physicalRadius: 2.5,
+      units: "ft",
+      utilityName: "PERSISTENT_ZONES.Activity.Presets.Builtins.FlamingSphere.MoveActivityName"
+    },
+    linkedLights: { enabled: true, preset: "fire", bright: 20, dim: 40, max: 1, color: "#ff9b42" },
+    triggers: buildFlamingSphereTriggers(),
     terrain: { enabled: false, multiplier: 2 }
   }),
   buildSrdPreset({

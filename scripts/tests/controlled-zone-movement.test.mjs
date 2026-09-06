@@ -27,6 +27,7 @@ test("controlled movement normalizes a configurable maximum distance without cha
   assert.deepEqual(normalized.controlledMovement, {
     enabled: true,
     activationActivityId: "move-zone",
+    utilityName: null,
     maxDistance: 9,
     physicalRadius: 0.75,
     units: "m",

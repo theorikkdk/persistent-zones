@@ -173,6 +173,7 @@ function buildRuntimeControlledMovement(value) {
   return {
     enabled: value.enabled === true,
     activationActivityId: String(value.activationActivityId ?? "").trim() || null,
+    utilityName: String(value.utilityName ?? "").trim() || null,
     maxDistance: Math.max(0, Number(value.maxDistance) || 0),
     physicalRadius: Math.max(0, Number(value.physicalRadius) || 0),
     units: ["scene", "ft", "m"].includes(String(value.units ?? "scene").toLowerCase())
