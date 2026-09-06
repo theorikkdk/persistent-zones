@@ -2,7 +2,8 @@ import {
   DEBUG_LOG_LEVEL_SETTING_KEY,
   DEBUG_PREFIX,
   MODULE_ID,
-  RUNTIME_FLAG_KEY
+  RUNTIME_FLAG_KEY,
+  TOKEN_MEMBERSHIP_MODE_SETTING_KEY
 } from "../constants.mjs";
 
 const PERSISTENT_ZONES_LOG_LEVEL_PRIORITY = Object.freeze({
@@ -10,6 +11,12 @@ const PERSISTENT_ZONES_LOG_LEVEL_PRIORITY = Object.freeze({
   standard: 1,
   verbose: 2
 });
+
+export const TOKEN_MEMBERSHIP_MODES = Object.freeze({
+  footprint50: "footprint-50",
+  foundryNative: "foundry-native"
+});
+const TOKEN_FOOTPRINT_COVERAGE_THRESHOLD = 0.5;
 
 export function debug(message, data = undefined, { level = "standard" } = {}) {
   if (!shouldEmitPersistentZonesDebug(level)) {
@@ -119,10 +126,10 @@ export function getTemplateType(templateDocument) {
   return String(templateDocument?.t ?? "").toLowerCase();
 }
 
-export function getRegionRuntime(regionDocument) {
+export function getRegionRuntime(regionDocument, { silent = false } = {}) {
   const objectData = regionDocument?.toObject?.() ?? null;
   const result = resolveRegionRuntimeCandidate(regionDocument, objectData);
-  logRegionManagedFlagsRead(regionDocument, result, objectData);
+  if (!silent) logRegionManagedFlagsRead(regionDocument, result, objectData);
   return duplicateData(result.runtime) ?? null;
 }
 
@@ -597,8 +604,11 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   }
 
   const membership = buildTokenRegionMembershipState(tokenDocument, state);
-  const runtime = getRegionRuntimeFlags(regionDocument);
-  const shapes = getRegionShapeData(regionDocument);
+  const candidateShapes = Array.isArray(state?.candidateShapes) ? state.candidateShapes : null;
+  const nativeRegionDocument = state?.nativeRegionDocument ?? (candidateShapes ? null : regionDocument);
+  const suppressDiagnostics = state?.suppressDiagnostics === true;
+  const runtime = state?.runtime ?? getRegionRuntimeFlags(regionDocument, { silent: suppressDiagnostics });
+  const shapes = candidateShapes ?? getRegionShapeData(regionDocument);
   const isManagedV14Region = Boolean(runtime) && isFoundryV14OrNewer() && shapes.length > 0;
   const configuredElevation = runtime?.normalizedDefinition?.elevation;
   const hasVerticalBounds = Boolean(configuredElevation && typeof configuredElevation === "object" &&
@@ -606,7 +616,7 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   const isRegionNativeRingSegment = runtime?.regionSourceStrategy === "v14-region-native-segment-group";
   const nativeRingGeometry = resolveNativeRingGeometryFromRegion(regionDocument, runtime, shapes);
   const fallbackInside = sampleTokenRegionPoints(membership)
-    .some((point) => pointInManagedRegion(regionDocument, point));
+    .some((point) => pointInManagedRegion(regionDocument, point, shapes));
   const coverageResult = calculateTokenRegionGridCoverage(membership, regionDocument, shapes);
   const ringRuntimeResult = isRegionNativeRingSegment
     ? null
@@ -614,22 +624,37 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
   let nativeInside = null;
   let nativeError = null;
 
-  if (typeof tokenDocument.testInsideRegion === "function") {
+  if (typeof tokenDocument.testInsideRegion === "function" && nativeRegionDocument) {
     try {
-      nativeInside = !!tokenDocument.testInsideRegion(regionDocument, membership);
+      nativeInside = !!tokenDocument.testInsideRegion(nativeRegionDocument, membership);
     } catch (caughtError) {
       nativeError = caughtError?.message ?? "unknown";
       debug("Native token Region inside test failed, using sampled fallback.", {
         tokenId: tokenDocument?.id ?? null,
-        regionId: regionDocument?.id ?? null,
+        regionId: nativeRegionDocument?.id ?? regionDocument?.id ?? null,
         error: nativeError
       });
     }
   }
 
+  const membershipMode = state?.membershipMode ?? getPersistentZoneTokenMembershipMode();
   const wallRestricted = runtime?.normalizedDefinition?.obstacles?.mode === "wall-restricted";
-  if (wallRestricted) {
-    return nativeInside ?? false;
+  const nativeEligible = nativeInside !== false;
+
+  const candidateRequiresNative = Boolean(candidateShapes && (membershipMode === TOKEN_MEMBERSHIP_MODES.foundryNative || wallRestricted || hasVerticalBounds));
+  if (membershipMode === TOKEN_MEMBERSHIP_MODES.foundryNative) {
+    const result = candidateRequiresNative && nativeInside === null ? false : (nativeInside ?? fallbackInside);
+    return result;
+  }
+
+  // Native Region membership remains an accessibility gate for walls and a
+  // vertical gate for bounded volumes. It must not replace PZ's horizontal
+  // footprint threshold when that threshold can be calculated.
+  if (wallRestricted && nativeInside === null) {
+    return false;
+  }
+  if ((wallRestricted || hasVerticalBounds) && !nativeEligible) {
+    return false;
   }
 
   const legacyResult = hasVerticalBounds
@@ -637,7 +662,7 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
     : isManagedV14Region
     ? (isRegionNativeRingSegment ? fallbackInside : (ringRuntimeResult?.tokenInsideRingBand ?? fallbackInside))
     : (nativeInside ?? fallbackInside);
-  const result = hasVerticalBounds ? legacyResult : (coverageResult?.inside ?? legacyResult);
+  const result = coverageResult?.inside ?? legacyResult;
   const diagnostic = {
     tokenId: tokenDocument?.id ?? null,
     regionId: regionDocument?.id ?? null,
@@ -666,16 +691,16 @@ export function testTokenInsideManagedRegion(tokenDocument, regionDocument, stat
         : "native-or-fallback"
   };
 
-  logV14RuntimeDiagnostic("regionRuntimeCheck", diagnostic);
-  logV14RuntimeDiagnostic("tokenInsideRegion", diagnostic);
-  if (isManagedV14Region && result) {
+  if (!suppressDiagnostics) logV14RuntimeDiagnostic("regionRuntimeCheck", diagnostic);
+  if (!suppressDiagnostics) logV14RuntimeDiagnostic("tokenInsideRegion", diagnostic);
+  if (!suppressDiagnostics && isManagedV14Region && result) {
     logV14RuntimeDiagnostic("v14NativeRuntimeTriggered", {
       ...diagnostic,
       v14NativeRuntimeTriggered: true
     });
   }
 
-  if (isRingLikeRuntime(runtime, shapes)) {
+  if (!suppressDiagnostics && isRingLikeRuntime(runtime, shapes)) {
     const tokenInsideRingHole = ringRuntimeResult?.tokenInsideRingHole
       ?? (!fallbackInside && pointInsideRingOuterEnvelope(shapes, membership));
     logV14RuntimeDiagnostic("ringRuntimeCheck", {
@@ -786,7 +811,6 @@ export function normalizeTriggerTargetFilterMode(value) {
   return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
 }
 
-const TOKEN_CELL_COVERAGE_THRESHOLD = 0.5;
 const TOKEN_CELL_COVERAGE_EPSILON = 1e-9;
 
 export function calculateTokenRegionGridCoverage(membership, regionDocument, shapes = null) {
@@ -794,7 +818,9 @@ export function calculateTokenRegionGridCoverage(membership, regionDocument, sha
   const gridType = scene?.grid?.type ?? globalThis.canvas?.grid?.type;
   const squareGridType = globalThis.CONST?.GRID_TYPES?.SQUARE ?? 1;
   const gridlessType = globalThis.CONST?.GRID_TYPES?.GRIDLESS ?? 0;
-  if (gridType === gridlessType || (gridType !== undefined && gridType !== null && gridType !== squareGridType && String(gridType).toLowerCase() !== "square")) {
+  // Hex footprints are not rectangular. Until Foundry exposes a reliable
+  // footprint polygon, leave this to native Region membership.
+  if (gridType !== gridlessType && gridType !== undefined && gridType !== null && gridType !== squareGridType && String(gridType).toLowerCase() !== "square") {
     return null;
   }
   const gridSize = coerceNumber(
@@ -807,13 +833,16 @@ export function calculateTokenRegionGridCoverage(membership, regionDocument, sha
 
   const tokenWidth = Math.max(coerceNumber(membership?.width, 1), 0.1);
   const tokenHeight = Math.max(coerceNumber(membership?.height, 1), 0.1);
-  const columns = Math.max(1, Math.ceil(tokenWidth));
-  const rows = Math.max(1, Math.ceil(tokenHeight));
   const left = coerceNumber(membership?.x, 0);
   const top = coerceNumber(membership?.y, 0);
+  const footprint = { x: left, y: top, width: tokenWidth * gridSize, height: tokenHeight * gridSize };
+  const coverageRatio = calculateRegionCoverageRatioForFootprint(regionShapes, footprint);
+  // Keep per-cell contact data solely for thin-wall interaction. It is not
+  // used by ordinary membership, whose decision is the total footprint above.
+  const columns = Math.max(1, Math.ceil(tokenWidth));
+  const rows = Math.max(1, Math.ceil(tokenHeight));
   let affectedCellCount = 0;
   let maxCoverageRatio = 0;
-
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const cell = {
@@ -824,16 +853,79 @@ export function calculateTokenRegionGridCoverage(membership, regionDocument, sha
       };
       const ratio = calculateRegionCoverageRatioForRectangle(regionShapes, cell);
       maxCoverageRatio = Math.max(maxCoverageRatio, ratio);
-      if (ratio + TOKEN_CELL_COVERAGE_EPSILON >= TOKEN_CELL_COVERAGE_THRESHOLD) affectedCellCount += 1;
+      if (ratio + TOKEN_CELL_COVERAGE_EPSILON >= TOKEN_FOOTPRINT_COVERAGE_THRESHOLD) affectedCellCount += 1;
     }
   }
 
   return {
+    coverageRatio,
+    inside: coverageRatio + TOKEN_CELL_COVERAGE_EPSILON >= TOKEN_FOOTPRINT_COVERAGE_THRESHOLD,
+    threshold: TOKEN_FOOTPRINT_COVERAGE_THRESHOLD,
+    footprint,
+    mode: "total-footprint",
+    // Compatibility/contact metrics: thin-wall code consumes these, but no
+    // ordinary Region decision may use them as an inside threshold.
     testedCellCount: rows * columns,
     affectedCellCount,
-    maxCoverageRatio,
-    inside: affectedCellCount > 0
+    maxCoverageRatio
   };
+}
+
+export function getPersistentZoneTokenMembershipMode() {
+  const value = String(
+    globalThis.game?.settings?.get?.(MODULE_ID, TOKEN_MEMBERSHIP_MODE_SETTING_KEY) ?? ""
+  ).trim().toLowerCase();
+  return value === TOKEN_MEMBERSHIP_MODES.foundryNative
+    ? TOKEN_MEMBERSHIP_MODES.foundryNative
+    : TOKEN_MEMBERSHIP_MODES.footprint50;
+}
+
+function calculateRegionCoverageRatioForFootprint(shapes, footprint) {
+  if (!shapes.length || !rectanglesIntersect(footprint, calculateShapesBounds(shapes))) return 0;
+  // A single Region shape (including an annulus represented by its paired
+  // polygons) can be clipped exactly with the existing geometry helpers.
+  if (shapes.length === 1) return calculateRegionCoverageRatioForRectangle(shapes, footprint);
+
+  // Multiple overlapping shapes need union semantics: point membership is
+  // evaluated once per sample, so overlaps are never counted twice and holes
+  // retain the same semantics as pointInManagedRegion(). This path is only
+  // entered for multi-shape Regions after the bounding-box broad phase.
+  const resolution = 128;
+  let covered = 0;
+  for (let row = 0; row < resolution; row += 1) {
+    for (let column = 0; column < resolution; column += 1) {
+      const point = {
+        x: footprint.x + ((column + 0.5) / resolution) * footprint.width,
+        y: footprint.y + ((row + 0.5) / resolution) * footprint.height
+      };
+      if (pointInShapeUnion(shapes, point)) covered += 1;
+    }
+  }
+  return covered / (resolution * resolution);
+}
+
+function pointInShapeUnion(shapes, point) {
+  let inside = false;
+  for (const shape of shapes) {
+    if (!pointInShape(shape, point)) continue;
+    if (shape?.hole) return false;
+    inside = true;
+  }
+  return inside;
+}
+
+function calculateShapesBounds(shapes) {
+  const points = shapes.flatMap((shape) => buildShapeAreaPolygons(shape).flatMap((polygon) => polygon.points));
+  if (!points.length) return { x: 0, y: 0, width: 0, height: 0 };
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function rectanglesIntersect(left, right) {
+  return left.x < right.x + right.width && left.x + left.width > right.x && left.y < right.y + right.height && left.y + left.height > right.y;
 }
 
 function calculateRegionCoverageRatioForRectangle(shapes, rectangle) {
@@ -989,8 +1081,8 @@ function polygonArea(points) {
   return Math.abs(sum) / 2;
 }
 
-export function pointInManagedRegion(regionDocument, point) {
-  const shapes = getRegionShapeData(regionDocument);
+export function pointInManagedRegion(regionDocument, point, candidateShapes = null) {
+  const shapes = Array.isArray(candidateShapes) ? candidateShapes : getRegionShapeData(regionDocument);
   if (!shapes.length) {
     return false;
   }
@@ -1536,6 +1628,20 @@ function resolveManagedRegionSourceToken(regionDocument, tokenDocument, sourceAc
   if (!sourceActorUuid) return null;
   const actorTokens = tokenDocuments.filter((candidate) => candidate?.actor?.uuid === sourceActorUuid);
   return actorTokens.length === 1 ? actorTokens[0] : null;
+}
+
+/**
+ * Build a non-persistent RegionDocument clone for a candidate geometry.
+ * Foundry's native membership API requires a genuine RegionDocument (not a
+ * plain object) because it calls document methods such as includedInLevel.
+ */
+export function createManagedRegionMembershipCandidate(regionDocument, shapes) {
+  if (!regionDocument || !Array.isArray(shapes) || typeof regionDocument.clone !== "function") return null;
+  try {
+    return regionDocument.clone({ shapes: duplicateData(shapes) });
+  } catch (_caughtError) {
+    return null;
+  }
 }
 
 function resolveManagedRegionSourceTokenByUuid(regionDocument, tokenDocument, sourceTokenUuid) {

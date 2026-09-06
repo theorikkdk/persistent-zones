@@ -342,6 +342,9 @@ export function normalizeZoneDefinition(
     translation: normalizeZoneTranslationDefinition(definition.translation, {
       scene: templateDocument?.parent ?? canvas?.scene ?? null
     }),
+    controlledMovement: normalizeControlledMovementDefinition(definition.controlledMovement, {
+      scene: templateDocument?.parent ?? canvas?.scene ?? null
+    }),
     limits: collectCurrentLimits(definition),
     parts: [],
     group: {
@@ -1160,6 +1163,23 @@ function normalizeZoneTranslationDefinition(value, { scene = null } = {}) {
     distance: Math.max(0, coerceNumber(value.distance, 0)),
     units,
     direction: "away-from-source",
+    sceneUnits: scene?.grid?.units ?? null
+  };
+}
+
+function normalizeControlledMovementDefinition(value, { scene = null } = {}) {
+  if (!isPlainObject(value) || value.enabled !== true) {
+    return { enabled: false, activationActivityId: null, maxDistance: 0, physicalRadius: 0, units: "scene" };
+  }
+  const units = ["scene", "ft", "m"].includes(String(value.units ?? "scene").toLowerCase())
+    ? String(value.units ?? "scene").toLowerCase()
+    : "scene";
+  return {
+    enabled: true,
+    activationActivityId: String(value.activationActivityId ?? "").trim() || null,
+    maxDistance: Math.max(0, coerceNumber(value.maxDistance, 0)),
+    physicalRadius: Math.max(0, coerceNumber(value.physicalRadius, 0)),
+    units,
     sceneUnits: scene?.grid?.units ?? null
   };
 }

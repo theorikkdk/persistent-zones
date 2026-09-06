@@ -5,7 +5,8 @@ import {
   MOVEMENT_STOP_GLOBAL_MODE_SETTING_KEY,
   MOVEMENT_STOP_GLOBAL_SETTING_KEY,
   REGION_HIGHLIGHT_MODE_SETTING_KEY,
-  REGION_VISIBILITY_SETTING_KEY
+  REGION_VISIBILITY_SETTING_KEY,
+  TOKEN_MEMBERSHIP_MODE_SETTING_KEY
 } from "./constants.mjs";
 
 export const MOVEMENT_STOP_GLOBAL_MODES = Object.freeze({
@@ -39,7 +40,24 @@ export const REGION_VISIBILITY_SETTINGS = Object.freeze({
   always: "always"
 });
 
+export const TOKEN_MEMBERSHIP_MODES = Object.freeze({
+  footprint50: "footprint-50",
+  foundryNative: "foundry-native"
+});
+
 export function registerPersistentZoneModuleSettings() {
+  game.settings.register(MODULE_ID, TOKEN_MEMBERSHIP_MODE_SETTING_KEY, {
+    name: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Name",
+    hint: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: buildLocalizedChoices({
+      [TOKEN_MEMBERSHIP_MODES.footprint50]: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Choices.Footprint50",
+      [TOKEN_MEMBERSHIP_MODES.foundryNative]: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Choices.FoundryNative"
+    }),
+    default: TOKEN_MEMBERSHIP_MODES.footprint50
+  });
   game.settings.register(MODULE_ID, MOVEMENT_STOP_GLOBAL_SETTING_KEY, {
     name: "PERSISTENT_ZONES.Settings.MovementStopGlobalLegacy.Name",
     hint: "PERSISTENT_ZONES.Settings.MovementStopGlobalLegacy.Hint",
@@ -263,6 +281,13 @@ export function resolveMovementStopGlobalState(triggerConfig = {}, timing = null
     stopSkippedBecauseGlobalDisabled: supportedTiming && activityMode === MOVEMENT_STOP_ACTIVITY_MODES.inherit && !globalEnabled,
     stopSkippedBecauseTimingDisabled: supportedTiming && !timingEnabled
   };
+}
+
+export function getTokenMembershipMode() {
+  const value = String(game.settings.get(MODULE_ID, TOKEN_MEMBERSHIP_MODE_SETTING_KEY) ?? "").trim().toLowerCase();
+  return value === TOKEN_MEMBERSHIP_MODES.foundryNative
+    ? TOKEN_MEMBERSHIP_MODES.foundryNative
+    : TOKEN_MEMBERSHIP_MODES.footprint50;
 }
 
 function normalizeMovementStopResolvedMode(value) {

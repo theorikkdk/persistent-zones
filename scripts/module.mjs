@@ -19,6 +19,7 @@ import { registerStatusRecoveryArbitrationHooks } from "./runtime/status-recover
 import { registerStatusEscapeHooks } from "./runtime/status-escape.mjs";
 import { registerPersistentZoneRollResolverHook } from "./runtime/roll-context.mjs";
 import { registerPersistentZoneActionRestrictions } from "./runtime/action-restrictions.mjs";
+import { registerControlledZoneMovementRuntime } from "./runtime/controlled-zone-movement-runtime.mjs";
 import { registerRegionFactoryHooks } from "./runtime/region-factory.mjs";
 import {
   primeTurnRuntimeState,
@@ -71,6 +72,7 @@ function onInit() {
   registerStatusEscapeHooks();
   registerPersistentZoneRollResolverHook();
   registerPersistentZoneActionRestrictions();
+  registerControlledZoneMovementRuntime();
   registerTurnRuntimeHooks();
 
   debug("Module initialized.");

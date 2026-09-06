@@ -22,6 +22,14 @@
     "Runtime": {
       "TranslationCoincidentOrigin": "The persistent zone cannot move because its center coincides with its source."
     },
+    "ControlledMovement": {
+      "Prompt": "Choose a destination within range, then tap or click.",
+      "Cancel": "Cancel",
+      "OutOfRange": "That destination is outside the movement range.",
+      "Failed": "The persistent zone could not move.",
+      "RegionNotFound": "No uniquely matching persistent zone is active.",
+      "ActivityName": "Move Zone"
+    },
     "ZoneSuffix": "Persistent Zone",
     "Activity": {
       "TypeLabel": "Persistent Zone",
@@ -41,6 +49,8 @@
         "Categories": { "SrdSpells": "SRD 5.2.1 Spells", "DebugTests": "Debug/Test Presets" },
         "Debug": {
           "ZoneTranslation": { "Name": "Debug/Test — Zone Translation", "Description": "A neutral 10-foot circle that moves 10 feet away from its source at the start of the source's turn." },
+          "ControlledMovement": { "Name": "Debug/Test — Controlled Movement", "Description": "A neutral 10-foot circle with a ready-to-use Bonus Action movement command, limited to 30 feet." },
+          "TokenMembership50": { "Name": "Debug/Test — 50% Token Membership", "Description": "A neutral rectangle for comparing less than half, exactly half, and more than half of a Token footprint inside a zone." },
           "MovementCostX2": { "Name": "Debug/Test — Movement Cost ×2", "Description": "A neutral circle with standard ×2 difficult terrain." },
           "MovementCostX4": { "Name": "Debug/Test — Movement Cost ×4", "Description": "A neutral circle using Foundry's native ×4 movement cost behavior." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Movement Cost ×4 + Walls", "Description": "A neutral ×4 circle restricted by movement-blocking walls." },
@@ -803,10 +813,18 @@
           "OnEnterAndMove": "On Enter + On Move"
         }
       },
-      "MovementStopGlobalModeMigrated": {
+        "MovementStopGlobalModeMigrated": {
         "Name": "Movement interruption migrated",
         "Hint": "Internal flag used to track legacy movement interruption migration."
-      },
+        },
+        "TokenMembershipMode": {
+          "Name": "Creature Detection in Zones",
+          "Hint": "50% coverage considers a creature inside when at least half of its Token footprint is covered. Foundry Native Membership delegates the decision to Foundry Regions.",
+          "Choices": {
+            "Footprint50": "50% Token Footprint Coverage — Recommended",
+            "FoundryNative": "Foundry Native Membership"
+          }
+        },
       "DebugLogLevel": {
         "Name": "Debug log verbosity",
         "Hint": "Control how much diagnostic output Persistent Zones writes to the console.",

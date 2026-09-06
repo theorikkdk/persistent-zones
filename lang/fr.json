@@ -22,6 +22,14 @@
     "Runtime": {
       "TranslationCoincidentOrigin": "La zone persistante ne peut pas se déplacer car son centre coïncide avec sa source."
     },
+    "ControlledMovement": {
+      "Prompt": "Choisissez une destination à portée, puis cliquez ou touchez-la.",
+      "Cancel": "Annuler",
+      "OutOfRange": "Cette destination est hors de portée du déplacement.",
+      "Failed": "La zone persistante n’a pas pu être déplacée.",
+      "RegionNotFound": "Aucune zone persistante active ne correspond de façon univoque.",
+      "ActivityName": "Déplacer la zone"
+    },
     "ZoneSuffix": "Zone persistante",
     "Activity": {
       "TypeLabel": "Zone persistante",
@@ -41,6 +49,8 @@
         "Categories": { "SrdSpells": "Sorts SRD 5.2.1", "DebugTests": "Presets debug/test" },
         "Debug": {
           "ZoneTranslation": { "Name": "Debug/Test — Déplacement de zone", "Description": "Un cercle neutre de 3 m qui s’éloigne de 3 m de sa source au début du tour de celle-ci." },
+          "ControlledMovement": { "Name": "Debug/Test — Déplacement contrôlé", "Description": "Un cercle neutre de 3 m avec une commande d’Action bonus prête à l’emploi, limitée à 9 m." },
+          "TokenMembership50": { "Name": "Debug/Test — Membership Token 50 %", "Description": "Un rectangle neutre pour comparer moins de la moitié, exactement la moitié et plus de la moitié du footprint d’un Token dans une zone." },
           "MovementCostX2": { "Name": "Debug/Test — Coût de déplacement ×2", "Description": "Un cercle neutre avec terrain difficile standard ×2." },
           "MovementCostX4": { "Name": "Debug/Test — Coût de déplacement ×4", "Description": "Un cercle neutre utilisant le comportement natif Foundry de coût de déplacement ×4." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." },
@@ -803,10 +813,18 @@
           "OnEnterAndMove": "\u00c0 l'entr\u00e9e + pendant le d\u00e9placement"
         }
       },
-      "MovementStopGlobalModeMigrated": {
+        "MovementStopGlobalModeMigrated": {
         "Name": "Interruption du mouvement migr\u00e9e",
         "Hint": "Indicateur interne utilis\u00e9 pour suivre la migration de l'ancien r\u00e9glage d'interruption du mouvement."
-      },
+        },
+        "TokenMembershipMode": {
+          "Name": "Détection des créatures dans les zones",
+          "Hint": "La couverture à 50 % considère une créature dans la zone lorsqu’au moins la moitié de l’espace occupé par son Token est couverte. Le membership natif Foundry délègue la décision aux Regions Foundry.",
+          "Choices": {
+            "Footprint50": "Couverture du Token à 50 % — recommandé",
+            "FoundryNative": "Membership natif Foundry"
+          }
+        },
       "DebugLogLevel": {
         "Name": "Niveau de verbosit\u00e9 des logs",
         "Hint": "Contr\u00f4lez la quantit\u00e9 de diagnostics envoy\u00e9s dans la console par Persistent Zones.",

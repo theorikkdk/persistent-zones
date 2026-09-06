@@ -25,6 +25,7 @@ import {
   fromUuidSafe,
   getRegionRuntime as readRegionRuntime
 } from "./runtime/utils.mjs";
+import { openControlledZoneMovementSession } from "./runtime/controlled-zone-movement-runtime.mjs";
 
 export function createPersistentZonesApi() {
   const api = {
@@ -396,6 +397,10 @@ export function createPersistentZonesApi() {
 
     getRegionRuntime(regionDocument) {
       return readRegionRuntime(regionDocument);
+    },
+
+    async openControlledZoneMovement(regionDocument, options = {}) {
+      return openControlledZoneMovementSession({ regionDocument, ...options });
     }
   };
 

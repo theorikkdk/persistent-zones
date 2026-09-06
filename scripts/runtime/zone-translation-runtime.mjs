@@ -87,17 +87,40 @@ export async function translateRegionAwayFromSource(regionDocument, sourceToken,
   }
   const unit = { x: vector.x / magnitude, y: vector.y / magnitude };
   const requested = { x: unit.x * requestedPixels, y: unit.y * requestedPixels };
-  const requestedDestination = { x: origin.x + requested.x, y: origin.y + requested.y };
+  return translateManagedRegionByVector(regionDocument, requested, {
+    combat,
+    state,
+    updateOptions: {
+      persistentZonesZoneTranslation: true,
+      persistentZonesTranslationContext: { combatId: combat?.id ?? null, round: state?.round ?? null, turn: state?.turn ?? null }
+    }
+  });
+}
+
+/**
+ * Translate a managed Region through the same center-point move-wall resolver
+ * used by automatic zones. Callers supply a requested pixel vector; this keeps
+ * action-triggered movement separate from ordinary Region editing.
+ */
+export async function translateManagedRegionByVector(regionDocument, requested, {
+  combat = null,
+  state = null,
+  updateOptions = {}
+} = {}) {
+  const scene = regionDocument?.parent ?? globalThis.canvas?.scene ?? null;
+  const origin = getRegionLogicalCenter(regionDocument);
+  const requestedDestination = { x: origin.x + Number(requested?.x ?? 0), y: origin.y + Number(requested?.y ?? 0) };
   const collisionTest = testMoveCollisionBackend(origin, requestedDestination, { scene, regionDocument });
   const resolved = resolveMoveCollision(origin, requested, { scene, regionDocument, collisionTest });
+  const requestedPixels = Math.hypot(Number(requested?.x ?? 0), Number(requested?.y ?? 0));
   const beforeMembership = captureRegionMembership(regionDocument);
-  if (Math.hypot(resolved.dx, resolved.dy) <= 1e-4) return { moved: false, reason: resolved.reason, requestedPixels, movedPixels: 0 };
+  if (Math.hypot(resolved.dx, resolved.dy) <= 1e-4) {
+    return { moved: false, reason: resolved.reason, requestedPixels, movedPixels: 0 };
+  }
 
-  const shapes = Array.from(regionDocument?._source?.shapes ?? []).map((shape) => translateRegionShapeData(shape, resolved.dx, resolved.dy));
-  await regionDocument.update({ shapes }, {
-    persistentZonesZoneTranslation: true,
-    persistentZonesTranslationContext: { combatId: combat?.id ?? null, round: state?.round ?? null, turn: state?.turn ?? null }
-  });
+  const shapes = Array.from(regionDocument?._source?.shapes ?? [])
+    .map((shape) => translateRegionShapeData(shape, resolved.dx, resolved.dy));
+  await regionDocument.update({ shapes }, updateOptions);
   await reconcileRegionMembershipAfterTranslation(regionDocument, beforeMembership, { combat, state });
   return {
     moved: true,

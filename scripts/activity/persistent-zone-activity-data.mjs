@@ -205,6 +205,13 @@ export class PersistentZoneActivityData extends dnd5e.dataModels.activity.BaseAc
           units: new fields.StringField({ required: false, initial: "scene", choices: ["scene", "ft", "m"] }),
           direction: new fields.StringField({ required: false, initial: "away-from-source", choices: ["away-from-source"] })
         }, { required: false, nullable: true, initial: null }),
+        controlledMovement: new fields.SchemaField({
+          enabled: new fields.BooleanField({ required: false, initial: false }),
+          activationActivityId: new fields.StringField({ required: false, nullable: true, initial: null, blank: true }),
+          maxDistance: new fields.NumberField({ required: false, nullable: true, initial: 0, min: 0 }),
+          physicalRadius: new fields.NumberField({ required: false, nullable: true, initial: 0, min: 0 }),
+          units: new fields.StringField({ required: false, initial: "scene", choices: ["scene", "ft", "m"] })
+        }, { required: false, nullable: true, initial: null }),
         terrain: new fields.SchemaField({
           enabled: new fields.BooleanField({
             required: false,

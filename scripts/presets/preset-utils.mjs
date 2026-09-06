@@ -2,12 +2,13 @@ import {
   convertCanonicalDistanceToSceneUnits,
   normalizeCanonicalDistanceUnit
 } from "../activity/activity-distance.mjs";
+import { MODULE_ID } from "../constants.mjs";
 
 export const PRESET_SCHEMA_VERSION = 1;
 
 const PERSISTENT_ZONE_KEYS = new Set([
   "schemaVersion", "enabled", "geometry", "parts", "triggers", "damage", "save", "effects",
-  "placement", "movement", "translation", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles", "obscuration"
+  "placement", "movement", "translation", "controlledMovement", "terrain", "linkedWalls", "linkedLights", "lifecycle", "elevation", "obstacles", "obscuration"
 ]);
 
 const RUNTIME_IDENTITY_KEYS = new Set([
@@ -82,7 +83,46 @@ export async function applyPresetToActivity(activity, presetOrData, {
   const persistentZone = resolvePresetPersistentZoneForScene(preset.persistentZone, scene);
   await item.updateActivity(activity.id, { "-=persistentZone": null });
   await item.updateActivity(activity.id, { ...clone(activityUpdates), persistentZone });
-  return { preset, persistentZone };
+  const controlledMovement = persistentZone?.controlledMovement;
+  if (controlledMovement?.enabled !== true) return { preset, persistentZone };
+
+  const companion = await ensureControlledMovementCompanionActivity(item, activity.id);
+  const resolvedPersistentZone = clone(persistentZone);
+  resolvedPersistentZone.controlledMovement = {
+    ...resolvedPersistentZone.controlledMovement,
+    activationActivityId: companion.id
+  };
+  await item.updateActivity(activity.id, { persistentZone: resolvedPersistentZone });
+  return { preset, persistentZone: resolvedPersistentZone, controlledMovementActivity: companion };
+}
+
+/** Ensure one native D&D5e Utility Activity controls this exact PZ Activity. */
+export async function ensureControlledMovementCompanionActivity(item, primaryActivityId) {
+  if (!item?.createActivity || !item?.updateActivity || !primaryActivityId) {
+    throw new Error("The Persistent Zone Activity is not embedded in an updateable Item.");
+  }
+  const existing = Array.from(item.system?.activities?.values?.() ?? []).find((activity) => {
+    const config = activity?.flags?.[MODULE_ID]?.controlledZoneMovement ?? activity?._source?.flags?.[MODULE_ID]?.controlledZoneMovement;
+    return activity?.type === "utility" && config?.enabled === true && config?.primaryActivityId === primaryActivityId;
+  });
+  const source = {
+    name: localize("PERSISTENT_ZONES.ControlledMovement.ActivityName", "Move Zone"),
+    type: "utility",
+    activation: { type: "bonus", value: 1 },
+    // This Utility is a command for an already-active cast, never a second concentration use.
+    duration: { value: null, units: "inst", concentration: false, override: true },
+    consumption: { scaling: { allowed: false }, spellSlot: false, targets: [] },
+    flags: { [MODULE_ID]: { controlledZoneMovement: { enabled: true, primaryActivityId } } }
+  };
+  if (existing) {
+    await item.updateActivity(existing.id, source);
+    return existing;
+  }
+  const before = new Set(Array.from(item.system?.activities?.keys?.() ?? []));
+  await item.createActivity("utility", source, { renderSheet: false });
+  const created = Array.from(item.system?.activities?.values?.() ?? []).find((activity) => !before.has(activity?.id));
+  if (!created) throw new Error("D&D5e did not retain the controlled movement Utility Activity.");
+  return created;
 }
 
 export function resolvePresetPersistentZoneForScene(persistentZone, scene = globalThis.canvas?.scene ?? null) {
@@ -94,6 +134,7 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
   const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
   if (sourceUnits === "scene" || sceneUnits === "scene") {
     convertTranslationForScene(resolved.translation, scene, sceneUnits);
+    convertControlledMovementForScene(resolved.controlledMovement, scene, sceneUnits);
     convertElevationForScene(resolved.elevation, scene, sceneUnits);
     for (const part of Array.isArray(resolved.parts) ? resolved.parts : []) {
       convertElevationForScene(part?.elevation, scene, sceneUnits);
@@ -138,6 +179,7 @@ export function resolvePresetPersistentZoneForScene(persistentZone, scene = glob
     resolved.movement.units = sceneUnits;
   }
   convertTranslationForScene(resolved.translation, scene, sceneUnits);
+  convertControlledMovementForScene(resolved.controlledMovement, scene, sceneUnits);
   geometry.units = sceneUnits;
   return resolved;
 }
@@ -148,6 +190,17 @@ function convertTranslationForScene(translation, scene, sceneUnits) {
   if (sourceUnits === "scene" || sceneUnits === "scene") return;
   translation.distance = convertCanonicalDistanceToSceneUnits(translation.distance, sourceUnits, scene);
   translation.units = sceneUnits;
+}
+
+function convertControlledMovementForScene(controlledMovement, scene, sceneUnits) {
+  if (!isObject(controlledMovement)) return;
+  const sourceUnits = normalizeCanonicalDistanceUnit(controlledMovement.units);
+  if (sourceUnits === "scene" || sceneUnits === "scene") return;
+  for (const field of ["maxDistance", "physicalRadius"]) {
+    if (controlledMovement[field] === undefined || controlledMovement[field] === null) continue;
+    controlledMovement[field] = convertCanonicalDistanceToSceneUnits(controlledMovement[field], sourceUnits, scene);
+  }
+  controlledMovement.units = sceneUnits;
 }
 
 function convertElevationForScene(elevation, scene, sceneUnits) {
@@ -212,4 +265,9 @@ function clone(value) {
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function localize(key, fallback) {
+  const value = globalThis.game?.i18n?.localize?.(key);
+  return value && value !== key ? value : fallback;
 }

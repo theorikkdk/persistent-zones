@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { BUILTIN_PRESETS } from "../presets/builtins.mjs";
+import { getPersistentZoneActivityDefinition } from "../activity/persistent-zone-activity-utils.mjs";
 import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../presets/preset-library.mjs";
 import {
   PRESET_SCHEMA_VERSION,
@@ -11,8 +12,10 @@ import {
   resolvePresetPersistentZoneForScene
 } from "../presets/preset-utils.mjs";
 
+globalThis.foundry ??= { utils: { deepClone: structuredClone } };
+
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 30);
+  assert.equal(BUILTIN_PRESETS.length, 32);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -274,9 +277,9 @@ test("replacement removes every stale mono and multipart setting", async () => {
 test("visible library separates validated SRD and debug movement-cost presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
-    "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
+    "debug.controlled-zone-movement", "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
-    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.zone-translation",
+    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.cloudkill", "srd-5.2.1.entangle", "srd-5.2.1.fog-cloud", "srd-5.2.1.grease",
     "srd-5.2.1.insect-plague", "srd-5.2.1.moonbeam", "srd-5.2.1.sleet-storm", "srd-5.2.1.spike-growth", "srd-5.2.1.spirit-guardians-necrotic", "srd-5.2.1.spirit-guardians-radiant",
     "srd-5.2.1.stinking-cloud", "srd-5.2.1.wall-of-fire-line", "srd-5.2.1.wall-of-fire-ring", "srd-5.2.1.web"
@@ -285,12 +288,21 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   for (const id of [
     "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.temporary-hit-points-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
-    "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.zone-translation"
+    "debug.controlled-zone-movement", "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation"
   ]) {
     const preset = getPersistentZonePreset(id);
     assert.equal(preset.source, "builtin");
     assert.equal(preset.category, "debug-tests");
   }
+});
+
+test("token membership Debug/Test preset is visible and neutral", () => {
+  const preset = getPersistentZonePreset("debug.token-membership-50");
+  assert.equal(preset.category, "debug-tests");
+  assert.deepEqual(preset.persistentZone.geometry, { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" });
+  assert.deepEqual(preset.persistentZone.obstacles, { mode: "unrestricted" });
+  assert.equal(preset.persistentZone.terrain.enabled, false);
+  assert.ok(Object.values(preset.persistentZone.triggers).every((trigger) => trigger.enabled === false));
 });
 
 test("debug zone translation preset applies canonical movement and resolves it for metric scenes", async () => {
@@ -325,6 +337,63 @@ test("debug zone translation preset applies canonical movement and resolves it f
   assert.equal(result.persistentZone.translation.distance, 3);
   assert.equal(result.persistentZone.translation.units, "m");
   assert.deepEqual(captured.at(-1).persistentZone.translation, result.persistentZone.translation);
+});
+
+test("controlled movement debug preset creates one linked Bonus Action utility without creating an Item", async () => {
+  const preset = getPersistentZonePreset("debug.controlled-zone-movement");
+  const metric = { grid: { units: "m", distance: 1.5, size: 100 } };
+  assert.ok(preset);
+  assert.equal(preset.category, "debug-tests");
+  assert.deepEqual(preset.persistentZone.geometry, { type: "circle", radius: 10, units: "ft" });
+  assert.deepEqual(preset.persistentZone.obstacles, { mode: "wall-restricted", restrictionType: "move", priority: 0 });
+  assert.deepEqual(preset.persistentZone.controlledMovement, { enabled: true, maxDistance: 30, units: "ft" });
+
+  const activities = new Map();
+  const updates = [];
+  let activityCounter = 0;
+  const item = {
+    uuid: "Actor.a.Item.test",
+    system: { activities },
+    async updateActivity(id, update) {
+      updates.push({ id, update: structuredClone(update) });
+      const existing = activities.get(id);
+      if (existing && update.flags) existing.flags = structuredClone(update.flags);
+    },
+    async createActivity(type, source) {
+      const id = `utility-${++activityCounter}`;
+      activities.set(id, { id, type, flags: structuredClone(source.flags), _source: structuredClone(source) });
+    }
+  };
+  const activity = { id: "pz-zone", type: "persistent-zone", item };
+  const first = await applyPresetToActivity(activity, preset, { scene: metric });
+  const second = await applyPresetToActivity(activity, preset, { scene: metric });
+  assert.equal(first.persistentZone.controlledMovement.physicalRadius, undefined, "the Debug preset uses the visible Region geometry by default");
+
+  assert.equal(activityCounter, 1, "reapplying does not create a second Utility Activity");
+  assert.equal(first.persistentZone.geometry.radius, 3);
+  assert.deepEqual(first.persistentZone.controlledMovement, {
+    enabled: true, maxDistance: 9, units: "m", activationActivityId: "utility-1"
+  });
+  assert.equal(second.controlledMovementActivity.id, "utility-1");
+  const utility = activities.get("utility-1");
+  assert.equal(utility.type, "utility");
+  assert.equal(utility.flags["persistent-zones"].controlledZoneMovement.primaryActivityId, "pz-zone");
+  assert.equal(utility._source.activation.type, "bonus");
+  assert.deepEqual(utility._source.duration, { value: null, units: "inst", concentration: false, override: true });
+  assert.deepEqual(utility._source.consumption, { scaling: { allowed: false }, spellSlot: false, targets: [] });
+  assert.equal(typeof item.createEmbeddedDocuments, "undefined");
+
+  const serialized = {
+    id: "pz-zone", type: "persistent-zone", item,
+    persistentZone: first.persistentZone,
+    toObject: () => ({ persistentZone: structuredClone(first.persistentZone) })
+  };
+  const definition = getPersistentZoneActivityDefinition(serialized);
+  assert.equal(definition.controlledMovement.enabled, true);
+  assert.equal(definition.controlledMovement.maxDistance, 9);
+  assert.equal(definition.controlledMovement.physicalRadius, 0, "no override means use the visible Region geometry");
+  assert.equal(definition.controlledMovement.activationActivityId, "utility-1");
+  assert.ok(updates.some(({ update }) => update.persistentZone?.controlledMovement?.activationActivityId === "utility-1"));
 });
 
 test("debug movement-cost presets apply their explicit terrain and obstacle configuration", async () => {

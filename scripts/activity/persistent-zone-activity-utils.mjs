@@ -72,6 +72,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     mode: source.obscuration.mode === "heavily-obscured" ? "heavily-obscured" : "none"
   } : null;
   const translation = buildRuntimeTranslation(source.translation);
+  const controlledMovement = buildRuntimeControlledMovement(source.controlledMovement);
 
   const definition = {
     schemaVersion: activitySchemaVersion,
@@ -87,6 +88,7 @@ export function buildLegacyDefinitionFromPersistentZoneActivity(activity, config
     ...(obstacles ? { obstacles } : {}),
     ...(obscuration ? { obscuration } : {}),
     ...(translation ? { translation } : {}),
+    ...(controlledMovement ? { controlledMovement } : {}),
     template: buildTemplateDefinition(activity, geometryType, geometry),
     geometry: buildGeometryDefinition(geometryType, geometry, { activitySchemaVersion }),
     concentration: {
@@ -163,6 +165,19 @@ function buildRuntimeTranslation(value) {
       ? String(value.units ?? "scene").toLowerCase()
       : "scene",
     direction: "away-from-source"
+  };
+}
+
+function buildRuntimeControlledMovement(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    enabled: value.enabled === true,
+    activationActivityId: String(value.activationActivityId ?? "").trim() || null,
+    maxDistance: Math.max(0, Number(value.maxDistance) || 0),
+    physicalRadius: Math.max(0, Number(value.physicalRadius) || 0),
+    units: ["scene", "ft", "m"].includes(String(value.units ?? "scene").toLowerCase())
+      ? String(value.units ?? "scene").toLowerCase()
+      : "scene"
   };
 }
 
