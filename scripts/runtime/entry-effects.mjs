@@ -26,7 +26,7 @@ import {
 } from "./status-recovery-arbitration.mjs";
 import { reserveTriggerFrequency, commitTriggerFrequency, releaseTriggerFrequency } from "./trigger-frequency.mjs";
 import { buildDamageDescription, buildResolutionRequest, resolveNativeDamageApplication } from "./resolution-request.mjs";
-import { resolveMidiPrototype } from "./midi-prototype-resolver.mjs";
+import { resolveResolutionRequest } from "./resolution-dispatcher.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -64,7 +64,6 @@ export async function applyConfiguredTriggerEffect({
     targetFilter: actionConfig.targetFilter,
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
-    resolutionEngine: actionConfig.resolutionEngine,
     requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
     requiredAbsentSourceStatuses: actionConfig.requiredAbsentSourceStatuses,
     damage: actionConfig.damage,
@@ -340,20 +339,74 @@ export async function applyConfiguredTriggerEffect({
       regionDocument, tokenDocument, runtime, timing: normalizedTiming,
       triggerConfig: resolvedTrigger, context
     });
-    if (resolvedTrigger.resolutionEngine === "midi-prototype") {
-      const sourceItem = await resolveRuntimeItem(runtime);
-      const sourceToken = runtime.sourceTokenUuid ? await fromUuidSafe(runtime.sourceTokenUuid) : null;
-      const dc = await resolveConfiguredSaveDc(resolvedTrigger.save ?? {}, regionDocument);
-      const midiResult = await resolveMidiPrototype({
-        sourceActor: sourceItem?.actor ?? actor,
-        sourceToken,
-        targetToken: tokenDocument?.object ?? tokenDocument,
-        save: { ability: resolvedTrigger.save?.ability ?? "dex", dc },
-        damage: resolvedTrigger.damage
+    const sourceItem = await resolveRuntimeItem(runtime);
+    const sourceToken = runtime.sourceTokenUuid ? await fromUuidSafe(runtime.sourceTokenUuid) : null;
+    const resolvedDc = resolvedTrigger.save?.enabled
+      ? await resolveConfiguredSaveDc(resolvedTrigger.save ?? {}, regionDocument)
+      : null;
+    if (resolvedTrigger.save?.enabled && resolvedDc === null) {
+      releaseTriggerFrequency(frequencyDecision);
+      return buildSkippedResult("Save DC could not be resolved.", {
+        ...baseDiagnostic, timing: normalizedTiming, partId, triggerMode, resolutionRequest
       });
-      if (midiResult.status === "resolved" && !midiResult.cancelled) await commitTriggerFrequency(frequencyDecision);
-      else releaseTriggerFrequency(frequencyDecision);
-      return { applied: midiResult.status === "resolved" && !midiResult.cancelled, skipped: midiResult.status !== "resolved" || midiResult.cancelled, timing: normalizedTiming, partId, triggerMode, resolutionRequest, resolution: midiResult };
+    }
+    const resolvedDamageScaling = resolvedTrigger.damage?.enabled
+      ? resolveScaledFormula({
+        formula: resolvedTrigger.damage.formula,
+        scaling: resolvedTrigger.damage.scaling,
+        castLevel: runtime.castLevel ?? runtime.normalizedDefinition?.castLevel ?? null
+      })
+      : null;
+    const dispatchedResolution = await resolveResolutionRequest({
+      request: resolutionRequest,
+      sourceActor: sourceItem?.actor ?? actor,
+      sourceToken: sourceToken?.object ?? sourceToken,
+      targetToken: tokenDocument?.object ?? tokenDocument,
+      save: resolvedTrigger.save?.enabled ? {
+        enabled: true,
+        ability: resolvedTrigger.save?.ability ?? "dex",
+        dc: resolvedDc,
+        onSuccess: resolvedTrigger.save?.onSuccess ?? "half"
+      } : null,
+      damage: resolvedTrigger.damage?.enabled ? {
+        enabled: true,
+        formula: resolvedDamageScaling?.formula ?? resolvedTrigger.damage.formula,
+        type: resolvedTrigger.damage.type,
+        onSuccess: resolvedTrigger.save?.onSuccess ?? "half"
+      } : null
+    });
+    if (dispatchedResolution.engine === "midi-qol") {
+      if (dispatchedResolution.status !== "resolved" || dispatchedResolution.cancelled) {
+        releaseTriggerFrequency(frequencyDecision);
+        return buildSkippedResult(dispatchedResolution.cancelled ? "Midi-QOL resolution was cancelled." : "Midi-QOL resolution failed.", {
+          ...baseDiagnostic, timing: normalizedTiming, partId, triggerMode, resolutionRequest, resolution: dispatchedResolution
+        });
+      }
+      const midiSaveResult = buildMidiSaveResult({
+        workflow: dispatchedResolution.workflow,
+        targetToken: tokenDocument,
+        ability: resolvedTrigger.save?.ability,
+        dc: resolvedDc,
+        onSuccess: resolvedTrigger.save?.onSuccess
+      });
+      const statusResult = await applyTriggeredStatuses({
+        regionDocument, tokenDocument, triggerConfig: resolvedTrigger, timing: normalizedTiming,
+        saveResult: midiSaveResult, baseDiagnostic, context
+      });
+      const concentrationResult = await applyTriggeredEndConcentration({
+        actor, config: resolvedTrigger.endConcentration, saveEnabled: Boolean(resolvedTrigger.save?.enabled), saveResult: midiSaveResult
+      });
+      // Healing and temporary HP deliberately retain the native Actor API: Midi-QOL has no
+      // equally stable workflow contract for both recovery types in this integration.
+      const healingResult = await applySimpleRecoveryEffect({ actor, regionDocument, tokenDocument, timing: normalizedTiming, type: "heal", config: resolvedTrigger.healing });
+      const temporaryHitPointsResult = await applySimpleRecoveryEffect({ actor, regionDocument, tokenDocument, timing: normalizedTiming, type: "tempHP", config: resolvedTrigger.temporaryHitPoints });
+      await commitTriggerFrequency(frequencyDecision);
+      return {
+        applied: true, skipped: false, partId, triggerMode, timing: normalizedTiming,
+        resolutionRequest, resolution: dispatchedResolution, save: midiSaveResult,
+        statuses: statusResult, endConcentration: concentrationResult,
+        healing: healingResult, temporaryHitPoints: temporaryHitPointsResult
+      };
     }
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION START", {
       ...baseDiagnostic,
@@ -2078,6 +2131,26 @@ export function findEquivalentTriggeredStatusSources(actor, identity) {
       flags.statusId === identity.statusId &&
       effect?.active !== false;
   });
+}
+
+/** Convert Midi-QOL's workflow collections into the save contract used by PZ statuses. */
+function buildMidiSaveResult({ workflow, targetToken, ability, dc, onSuccess } = {}) {
+  if (!ability) return null;
+  const targetId = targetToken?.id ?? targetToken?.object?.id ?? null;
+  const saves = Array.from(workflow?.saves ?? []);
+  const success = saves.some((entry) => {
+    const candidate = entry?.document ?? entry;
+    return candidate?.id === targetId || candidate?.object?.id === targetId;
+  });
+  return {
+    ability: String(ability ?? "").toLowerCase(),
+    dc: coerceNumber(dc, null),
+    total: null,
+    success,
+    unresolved: false,
+    onSuccess: String(onSuccess ?? "half").toLowerCase(),
+    engine: "midi-qol"
+  };
 }
 
 function resolveStatusEffectData(statusId) {

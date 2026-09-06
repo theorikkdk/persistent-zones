@@ -7,6 +7,7 @@ export const DEBUG_LOG_LEVEL_SETTING_KEY = "debugLogLevel";
 export const REGION_HIGHLIGHT_MODE_SETTING_KEY = "regionHighlightMode";
 export const REGION_VISIBILITY_SETTING_KEY = "regionVisibility";
 export const TOKEN_MEMBERSHIP_MODE_SETTING_KEY = "tokenMembershipMode";
+export const RESOLUTION_ENGINE_SETTING_KEY = "resolutionEngine";
 
 export const DEFINITION_FLAG_KEY = "definition";
 export const RUNTIME_FLAG_KEY = "runtime";

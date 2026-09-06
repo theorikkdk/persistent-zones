@@ -6,8 +6,11 @@ import {
   MOVEMENT_STOP_GLOBAL_SETTING_KEY,
   REGION_HIGHLIGHT_MODE_SETTING_KEY,
   REGION_VISIBILITY_SETTING_KEY,
-  TOKEN_MEMBERSHIP_MODE_SETTING_KEY
+  TOKEN_MEMBERSHIP_MODE_SETTING_KEY,
+  RESOLUTION_ENGINE_SETTING_KEY
 } from "./constants.mjs";
+
+export const RESOLUTION_ENGINES = Object.freeze({ native: "native", midiQol: "midi-qol" });
 
 export const MOVEMENT_STOP_GLOBAL_MODES = Object.freeze({
   off: "off",
@@ -46,6 +49,18 @@ export const TOKEN_MEMBERSHIP_MODES = Object.freeze({
 });
 
 export function registerPersistentZoneModuleSettings() {
+  game.settings.register(MODULE_ID, RESOLUTION_ENGINE_SETTING_KEY, {
+    name: "PERSISTENT_ZONES.Settings.ResolutionEngine.Name",
+    hint: "PERSISTENT_ZONES.Settings.ResolutionEngine.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: buildLocalizedChoices({
+      [RESOLUTION_ENGINES.native]: "PERSISTENT_ZONES.Settings.ResolutionEngine.Choices.Native",
+      [RESOLUTION_ENGINES.midiQol]: "PERSISTENT_ZONES.Settings.ResolutionEngine.Choices.MidiQol"
+    }),
+    default: RESOLUTION_ENGINES.native
+  });
   game.settings.register(MODULE_ID, TOKEN_MEMBERSHIP_MODE_SETTING_KEY, {
     name: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Name",
     hint: "PERSISTENT_ZONES.Settings.TokenMembershipMode.Hint",

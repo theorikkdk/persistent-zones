@@ -20,7 +20,8 @@
       }
     },
     "Runtime": {
-      "TranslationCoincidentOrigin": "The persistent zone cannot move because its center coincides with its source."
+      "TranslationCoincidentOrigin": "The persistent zone cannot move because its center coincides with its source.",
+      "MidiUnavailableFallback": "Midi-QOL is unavailable; Persistent Zones is using native resolution."
     },
     "ControlledMovement": {
       "Prompt": "Choose a destination within range, then tap or click.",
@@ -52,7 +53,7 @@
           "ControlledMovement": { "Name": "Debug/Test — Controlled Movement", "Description": "A neutral 10-foot circle with a ready-to-use Bonus Action movement command, limited to 30 feet." },
           "TokenMembership50": { "Name": "Debug/Test — 50% Token Membership", "Description": "A neutral rectangle for comparing less than half, exactly half, and more than half of a Token footprint inside a zone." },
           "NativeResolution": { "Name": "Debug/Test — Native Resolution", "Description": "A neutral circle with a Dexterity save and typed fire damage, for testing D&D5e damage mitigation." },
-          "MidiPrototype": { "Name": "Debug/Test — Midi-QOL Prototype", "Description": "A neutral circle that routes one Dexterity save and 2d6 fire damage through the transient Midi-QOL prototype." },
+          "MidiResolution": { "Name": "Debug/Test — Midi-QOL Resolution", "Description": "A neutral circle with one Dexterity save and 2d6 fire damage, for testing the selected resolution engine." },
           "MovementCostX2": { "Name": "Debug/Test — Movement Cost ×2", "Description": "A neutral circle with standard ×2 difficult terrain." },
           "MovementCostX4": { "Name": "Debug/Test — Movement Cost ×4", "Description": "A neutral circle using Foundry's native ×4 movement cost behavior." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Movement Cost ×4 + Walls", "Description": "A neutral ×4 circle restricted by movement-blocking walls." },
@@ -852,6 +853,11 @@
           "Gamemaster": "Always for Gamemaster",
           "Always": "Always for Everyone"
         }
+      },
+      "ResolutionEngine": {
+        "Name": "Resolution Engine",
+        "Hint": "Choose how Persistent Zones resolves saves and damage.",
+        "Choices": { "Native": "D&D5e / Persistent Zones", "MidiQol": "Midi-QOL" }
       }
     }
   }

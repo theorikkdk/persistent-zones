@@ -499,7 +499,6 @@ function buildTriggerConfig(triggerSource = {}, {
     targetFilter: { mode: normalizeTriggerTargetFilterMode(trigger.targetFilter?.mode) },
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? "").trim() || null,
-    resolutionEngine: String(trigger.resolutionEngine ?? "native").trim() || "native",
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(trigger.requiredAbsentSourceStatuses),
     interruptionMode: String(movement.interruptionMode ?? "inherit").trim().toLowerCase() || "inherit",

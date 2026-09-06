@@ -384,17 +384,17 @@ const buildNativeResolutionDebugPreset = () => base({
   }
 });
 
-const buildMidiPrototypeDebugPreset = () => base({
-  id: "debug.midi-qol-prototype",
-  name: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiPrototype.Name",
-  description: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiPrototype.Description",
+const buildMidiResolutionDebugPreset = () => base({
+  id: "debug.midi-qol-resolution",
+  name: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiResolution.Name",
+  description: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiResolution.Description",
   category: "debug-tests",
   geometry: { type: "circle", radius: 10, units: "ft" },
   obstacles: { mode: "unrestricted" },
   terrain: { enabled: false, multiplier: 2 },
   triggers: {
     ...buildDisabledTriggers(),
-    enter: { ...buildDamageTrigger({ formula: "2d6", type: "fire", ability: "dex", half: true }), resolutionEngine: "midi-prototype" }
+    enter: buildDamageTrigger({ formula: "2d6", type: "fire", ability: "dex", half: true })
   }
 });
 
@@ -432,7 +432,7 @@ export const BUILTIN_PRESETS = Object.freeze([
   buildControlledMovementDebugPreset(),
   buildTokenMembershipDebugPreset(),
   buildNativeResolutionDebugPreset(),
-  buildMidiPrototypeDebugPreset(),
+  buildMidiResolutionDebugPreset(),
   buildDamageScalingDebugPreset({
     id: "debug.damage-scaling-3d8",
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScaling3d8.Name",
