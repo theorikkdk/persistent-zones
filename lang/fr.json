@@ -52,6 +52,7 @@
           "ControlledMovement": { "Name": "Debug/Test — Déplacement contrôlé", "Description": "Un cercle neutre de 3 m avec une commande d’Action bonus prête à l’emploi, limitée à 9 m." },
           "TokenMembership50": { "Name": "Debug/Test — Membership Token 50 %", "Description": "Un rectangle neutre pour comparer moins de la moitié, exactement la moitié et plus de la moitié du footprint d’un Token dans une zone." },
           "NativeResolution": { "Name": "Debug/Test — Résolution native", "Description": "Un cercle neutre avec JDS de Dextérité et dégâts de feu typés, pour tester les mitigations D&D5e." },
+          "MidiPrototype": { "Name": "Debug/Test — Prototype Midi-QOL", "Description": "Un cercle neutre qui transmet un JDS de Dextérité et 2d6 feu au prototype transitoire Midi-QOL." },
           "MovementCostX2": { "Name": "Debug/Test — Coût de déplacement ×2", "Description": "Un cercle neutre avec terrain difficile standard ×2." },
           "MovementCostX4": { "Name": "Debug/Test — Coût de déplacement ×4", "Description": "Un cercle neutre utilisant le comportement natif Foundry de coût de déplacement ×4." },
           "MovementCostX4Walls": { "Name": "Debug/Test — Coût de déplacement ×4 + murs", "Description": "Un cercle neutre ×4 restreint par les murs qui bloquent le mouvement." },

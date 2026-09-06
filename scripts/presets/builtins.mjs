@@ -384,6 +384,20 @@ const buildNativeResolutionDebugPreset = () => base({
   }
 });
 
+const buildMidiPrototypeDebugPreset = () => base({
+  id: "debug.midi-qol-prototype",
+  name: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiPrototype.Name",
+  description: "PERSISTENT_ZONES.Activity.Presets.Debug.MidiPrototype.Description",
+  category: "debug-tests",
+  geometry: { type: "circle", radius: 10, units: "ft" },
+  obstacles: { mode: "unrestricted" },
+  terrain: { enabled: false, multiplier: 2 },
+  triggers: {
+    ...buildDisabledTriggers(),
+    enter: { ...buildDamageTrigger({ formula: "2d6", type: "fire", ability: "dex", half: true }), resolutionEngine: "midi-prototype" }
+  }
+});
+
 const buildRecoveryScalingDebugPreset = ({ id, name, description, recoveryType, formula, perLevelFormula }) => {
   const recoveryKey = recoveryType === "tempHP" ? "temporaryHitPoints" : "healing";
   return base({
@@ -418,6 +432,7 @@ export const BUILTIN_PRESETS = Object.freeze([
   buildControlledMovementDebugPreset(),
   buildTokenMembershipDebugPreset(),
   buildNativeResolutionDebugPreset(),
+  buildMidiPrototypeDebugPreset(),
   buildDamageScalingDebugPreset({
     id: "debug.damage-scaling-3d8",
     name: "PERSISTENT_ZONES.Activity.Presets.Debug.DamageScaling3d8.Name",

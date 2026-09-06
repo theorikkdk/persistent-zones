@@ -1922,6 +1922,7 @@ function normalizeTriggerConfig(triggerLikeDefinition, dc, {
     targetFilter: { mode: normalizeTriggerTargetFilterMode(definition.targetFilter?.mode) },
     frequency: normalizeTriggerFrequency(definition.frequency),
     frequencyGroup: String(definition.frequencyGroup ?? "").trim() || null,
+    resolutionEngine: String(definition.resolutionEngine ?? "native").trim() || "native",
     requiredAbsentStatuses: normalizeStatusIdList(definition.requiredAbsentStatuses ?? definition.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(definition.requiredAbsentSourceStatuses),
     interruptionMode: normalizeMovementInterruptionMode(definition.interruptionMode),

@@ -15,7 +15,7 @@ import {
 globalThis.foundry ??= { utils: { deepClone: structuredClone } };
 
 test("accepts versioned built-in presets", () => {
-  assert.equal(BUILTIN_PRESETS.length, 33);
+  assert.equal(BUILTIN_PRESETS.length, 34);
   for (const candidate of BUILTIN_PRESETS) {
     const preset = normalizePreset(candidate);
     assert.ok(preset);
@@ -276,7 +276,7 @@ test("replacement removes every stale mono and multipart setting", async () => {
 test("visible library separates validated SRD and debug movement-cost presets", () => {
   const ids = getBuiltinPersistentZonePresets().map(({ id }) => id).sort();
   assert.deepEqual(ids, [
-    "debug.controlled-zone-movement", "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling",
+    "debug.controlled-zone-movement", "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.midi-qol-prototype",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.rectangle-walls", "debug.rectangle-walls-terrain", "debug.temporary-hit-points-scaling",
     "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation",
     "srd-5.2.1.black-tentacles", "srd-5.2.1.cloudkill", "srd-5.2.1.entangle", "srd-5.2.1.fog-cloud", "srd-5.2.1.grease",
@@ -285,7 +285,7 @@ test("visible library separates validated SRD and debug movement-cost presets", 
   ]);
   assert.equal(ids.some((id) => id.startsWith("builtin.")), false);
   for (const id of [
-    "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.temporary-hit-points-scaling",
+    "debug.damage-scaling-3d8", "debug.damage-scaling-constant", "debug.healing-scaling", "debug.midi-qol-prototype", "debug.temporary-hit-points-scaling",
     "debug.movement-cost-x2", "debug.movement-cost-x4", "debug.movement-cost-x4-walls", "debug.native-resolution", "debug.rectangle-walls", "debug.rectangle-walls-terrain",
     "debug.controlled-zone-movement", "debug.terrain-x4-allies", "debug.terrain-x4-enemies", "debug.terrain-x4-enemies-walls", "debug.terrain-x4-others", "debug.terrain-x4-self", "debug.token-membership-50", "debug.zone-translation"
   ]) {

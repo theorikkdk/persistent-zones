@@ -353,6 +353,7 @@ function createTriggerSchema(fields, enabledInitial, exitTrigger) {
       required: false,
       initial: ""
     }),
+    resolutionEngine: new fields.StringField({ required: false, initial: "native", choices: ["native", "midi-prototype"] }),
     requiredAbsentStatuses: new fields.ArrayField(new fields.StringField(), {
       required: false,
       initial: []

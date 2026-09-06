@@ -26,6 +26,7 @@ import {
 } from "./status-recovery-arbitration.mjs";
 import { reserveTriggerFrequency, commitTriggerFrequency, releaseTriggerFrequency } from "./trigger-frequency.mjs";
 import { buildDamageDescription, buildResolutionRequest, resolveNativeDamageApplication } from "./resolution-request.mjs";
+import { resolveMidiPrototype } from "./midi-prototype-resolver.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -63,6 +64,7 @@ export async function applyConfiguredTriggerEffect({
     targetFilter: actionConfig.targetFilter,
     frequency: actionConfig.frequency,
     frequencyGroup: actionConfig.frequencyGroup,
+    resolutionEngine: actionConfig.resolutionEngine,
     requiredAbsentStatuses: actionConfig.requiredAbsentStatuses,
     requiredAbsentSourceStatuses: actionConfig.requiredAbsentSourceStatuses,
     damage: actionConfig.damage,
@@ -338,6 +340,21 @@ export async function applyConfiguredTriggerEffect({
       regionDocument, tokenDocument, runtime, timing: normalizedTiming,
       triggerConfig: resolvedTrigger, context
     });
+    if (resolvedTrigger.resolutionEngine === "midi-prototype") {
+      const sourceItem = await resolveRuntimeItem(runtime);
+      const sourceToken = runtime.sourceTokenUuid ? await fromUuidSafe(runtime.sourceTokenUuid) : null;
+      const dc = await resolveConfiguredSaveDc(resolvedTrigger.save ?? {}, regionDocument);
+      const midiResult = await resolveMidiPrototype({
+        sourceActor: sourceItem?.actor ?? actor,
+        sourceToken,
+        targetToken: tokenDocument?.object ?? tokenDocument,
+        save: { ability: resolvedTrigger.save?.ability ?? "dex", dc },
+        damage: resolvedTrigger.damage
+      });
+      if (midiResult.status === "resolved" && !midiResult.cancelled) await commitTriggerFrequency(frequencyDecision);
+      else releaseTriggerFrequency(frequencyDecision);
+      return { applied: midiResult.status === "resolved" && !midiResult.cancelled, skipped: midiResult.status !== "resolved" || midiResult.cancelled, timing: normalizedTiming, partId, triggerMode, resolutionRequest, resolution: midiResult };
+    }
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION START", {
       ...baseDiagnostic,
       effectMode: triggerMode,

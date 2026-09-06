@@ -17,6 +17,7 @@ export function resolveTriggerActionConfiguration({
     targetFilter: { mode: normalizeTriggerTargetFilterMode(config.targetFilter?.mode) },
     frequency: normalizeTriggerFrequency(config.frequency),
     frequencyGroup: String(config.frequencyGroup ?? "").trim() || null,
+    resolutionEngine: String(config.resolutionEngine ?? "native").trim() || "native",
     requiredAbsentStatuses: normalizeStatusIdList(config.requiredAbsentStatuses ?? config.excludedStatuses),
     requiredAbsentSourceStatuses: normalizeStatusIdList(config.requiredAbsentSourceStatuses),
     damage: config.damage ?? simpleEffect.damage ?? {},
