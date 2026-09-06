@@ -162,14 +162,13 @@ test("audited SRD presets encode explicit obstacle behavior before runtime norma
     "srd-5.2.1.wall-of-fire-line",
     "srd-5.2.1.wall-of-fire-ring",
     "srd-5.2.1.moonbeam",
-    "srd-5.2.1.insect-plague",
-    "srd-5.2.1.web"
+    "srd-5.2.1.insect-plague"
   ];
   for (const id of unrestrictedIds) {
     assert.deepEqual(getPersistentZonePreset(id).persistentZone.obstacles, { mode: "unrestricted" }, id);
   }
 
-  for (const id of ["srd-5.2.1.spike-growth", "srd-5.2.1.grease", "srd-5.2.1.entangle", "srd-5.2.1.black-tentacles"]) {
+  for (const id of ["srd-5.2.1.spike-growth", "srd-5.2.1.grease", "srd-5.2.1.entangle", "srd-5.2.1.black-tentacles", "srd-5.2.1.web"]) {
     const preset = getPersistentZonePreset(id);
     assert.deepEqual(preset.persistentZone.obstacles, {
       mode: "wall-restricted",

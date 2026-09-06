@@ -710,7 +710,7 @@ export const BUILTIN_PRESETS = Object.freeze([
     description: "PERSISTENT_ZONES.Activity.Presets.Builtins.Web.Description",
     geometry: { type: "rectangle", width: 20, height: 20, units: "ft", placement: "center" },
     tags: ["conjuration", "control", "terrain", "concentration", "escape", "partial-safe"],
-    obstacles: { mode: "unrestricted" },
+    obstacles: { mode: "wall-restricted", restrictionType: "move", priority: 0 },
     terrain: { enabled: true, multiplier: 2 },
     triggers: {
       ...buildDisabledTriggers(),
