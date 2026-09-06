@@ -24,7 +24,8 @@ import {
   buildRecoverySourceIdentity,
   reconcileRecoveryArbitration
 } from "./status-recovery-arbitration.mjs";
-import { claimTriggerFrequency } from "./trigger-frequency.mjs";
+import { reserveTriggerFrequency, commitTriggerFrequency, releaseTriggerFrequency } from "./trigger-frequency.mjs";
+import { buildDamageDescription, buildResolutionRequest, resolveNativeDamageApplication } from "./resolution-request.mjs";
 
 export async function applyOnEnterEffect({
   regionDocument,
@@ -216,7 +217,7 @@ export async function applyConfiguredTriggerEffect({
     });
   }
 
-  const frequencyDecision = await claimTriggerFrequency({
+  const frequencyDecision = await reserveTriggerFrequency({
     regionDocument,
     tokenDocument,
     triggerConfig: resolvedTrigger,
@@ -246,7 +247,7 @@ export async function applyConfiguredTriggerEffect({
       damageFormula: null,
       damageType: null
     });
-    return applyActivityTriggerEffect({
+    const activityResult = await applyActivityTriggerEffect({
       regionDocument,
       tokenDocument,
       triggerConfig: resolvedTrigger,
@@ -254,6 +255,9 @@ export async function applyConfiguredTriggerEffect({
       partId,
       context
     });
+    if (activityResult?.applied) await commitTriggerFrequency(frequencyDecision);
+    else releaseTriggerFrequency(frequencyDecision);
+    return activityResult;
   }
 
   const simpleEffect = resolveSimpleEffectConfig(resolvedTrigger);
@@ -274,6 +278,7 @@ export async function applyConfiguredTriggerEffect({
   });
 
   if (simpleEffect.type !== "damage" && !simpleEffect.formula) {
+    releaseTriggerFrequency(frequencyDecision);
     logPzEffectSkipped("no-damage-formula", baseDiagnostic, resolvedTrigger, simpleEffect);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
@@ -308,6 +313,7 @@ export async function applyConfiguredTriggerEffect({
     !temporaryHitPointsEnabled &&
     !endConcentrationEnabled
   ) {
+    releaseTriggerFrequency(frequencyDecision);
     logPzEffectSkipped("no-effect-configured", baseDiagnostic, resolvedTrigger, simpleEffect);
     logV14RuntimeDiagnostic("simpleEffectSuppressed", {
       ...baseDiagnostic,
@@ -328,6 +334,10 @@ export async function applyConfiguredTriggerEffect({
   }
 
   try {
+    const resolutionRequest = buildResolutionRequest({
+      regionDocument, tokenDocument, runtime, timing: normalizedTiming,
+      triggerConfig: resolvedTrigger, context
+    });
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION START", {
       ...baseDiagnostic,
       effectMode: triggerMode,
@@ -351,7 +361,14 @@ export async function applyConfiguredTriggerEffect({
           properties: new Set()
         }]
         : [];
-      await applyDamageEntriesToActor(actor, effectEntries);
+      const nativeResolution = await resolveNativeDamageApplication({ actor, entries: effectEntries });
+      if (nativeResolution.status !== "resolved") {
+        releaseTriggerFrequency(frequencyDecision);
+        return buildSkippedResult("Native recovery resolution failed.", {
+          ...baseDiagnostic, timing: normalizedTiming, partId, triggerMode,
+          error: nativeResolution.error, resolutionRequest
+        });
+      }
       const effectSummary = summarizeDamageEntries(effectEntries);
 
       debug(`Applied ${normalizedTiming} simple effect.`, {
@@ -399,6 +416,7 @@ export async function applyConfiguredTriggerEffect({
           tempHpApplied: effectSummary.tempHpTotal
         });
       }
+      await commitTriggerFrequency(frequencyDecision);
       return {
         applied: effectEntries.length > 0,
         skipped: effectEntries.length === 0,
@@ -424,7 +442,9 @@ export async function applyConfiguredTriggerEffect({
       ? await resolveSaveResult(actor, resolvedTrigger.save, regionDocument, tokenDocument, normalizedTiming)
       : null;
 
-    if (saveResult?.unresolved) {
+    const saveCancelled = Boolean(saveResult && !saveResult.unresolved && saveResult.total === null);
+    if (saveResult?.unresolved || saveCancelled) {
+      releaseTriggerFrequency(frequencyDecision);
       logPzEffectSkipped("save-dc-unresolved", baseDiagnostic, resolvedTrigger, simpleEffect);
       logV14RuntimeDiagnostic("simpleEffectSuppressed", {
         ...baseDiagnostic,
@@ -432,9 +452,9 @@ export async function applyConfiguredTriggerEffect({
         simpleEffectFormula: simpleEffect.formula ?? null,
         simpleEffectAllowed: false,
         simpleEffectSuppressed: true,
-        simpleEffectSuppressedReason: "save-dc-unresolved"
+        simpleEffectSuppressedReason: saveCancelled ? "save-cancelled" : "save-dc-unresolved"
       });
-      return buildSkippedResult("Save DC could not be resolved.", {
+      return buildSkippedResult(saveCancelled ? "Save was cancelled." : "Save DC could not be resolved.", {
         ...baseDiagnostic,
         timing: normalizedTiming,
         partId,
@@ -454,8 +474,19 @@ export async function applyConfiguredTriggerEffect({
       : buildNoDamageResult(resolvedTrigger.damage);
     const appliedDamage = coerceNumber(damageResult?.appliedDamage, 0);
 
-    if (appliedDamage > 0) {
-      await applyDamageToActor(actor, appliedDamage);
+    const nativeDamageResolution = await resolveNativeDamageApplication({
+      actor,
+      entries: appliedDamage > 0 ? [buildDamageDescription({
+        value: appliedDamage,
+        type: damageResult?.type ?? resolvedTrigger?.damage?.type
+      })] : []
+    });
+    if (nativeDamageResolution.status !== "resolved") {
+      releaseTriggerFrequency(frequencyDecision);
+      return buildSkippedResult("Native damage resolution failed.", {
+        ...baseDiagnostic, timing: normalizedTiming, partId, triggerMode,
+        error: nativeDamageResolution.error, resolutionRequest
+      });
     }
     logV14RuntimeDiagnostic("damageRoll", {
       ...baseDiagnostic,
@@ -570,6 +601,7 @@ export async function applyConfiguredTriggerEffect({
         tempHpApplied: recoverySummary.tempHpTotal
       });
     }
+    await commitTriggerFrequency(frequencyDecision);
     return {
       applied: simpleEffectApplied,
       skipped: false,
@@ -579,6 +611,8 @@ export async function applyConfiguredTriggerEffect({
       simpleEffectType: simpleEffect.type,
       simpleEffectFormula: simpleEffect.formula ?? null,
       simpleEffectApplied,
+      resolutionRequest,
+      resolution: nativeDamageResolution,
       save: saveResult,
       damage: damageResult,
       statuses: statusResult,
@@ -590,6 +624,7 @@ export async function applyConfiguredTriggerEffect({
       tempHpApplied: recoverySummary.tempHpTotal
     };
   } catch (caughtError) {
+    releaseTriggerFrequency(frequencyDecision);
     logV14RuntimeDiagnostic("PZ EFFECT EXECUTION FAILED", {
       ...baseDiagnostic,
       effectMode: triggerMode,
@@ -1711,25 +1746,9 @@ async function applyDamageEntriesToActor(actor, damages) {
   }
 
   const entrySummary = summarizeDamageEntries(damages);
-  const calculatedDamage = typeof actor.calculateDamage === "function"
-    ? actor.calculateDamage(damages)
-    : null;
-  const appliedDamage = coerceNumber(
-    calculatedDamage?.amount,
-    entrySummary.damageTotal - entrySummary.healingTotal
-  );
-  const appliedTempHp = coerceNumber(calculatedDamage?.temp, entrySummary.tempHpTotal);
-
-  if (typeof actor.applyDamage === "function") {
-    await actor.applyDamage(damages);
-    return appliedDamage;
-  }
-
-  await applyDamageEntriesFallbackToActor(actor, {
-    amount: appliedDamage,
-    temp: appliedTempHp
-  });
-  return appliedDamage;
+  const resolved = await resolveNativeDamageApplication({ actor, entries: damages });
+  if (resolved.status !== "resolved") throw new Error(resolved.error ?? "Native damage resolution failed.");
+  return entrySummary.damageTotal - entrySummary.healingTotal;
 }
 
 async function resolveSaveResult(actor, saveConfig, regionDocument, tokenDocument, timing = "custom") {
@@ -1931,57 +1950,6 @@ function adjustDamageForSave(baseDamage, saveResult) {
     default:
       return baseDamage;
   }
-}
-
-async function applyDamageToActor(actor, appliedDamage) {
-  const hpValue = coerceNumber(actor?.system?.attributes?.hp?.value, null);
-  if (hpValue === null) {
-    return;
-  }
-
-  const tempHp = coerceNumber(actor?.system?.attributes?.hp?.temp, 0);
-  let remainingDamage = appliedDamage;
-  const newTempHp = Math.max(tempHp - remainingDamage, 0);
-  remainingDamage -= tempHp - newTempHp;
-  const newHpValue = Math.max(hpValue - remainingDamage, 0);
-
-  await actor.update({
-    "system.attributes.hp.temp": newTempHp,
-    "system.attributes.hp.value": newHpValue
-  });
-}
-
-async function applyDamageEntriesFallbackToActor(actor, {
-  amount = 0,
-  temp = 0
-} = {}) {
-  const hpValue = coerceNumber(actor?.system?.attributes?.hp?.value, null);
-  if (hpValue === null) {
-    return;
-  }
-
-  const hpMax = coerceNumber(actor?.system?.attributes?.hp?.max, hpValue);
-  const tempHp = coerceNumber(actor?.system?.attributes?.hp?.temp, 0);
-  let nextHpValue = hpValue;
-  let nextTempHp = tempHp;
-
-  if (amount > 0) {
-    let remainingDamage = amount;
-    nextTempHp = Math.max(tempHp - remainingDamage, 0);
-    remainingDamage -= tempHp - nextTempHp;
-    nextHpValue = Math.max(hpValue - remainingDamage, 0);
-  } else if (amount < 0) {
-    nextHpValue = Math.min(hpValue + Math.abs(amount), hpMax);
-  }
-
-  if (temp > nextTempHp) {
-    nextTempHp = temp;
-  }
-
-  await actor.update({
-    "system.attributes.hp.temp": nextTempHp,
-    "system.attributes.hp.value": nextHpValue
-  });
 }
 
 async function resolveSaveSourceActor(dcSource, runtime) {
