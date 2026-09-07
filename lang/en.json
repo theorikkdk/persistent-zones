@@ -111,6 +111,7 @@
       },
       "TriggerSummary": {
         "None": "None",
+        "Disabled": "Disabled",
         "Damage": "{formula} {type} damage",
         "Healing": "{formula} healing",
         "TemporaryHitPoints": "{formula} temporary HP",
@@ -148,11 +149,13 @@
         "TriggerCreate": "Occurs once for each token already inside the zone after its Region is fully created.",
         "TriggerFrequencyGroup": "Triggers using the same group share the once-per-turn limit. The limit applies during an active combat; outside combat, the trigger remains unlimited.",
         "TriggerEnter": "Occurs when a token crosses from outside into the zone.",
-        "TriggerMove": "Occurs while a movement remains within the zone, using the configured movement step rules; it is not necessarily applied once per grid space.",
+        "TriggerMove": "Occurs when the zone is moved or when a configured movement interaction is detected.",
         "TriggerExit": "Occurs when a token crosses from inside to outside the zone.",
         "TriggerTurnStart": "Occurs at the start of a token's turn while it is inside the zone.",
         "TriggerTurnEnd": "Occurs at the end of a token's turn while it is inside the zone.",
         "TriggerTargetingMove": "Physical contact is available only while controlled movement is enabled.",
+        "TriggerTargetingPhysicalContact": "Detects the first creature touched by the zone's physical body while it moves.",
+        "TriggerTargetingProximity": "Detects creatures whose edge is within the configured distance of the zone's edge.",
         "Save": "If enabled, the configured saving throw is resolved before the simple effect.",
         "SaveResult": "Choose whether a successful save halves damage or prevents the simple effect.",
         "Statuses": "Applies the selected status and controls whether it remains after the token leaves the zone.",
@@ -166,7 +169,7 @@
         "TerrainZone": "Applies the configured movement-cost multiplier in this zone. ×2 is standard difficult terrain.",
         "TerrainPart": "Applies the configured movement-cost multiplier in this zone part. ×2 is standard difficult terrain."
         ,"ControlledMovement": "Allows this zone to move using a linked Utility Activity. Distance and radius use the scene unit."
-        ,"ControlledMovementPhysicalBody": "The physical body is currently modeled as a circle."
+        ,"ControlledMovementPhysicalBody": "Defines the physical size used to stop the zone when it touches a creature. The body is currently modeled as a circle."
         ,"ControlledMovementLinkedActivity": "Persistent Zones maintains the link, no concentration, and no consumption. Other Activity settings remain editable on its native sheet."
       },
       "Sections": {
@@ -216,7 +219,8 @@
         "AccumulateMovementRemainder": "Accumulate partial distance",
         "TriggerFrequency": "Frequency",
         "TriggerTargets": "Targets",
-        "TriggerTargeting": "Trigger Targeting",
+        "TriggerTargeting": "Creature Detection",
+        "TriggerEnabled": "Enable this trigger",
         "ProximityDistance": "Proximity Distance",
         "TriggerFrequencyGroup": "Shared frequency group",
         "DamageEnabled": "Apply damage",
@@ -271,8 +275,8 @@
         "LinkedLightMax": "Maximum linked lights"
         ,"ControlledMovementEnabled": "Enable Controlled Movement"
         ,"ControlledMovementMaxDistance": "Maximum Distance"
-        ,"ControlledMovementPhysicalRadius": "Physical Body Radius"
-        ,"ControlledMovementLinkedActivity": "Linked Movement Activity"
+        ,"ControlledMovementPhysicalRadius": "Collision Radius"
+        ,"ControlledMovementLinkedActivity": "Linked Activity"
       },
       "Geometry": {
         "Circle": "Circle",
@@ -283,13 +287,14 @@
       },
       "TriggerTargeting": {
         "Membership": "Inside Zone",
-        "PhysicalContact": "Physical Contact",
-        "Proximity": "Proximity"
+        "PhysicalContact": "Touched by the Moving Zone",
+        "Proximity": "Near the Zone"
       },
       "ControlledMovement": {
         "Ensure": "Create / Update Movement Activity",
         "Open": "Open Activity",
-        "NoLinkedActivity": "No linked Activity",
+        "NoLinkedActivity": "No linked movement activity",
+        "LinkedActivityDisplay": "Linked Activity: {activity}",
         "Linked": "The movement Activity is linked.",
         "LinkFailed": "The movement Activity could not be created or updated."
       },

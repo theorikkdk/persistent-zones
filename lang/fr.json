@@ -111,6 +111,7 @@
       },
       "TriggerSummary": {
         "None": "Aucun",
+        "Disabled": "Désactivé",
         "Damage": "{formula} dégâts de {type}",
         "Healing": "{formula} soins",
         "TemporaryHitPoints": "{formula} PV temporaires",
@@ -148,11 +149,13 @@
         "TriggerCreate": "Se produit une fois pour chaque token déjà dans la zone après la création complète de sa Region.",
         "TriggerFrequencyGroup": "Les déclenchements utilisant le même groupe partagent la limite d'une fois par tour. La limite s'applique pendant un combat actif ; hors combat, le déclenchement reste illimité.",
         "TriggerEnter": "Se produit lorsqu'un token passe de l'extérieur vers l'intérieur de la zone.",
-        "TriggerMove": "Se produit pendant un mouvement qui reste dans la zone, selon les règles de pas configurées ; ce n'est pas nécessairement une application par case parcourue.",
+        "TriggerMove": "Se produit lorsque la zone est déplacée ou qu'une interaction de mouvement configurée est détectée.",
         "TriggerExit": "Se produit lorsqu'un token passe de l'intérieur vers l'extérieur de la zone.",
         "TriggerTurnStart": "Se produit au début du tour d'un token qui se trouve dans la zone.",
         "TriggerTurnEnd": "Se produit à la fin du tour d'un token qui se trouve dans la zone.",
         "TriggerTargetingMove": "Le contact physique n'est disponible que lorsque le déplacement contrôlé est actif.",
+        "TriggerTargetingPhysicalContact": "Détecte la première créature touchée par le corps physique de la zone pendant son déplacement.",
+        "TriggerTargetingProximity": "Détecte les créatures dont le bord se trouve à la distance indiquée du bord de la zone.",
         "Save": "Si elle est activée, la sauvegarde configurée est résolue avant l'effet simple.",
         "SaveResult": "Choisissez si une sauvegarde réussie réduit les dégâts de moitié ou empêche l'effet simple.",
         "Statuses": "Applique l'état choisi et détermine s'il persiste après la sortie de la zone.",
@@ -166,7 +169,7 @@
         "TerrainZone": "Applique le multiplicateur de coût de déplacement configuré dans cette zone. ×2 correspond au terrain difficile standard.",
         "TerrainPart": "Applique le multiplicateur de coût de déplacement configuré dans cette partie. ×2 correspond au terrain difficile standard."
         ,"ControlledMovement": "Permet de déplacer cette zone avec une Activity Utility liée. La distance et le rayon utilisent l’unité de la scène."
-        ,"ControlledMovementPhysicalBody": "Le corps physique est actuellement modélisé par un cercle."
+        ,"ControlledMovementPhysicalBody": "Définit la taille physique utilisée pour arrêter la zone lorsqu'elle touche une créature. Le corps est actuellement modélisé par un cercle."
         ,"ControlledMovementLinkedActivity": "Persistent Zones maintient le lien, l’absence de concentration et l’absence de consommation. Les autres réglages de l’Activity restent modifiables dans sa fiche native."
       },
       "Sections": {
@@ -216,7 +219,8 @@
         "AccumulateMovementRemainder": "Cumuler la distance partielle",
         "TriggerFrequency": "Fréquence",
         "TriggerTargets": "Cibles",
-        "TriggerTargeting": "Ciblage du déclencheur",
+        "TriggerTargeting": "Détection des créatures",
+        "TriggerEnabled": "Activer ce déclenchement",
         "ProximityDistance": "Distance de proximité",
         "TriggerFrequencyGroup": "Groupe de fréquence partagé",
         "DamageEnabled": "Appliquer des dégâts",
@@ -271,8 +275,8 @@
         "LinkedLightMax": "Nombre maximum de lumières liées"
         ,"ControlledMovementEnabled": "Activer le déplacement contrôlé"
         ,"ControlledMovementMaxDistance": "Distance maximale"
-        ,"ControlledMovementPhysicalRadius": "Rayon du corps physique"
-        ,"ControlledMovementLinkedActivity": "Activité de déplacement liée"
+        ,"ControlledMovementPhysicalRadius": "Rayon de collision"
+        ,"ControlledMovementLinkedActivity": "Activité liée"
       },
       "Geometry": {
         "Circle": "Cercle",
@@ -283,13 +287,14 @@
       },
       "TriggerTargeting": {
         "Membership": "Dans la zone",
-        "PhysicalContact": "Contact physique",
-        "Proximity": "Proximité"
+        "PhysicalContact": "Touchées par la zone mobile",
+        "Proximity": "À proximité de la zone"
       },
       "ControlledMovement": {
         "Ensure": "Créer / mettre à jour l’activité de déplacement",
         "Open": "Ouvrir l’activité",
-        "NoLinkedActivity": "Aucune activité liée",
+        "NoLinkedActivity": "Aucune activité de déplacement liée",
+        "LinkedActivityDisplay": "Activité liée : {activity}",
         "Linked": "L’activité de déplacement est liée.",
         "LinkFailed": "L’activité de déplacement n’a pas pu être créée ou mise à jour."
       },

@@ -807,6 +807,27 @@
   font-weight: 600;
 }
 
+.persistent-zone-activity__trigger-summary {
+  cursor: pointer;
+  display: list-item;
+}
+
+.persistent-zone-activity__trigger-summary-title {
+  font-weight: 700;
+}
+
+.persistent-zone-activity__trigger-summary .persistent-zone-activity__trigger-summary-line {
+  margin-left: 0.35rem;
+}
+
+.persistent-zone-activity__trigger-content {
+  padding-top: 0.55rem;
+}
+
+.persistent-zone-activity__trigger-effects {
+  margin-top: 0.65rem !important;
+}
+
 .persistent-zone-activity__part-subtitle--triggers {
   display: list-item;
 }

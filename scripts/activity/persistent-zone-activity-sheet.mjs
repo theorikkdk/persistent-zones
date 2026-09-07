@@ -36,6 +36,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
   #pendingMultipartFieldPatch = null;
   #openMultipartTriggerPartIds = new Set();
   #multipartPartOpenState = new Map();
+  #openTriggerTimings = new Set();
   #selectedPresetId = "";
 
   async _preparePartContext(partId, context, options) {
@@ -70,9 +71,20 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     context.persistentZone = normalizePersistentZoneActivitySubmitData(duplicateData(config));
     context.persistentZone.elevation = prepareElevationForScene(context.persistentZone.elevation);
     context.persistentZoneChoices = buildActivityChoices();
-    context.persistentZoneControlledMovement = prepareControlledMovementForScene(context.persistentZone?.controlledMovement);
+    const controlledMovement = prepareControlledMovementForScene(context.persistentZone?.controlledMovement);
+    const controlledMovementActivity = findControlledMovementCompanion(this.activity);
+    context.persistentZoneControlledMovement = {
+      ...controlledMovement,
+      linkedActivityName: String(controlledMovementActivity?.name ?? "").trim(),
+      linkedActivityDisplay: controlledMovementActivity
+        ? formatLocalization("PERSISTENT_ZONES.Activity.ControlledMovement.LinkedActivityDisplay", {
+          activity: String(controlledMovementActivity.name ?? controlledMovementActivity.id)
+        })
+        : localize("PERSISTENT_ZONES.Activity.ControlledMovement.NoLinkedActivity")
+    };
     context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity, {
-      controlledMovementEnabled: context.persistentZoneControlledMovement.enabled
+      controlledMovementEnabled: context.persistentZoneControlledMovement.enabled,
+      unitLabel: context.persistentZoneControlledMovement.unitLabel
     });
     context.persistentZoneDamageTypes = buildDamageTypeOptions(config?.damage?.type);
     context.persistentZoneAbilities = buildAbilityOptions(config?.save?.ability);
@@ -117,6 +129,15 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
     this.element?.querySelectorAll?.(".persistent-zone-activity")?.forEach((root) => {
       orderPersistentZoneActivitySections(root);
       updateConditionalVisibility(root);
+      restoreTriggerOpenState(root, this.#openTriggerTimings);
+      root.querySelectorAll("details[data-pz-trigger]").forEach((trigger) => {
+        trigger.addEventListener("toggle", () => {
+          const timing = trigger.dataset.pzTrigger;
+          if (!timing) return;
+          if (trigger.open) this.#openTriggerTimings.add(timing);
+          else this.#openTriggerTimings.delete(timing);
+        });
+      });
       const multipartEnabled = root.querySelector("[name='persistentZone.multipartEnabled']")?.checked === true;
       if (!multipartEnabled) {
         this.#openMultipartTriggerPartIds.clear();
@@ -145,6 +166,11 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
           if (mode) mode.value = event.target.checked ? "wall-restricted" : "unrestricted";
         }
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
+        this.#openTriggerTimings = captureTriggerOpenState(root);
+        const trigger = event.target?.closest?.("details[data-pz-trigger]");
+        if (trigger?.dataset?.pzTrigger && event.target?.matches?.("input[type='checkbox'][name$='.enabled']") && event.target.checked) {
+          this.#openTriggerTimings.add(trigger.dataset.pzTrigger);
+        }
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         if (event.target?.matches?.("[name='persistentZone.multipartEnabled']") && !event.target.checked) {
           this.#openMultipartTriggerPartIds.clear();
@@ -154,6 +180,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       });
       root.addEventListener("input", (event) => {
         this.#persistentZoneViewportState = capturePersistentZoneViewportState(root, event);
+        this.#openTriggerTimings = captureTriggerOpenState(root);
         this.#pendingMultipartFieldPatch = captureMultipartFieldPatch(event) ?? this.#pendingMultipartFieldPatch;
         updateConditionalVisibility(root);
       });
@@ -191,6 +218,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
           { preset: localize(preset.name) }
         );
         if (!confirmed) return;
+        this.#openTriggerTimings = captureTriggerOpenState(root);
         const targetTemplate = buildTargetTemplateFromPersistentZoneConfig(preset.persistentZone, this.activity);
         await applyPresetToActivity(this.activity, preset, {
           activityUpdates: {
@@ -209,6 +237,7 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
       });
       root.querySelector("[data-pz-ensure-controlled-movement]")?.addEventListener("click", async (event) => {
         event.preventDefault();
+        this.#openTriggerTimings = captureTriggerOpenState(root);
         const config = readControlledMovementFromSheet(root, this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
           this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]);
         if (!config.enabled) return;
@@ -1505,7 +1534,7 @@ function buildActivityChoices() {
   };
 }
 
-function buildTriggerRows(triggers = {}, activity = null, { controlledMovementEnabled = false } = {}) {
+function buildTriggerRows(triggers = {}, activity = null, { controlledMovementEnabled = false, unitLabel = "" } = {}) {
   return [
     ["onCreate", "PERSISTENT_ZONES.Activity.Triggers.onCreate"],
     ["enter", "PERSISTENT_ZONES.Activity.Triggers.enter"],
@@ -1522,9 +1551,48 @@ function buildTriggerRows(triggers = {}, activity = null, { controlledMovementEn
       state: { ...state, targeting },
       allowsWhileInside: timing !== "exit",
       targetingOptions: buildTriggerTargetingOptions(timing, targeting.mode, { controlledMovementEnabled }),
+      summary: buildTriggerRowSummary(state, targeting, unitLabel),
       linkedActivityOptions: buildLinkedActivityOptions(activity, state.linkedActivity?.id)
     };
   });
+}
+
+function buildTriggerRowSummary(state = {}, targeting = {}, unitLabel = "") {
+  if (state.enabled !== true) return localize("PERSISTENT_ZONES.Activity.TriggerSummary.Disabled");
+  const fragments = [localize(`PERSISTENT_ZONES.Activity.TriggerTargeting.${targeting.mode === "physical-contact" ? "PhysicalContact" : targeting.mode === "proximity" ? "Proximity" : "Membership"}`)];
+  if (targeting.mode === "proximity" && Number.isFinite(Number(targeting.distance))) {
+    fragments.push(`${Number(targeting.distance)}${unitLabel ? ` ${unitLabel}` : ""}`);
+  }
+  fragments.push(resolveTriggerTargetFilterLabel(state.targetFilter?.mode));
+  const simple = state.simpleEffect ?? {};
+  for (const damage of normalizeSummaryEffectEntries(simple.damage)) {
+    if (damage?.enabled && damage.formula) {
+      fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Damage", {
+        formula: damage.formula,
+        type: resolveDamageTypeLabel(damage.type)
+      }));
+    }
+  }
+  if (simple.save?.enabled) {
+    fragments.push(formatLocalization("PERSISTENT_ZONES.Activity.TriggerSummary.Save", {
+      ability: resolveAbilityLabel(simple.save.ability),
+      outcome: simple.save.onSave === "half"
+        ? localize("PERSISTENT_ZONES.Activity.TriggerSummary.Half")
+        : localize("PERSISTENT_ZONES.Activity.TriggerSummary.NoneOnSuccess")
+    }));
+  }
+  return fragments.filter(Boolean).join(" • ");
+}
+
+function resolveTriggerTargetFilterLabel(mode) {
+  const suffix = {
+    all: "All",
+    allies: "Allies",
+    enemies: "Enemies",
+    self: "Self",
+    others: "Others"
+  }[mode] ?? "All";
+  return localize(`PERSISTENT_ZONES.Activity.TargetFilters.${suffix}`);
 }
 
 function buildTriggerTargetingOptions(timing, selectedMode, { controlledMovementEnabled = false } = {}) {
@@ -1718,8 +1786,9 @@ function updateConditionalVisibility(root) {
   setConditionalControls(root.querySelector("[data-pz-elevation-bounds]"), elevationEnabled, { disable: false });
 
   root.querySelectorAll("[data-pz-trigger]").forEach((element) => {
-    const enabled = element.querySelector(":scope > .persistent-zone-activity__trigger-header input[type='checkbox']")?.checked === true;
-    const mode = element.querySelector(":scope > [data-pz-trigger-details] select[name$='.mode']")?.value ?? "none";
+    const enabled = element.querySelector(".persistent-zone-activity__trigger-header input[type='checkbox']")?.checked === true;
+    const mode = element.querySelector(".persistent-zone-activity__trigger-effects select[name$='.mode']")?.value ??
+      element.querySelector("[data-pz-trigger-details] select[name$='.mode']")?.value ?? "none";
     element.querySelectorAll("[data-pz-trigger-details]").forEach((details) => {
       details.hidden = !enabled;
     });
@@ -1730,6 +1799,9 @@ function updateConditionalVisibility(root) {
     const targetingMode = targeting?.value ?? "membership";
     element.querySelectorAll("[data-pz-proximity-distance]").forEach((field) => {
       setConditionalControls(field, enabled && targetingMode === "proximity");
+    });
+    element.querySelectorAll("[data-pz-targeting-help]").forEach((field) => {
+      field.hidden = !enabled || field.dataset.pzTargetingHelp !== targetingMode;
     });
   });
 
@@ -1929,6 +2001,28 @@ function orderPersistentZoneActivitySections(root) {
   if (geometrySection && partsSection && geometrySection.nextElementSibling !== partsSection) {
     geometrySection.after(partsSection);
   }
+}
+
+/** Keep disclosure state on the sheet instance; it is never Activity data. */
+export function captureTriggerOpenState(root) {
+  return new Set(Array.from(root?.querySelectorAll?.("details[data-pz-trigger]") ?? [])
+    .filter((trigger) => trigger.open === true)
+    .map((trigger) => String(trigger.dataset?.pzTrigger ?? "").trim())
+    .filter(Boolean));
+}
+
+export function restoreTriggerOpenState(root, openTimings = new Set()) {
+  const triggers = Array.from(root?.querySelectorAll?.("details[data-pz-trigger]") ?? []);
+  const renderedTimings = new Set(triggers
+    .map((trigger) => String(trigger.dataset?.pzTrigger ?? "").trim())
+    .filter(Boolean));
+  for (const timing of openTimings) {
+    if (!renderedTimings.has(timing)) openTimings.delete(timing);
+  }
+  triggers.forEach((trigger) => {
+    const timing = String(trigger.dataset?.pzTrigger ?? "").trim();
+    trigger.open = Boolean(timing && openTimings.has(timing));
+  });
 }
 
 export function restoreMultipartTriggerSectionState(root, openPartIds = new Set()) {

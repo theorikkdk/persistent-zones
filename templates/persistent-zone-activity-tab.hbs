@@ -324,9 +324,14 @@
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Triggers"}}</legend>
     <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggersSingle"}}</p>
     {{#each persistentZoneTriggerRows as |triggerRow|}}
-      <section class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
+      <details class="persistent-zone-activity__trigger" data-pz-trigger="{{triggerRow.timing}}">
+        <summary class="persistent-zone-activity__trigger-summary">
+          <span class="persistent-zone-activity__trigger-summary-title">{{triggerRow.label}}</span>
+          <span class="persistent-zone-activity__trigger-summary-line">{{triggerRow.summary}}</span>
+        </summary>
+        <div class="persistent-zone-activity__trigger-content">
         <header class="persistent-zone-activity__trigger-header">
-          <label>{{triggerRow.label}}</label>
+          <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerEnabled"}}</label>
           <input type="checkbox" name="persistentZone.triggers.{{triggerRow.timing}}.enabled" {{#if triggerRow.state.enabled}}checked{{/if}}>
         </header>
         {{#if (eq triggerRow.timing "create")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerCreate"}}</p>{{/if}}
@@ -336,12 +341,6 @@
         {{#if (eq triggerRow.timing "turnStart")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTurnStart"}}</p>{{/if}}
         {{#if (eq triggerRow.timing "turnEnd")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTurnEnd"}}</p>{{/if}}
         <div data-pz-trigger-details>
-          <div class="form-group">
-            <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
-            <select name="persistentZone.triggers.{{triggerRow.timing}}.mode">
-              {{selectOptions ../persistentZoneChoices.triggerModes selected=triggerRow.state.mode localize=true}}
-            </select>
-          </div>
           <div class="form-group">
             <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerTargets"}}</label>
             <select name="persistentZone.triggers.{{triggerRow.timing}}.targetFilter.mode">
@@ -355,7 +354,8 @@
                 <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.requiresControlledMovement}}data-pz-requires-controlled-movement{{/if}} {{#if option.unavailable}}disabled hidden{{/if}}>{{localize option.label}}</option>
               {{/each}}
             </select>
-            {{#if (eq triggerRow.timing "move")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTargetingMove"}}</p>{{/if}}
+            <p class="hint" data-pz-targeting-help="physical-contact">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTargetingPhysicalContact"}}</p>
+            <p class="hint" data-pz-targeting-help="proximity">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTargetingProximity"}}</p>
           </div>
           <div class="form-group" data-pz-proximity-distance>
             <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ProximityDistance"}} ({{../persistentZoneControlledMovement.unitLabel}})</label>
@@ -372,6 +372,15 @@
             <input type="text" name="persistentZone.triggers.{{triggerRow.timing}}.frequencyGroup" value="{{triggerRow.state.frequencyGroup}}">
             <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerFrequencyGroup"}}</p>
           </div>
+
+          <fieldset class="persistent-zone-activity__trigger-effects">
+            <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Effects"}}</legend>
+            <div class="form-group">
+              <label>{{localize "PERSISTENT_ZONES.UI.Fields.TriggerMode"}}</label>
+              <select name="persistentZone.triggers.{{triggerRow.timing}}.mode">
+                {{selectOptions ../persistentZoneChoices.triggerModes selected=triggerRow.state.mode localize=true}}
+              </select>
+            </div>
 
           <div data-pz-mode="simple-effect">
             <fieldset>
@@ -666,8 +675,10 @@
               <input type="hidden" name="persistentZone.triggers.{{triggerRow.timing}}.linkedActivity.uuid" value="{{triggerRow.state.linkedActivity.uuid}}">
             </div>
           </div>
+          </fieldset>
         </div>
-      </section>
+        </div>
+      </details>
     {{/each}}
   </fieldset>
   {{/unless}}
@@ -716,7 +727,7 @@
       <div class="form-group">
         <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ControlledMovementLinkedActivity"}}</label>
         <div class="form-fields">
-          <input type="text" disabled value="{{#if persistentZoneControlledMovement.activationActivityId}}{{persistentZoneControlledMovement.activationActivityId}}{{else}}{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.NoLinkedActivity"}}{{/if}}">
+          <input type="text" disabled value="{{persistentZoneControlledMovement.linkedActivityDisplay}}">
           <button type="button" data-pz-ensure-controlled-movement>{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.Ensure"}}</button>
           {{#if persistentZoneControlledMovement.activationActivityId}}<button type="button" data-pz-open-controlled-movement>{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.Open"}}</button>{{/if}}
         </div>

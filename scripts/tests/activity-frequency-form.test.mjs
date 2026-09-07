@@ -40,8 +40,10 @@ const {
   PersistentZoneActivitySheet,
   applyExplicitPersistentZoneCheckboxStates,
   buildMultipartTriggerSummary,
+  captureTriggerOpenState,
   mergePersistentZoneActivitySubmitData,
-  normalizePersistentZoneActivitySubmitData
+  normalizePersistentZoneActivitySubmitData,
+  restoreTriggerOpenState
 } = await import("../activity/persistent-zone-activity-sheet.mjs");
 
 test("frequency fields belong to every trigger schema and not to statuses", () => {
@@ -162,7 +164,39 @@ test("Activity template contains one static control per scalar Persistent Zone p
   assert.ok(names.includes("persistentZone.controlledMovement.enabled"));
   assert.ok(names.includes("persistentZone.controlledMovement.maxDistance"));
   assert.ok(names.includes("persistentZone.controlledMovement.physicalRadius"));
+  for (const binding of [
+    "persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.enabled",
+    "persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.damage.formula",
+    "persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.save.enabled",
+    "persistentZone.triggers.{{triggerRow.timing}}.simpleEffect.statuses.enabled"
+  ]) assert.ok(names.includes(binding), `retains effect binding ${binding}`);
   assert.match(template, /data-pz-ensure-controlled-movement/);
+  assert.match(template, /persistentZoneControlledMovement\.linkedActivityDisplay/);
+  assert.doesNotMatch(template, /value="\{\{persistentZoneControlledMovement\.activationActivityId\}\}"/);
+  assert.match(template, /<details class="persistent-zone-activity__trigger"/);
+  assert.match(template, /persistent-zone-activity__trigger-effects/);
+});
+
+test("trigger disclosure state survives a rerender without writing Activity data", () => {
+  const triggers = [
+    { dataset: { pzTrigger: "enter" }, open: true },
+    { dataset: { pzTrigger: "move" }, open: false },
+    { dataset: { pzTrigger: "turnEnd" }, open: true }
+  ];
+  const root = { querySelectorAll: () => triggers };
+  const open = captureTriggerOpenState(root);
+  assert.deepEqual([...open], ["enter", "turnEnd"]);
+
+  triggers.forEach((trigger) => { trigger.open = false; });
+  restoreTriggerOpenState(root, open);
+  assert.deepEqual(triggers.map((trigger) => [trigger.dataset.pzTrigger, trigger.open]), [
+    ["enter", true], ["move", false], ["turnEnd", true]
+  ]);
+
+  // A newly enabled trigger remains open through the same purely UI-state path.
+  open.add("move");
+  restoreTriggerOpenState(root, open);
+  assert.equal(triggers[1].open, true);
 });
 
 test("Difficult Terrain and trigger summary copy is localized in EN and FR", () => {
@@ -172,8 +206,49 @@ test("Difficult Terrain and trigger summary copy is localized in EN and FR", () 
   assert.equal(fr.PERSISTENT_ZONES.Activity.Fields.DifficultTerrain, "Terrain difficile");
   assert.equal(en.PERSISTENT_ZONES.Activity.TriggerSummary.None, "None");
   assert.equal(fr.PERSISTENT_ZONES.Activity.TriggerSummary.None, "Aucun");
-  assert.equal(en.PERSISTENT_ZONES.Activity.TriggerTargeting.PhysicalContact, "Physical Contact");
-  assert.equal(fr.PERSISTENT_ZONES.Activity.TriggerTargeting.Proximity, "Proximité");
+  assert.equal(en.PERSISTENT_ZONES.Activity.Fields.TriggerTargeting, "Creature Detection");
+  assert.equal(fr.PERSISTENT_ZONES.Activity.Fields.TriggerTargeting, "Détection des créatures");
+  assert.equal(en.PERSISTENT_ZONES.Activity.TriggerTargeting.PhysicalContact, "Touched by the Moving Zone");
+  assert.equal(fr.PERSISTENT_ZONES.Activity.TriggerTargeting.Proximity, "À proximité de la zone");
+  assert.equal(en.PERSISTENT_ZONES.Activity.Fields.ControlledMovementPhysicalRadius, "Collision Radius");
+  assert.equal(fr.PERSISTENT_ZONES.Activity.Fields.ControlledMovementPhysicalRadius, "Rayon de collision");
+  assert.equal(en.PERSISTENT_ZONES.Activity.Help.TriggerTargetingPhysicalContact, "Detects the first creature touched by the zone's physical body while it moves.");
+  assert.equal(fr.PERSISTENT_ZONES.Activity.Help.TriggerTargetingProximity, "Détecte les créatures dont le bord se trouve à la distance indiquée du bord de la zone.");
+});
+
+test("Controlled Movement displays a linked Activity name, never its technical identifier", () => {
+  const previousI18n = game.i18n;
+  game.i18n = {
+    localize: (key) => key === "PERSISTENT_ZONES.Activity.ControlledMovement.NoLinkedActivity"
+      ? "No linked movement activity"
+      : key,
+    format: (key, data) => key === "PERSISTENT_ZONES.Activity.ControlledMovement.LinkedActivityDisplay"
+      ? `Linked Activity: ${data.activity}`
+      : key
+  };
+  try {
+    const moveActivity = { id: "Prgef05AhjovJWc", name: "Move the Zone" };
+    const sheet = new PersistentZoneActivitySheet();
+    sheet.activity = {
+      id: "pz-activity",
+      item: { system: { activities: new Map([[moveActivity.id, moveActivity]]) } },
+      _source: {
+        persistentZone: {
+          geometry: { type: "circle", radius: 3, units: "m" },
+          controlledMovement: { enabled: true, activationActivityId: moveActivity.id, units: "m" }
+        }
+      }
+    };
+    const linked = sheet._preparePersistentZoneContext({ tabs: { persistentZone: {} } }).persistentZoneControlledMovement;
+    assert.equal(linked.linkedActivityName, "Move the Zone");
+    assert.equal(linked.linkedActivityDisplay, "Linked Activity: Move the Zone");
+
+    sheet.activity._source.persistentZone.controlledMovement.activationActivityId = null;
+    const unlinked = sheet._preparePersistentZoneContext({ tabs: { persistentZone: {} } }).persistentZoneControlledMovement;
+    assert.equal(unlinked.linkedActivityDisplay, "No linked movement activity");
+  } finally {
+    game.i18n = previousI18n;
+  }
 });
 
 test("trigger targeting and controlled movement round-trip without changing legacy membership", () => {
