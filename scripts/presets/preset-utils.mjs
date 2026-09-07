@@ -115,7 +115,14 @@ export async function ensureControlledMovementCompanionActivity(item, primaryAct
     flags: { [MODULE_ID]: { controlledZoneMovement: { enabled: true, primaryActivityId } } }
   };
   if (existing) {
-    await item.updateActivity(existing.id, source);
+    // Keep the player's ordinary Utility choices (notably activation) intact.
+    // PZ owns only the linkage and the safeguards which make this Activity a
+    // command for an existing cast rather than a second spell use.
+    await item.updateActivity(existing.id, {
+      duration: source.duration,
+      consumption: source.consumption,
+      flags: source.flags
+    });
     return existing;
   }
   const before = new Set(Array.from(item.system?.activities?.keys?.() ?? []));

@@ -152,6 +152,7 @@
         "TriggerExit": "Se produit lorsqu'un token passe de l'intérieur vers l'extérieur de la zone.",
         "TriggerTurnStart": "Se produit au début du tour d'un token qui se trouve dans la zone.",
         "TriggerTurnEnd": "Se produit à la fin du tour d'un token qui se trouve dans la zone.",
+        "TriggerTargetingMove": "Le contact physique n'est disponible que lorsque le déplacement contrôlé est actif.",
         "Save": "Si elle est activée, la sauvegarde configurée est résolue avant l'effet simple.",
         "SaveResult": "Choisissez si une sauvegarde réussie réduit les dégâts de moitié ou empêche l'effet simple.",
         "Statuses": "Applique l'état choisi et détermine s'il persiste après la sortie de la zone.",
@@ -164,6 +165,9 @@
         "TerrainRuntimePending": "Stocke une demande de terrain pour les anciennes données d'activité sans activer le terrain difficile runtime.",
         "TerrainZone": "Applique le multiplicateur de coût de déplacement configuré dans cette zone. ×2 correspond au terrain difficile standard.",
         "TerrainPart": "Applique le multiplicateur de coût de déplacement configuré dans cette partie. ×2 correspond au terrain difficile standard."
+        ,"ControlledMovement": "Permet de déplacer cette zone avec une Activity Utility liée. La distance et le rayon utilisent l’unité de la scène."
+        ,"ControlledMovementPhysicalBody": "Le corps physique est actuellement modélisé par un cercle."
+        ,"ControlledMovementLinkedActivity": "Persistent Zones maintient le lien, l’absence de concentration et l’absence de consommation. Les autres réglages de l’Activity restent modifiables dans sa fiche native."
       },
       "Sections": {
         "Configuration": "Utilisation",
@@ -184,6 +188,7 @@
         "LinkedDocuments": "Murs et lumières",
         "LinkedWalls": "Murs liés",
         "LinkedLights": "Lumières liées"
+        ,"ControlledMovement": "Déplacement contrôlé"
       },
       "Tabs": {
         "PersistentZone": "Zone persistante"
@@ -211,6 +216,8 @@
         "AccumulateMovementRemainder": "Cumuler la distance partielle",
         "TriggerFrequency": "Fréquence",
         "TriggerTargets": "Cibles",
+        "TriggerTargeting": "Ciblage du déclencheur",
+        "ProximityDistance": "Distance de proximité",
         "TriggerFrequencyGroup": "Groupe de fréquence partagé",
         "DamageEnabled": "Appliquer des dégâts",
         "DamageScaling": "Scaling par emplacement",
@@ -262,6 +269,10 @@
         "CreateLights": "Créer des lumières liées",
         "LightColor": "Couleur de lumière",
         "LinkedLightMax": "Nombre maximum de lumières liées"
+        ,"ControlledMovementEnabled": "Activer le déplacement contrôlé"
+        ,"ControlledMovementMaxDistance": "Distance maximale"
+        ,"ControlledMovementPhysicalRadius": "Rayon du corps physique"
+        ,"ControlledMovementLinkedActivity": "Activité de déplacement liée"
       },
       "Geometry": {
         "Circle": "Cercle",
@@ -269,6 +280,18 @@
         "Rectangle": "Rectangle",
         "Ring": "Anneau",
         "Wall": "Mur"
+      },
+      "TriggerTargeting": {
+        "Membership": "Dans la zone",
+        "PhysicalContact": "Contact physique",
+        "Proximity": "Proximité"
+      },
+      "ControlledMovement": {
+        "Ensure": "Créer / mettre à jour l’activité de déplacement",
+        "Open": "Ouvrir l’activité",
+        "NoLinkedActivity": "Aucune activité liée",
+        "Linked": "L’activité de déplacement est liée.",
+        "LinkFailed": "L’activité de déplacement n’a pas pu être créée ou mise à jour."
       },
       "PlacementModes": { "Fixed": "Fixe", "AttachedSource": "Attachée au lanceur" },
       "DistanceUnits": { "Scene": "Unités de la scène", "Feet": "Pieds", "Meters": "Mètres" },

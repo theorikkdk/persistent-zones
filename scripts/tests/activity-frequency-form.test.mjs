@@ -35,7 +35,9 @@ globalThis.dnd5e = {
 };
 
 const { PersistentZoneActivityData } = await import("../activity/persistent-zone-activity-data.mjs");
+const { getPersistentZonePreset } = await import("../presets/preset-library.mjs");
 const {
+  PersistentZoneActivitySheet,
   applyExplicitPersistentZoneCheckboxStates,
   buildMultipartTriggerSummary,
   mergePersistentZoneActivitySubmitData,
@@ -50,6 +52,8 @@ test("frequency fields belong to every trigger schema and not to statuses", () =
   assert.equal(onCreate.fields.frequencyGroup.options.initial, "");
   assert.deepEqual(onCreate.fields.targetFilter.fields.mode.options.choices, ["all", "allies", "enemies", "self", "others"]);
   assert.equal(onCreate.fields.targetFilter.fields.mode.options.initial, "all");
+  assert.deepEqual(onCreate.fields.targeting.fields.mode.options.choices, ["membership", "physical-contact", "proximity"]);
+  assert.equal(onCreate.fields.targeting.fields.mode.options.initial, "membership");
   const terrain = schema.persistentZone.fields.terrain.fields;
   assert.deepEqual(terrain.targetFilter.fields.mode.options.choices, ["all", "allies", "enemies", "self", "others"]);
   assert.equal(terrain.targetFilter.fields.mode.options.initial, "all");
@@ -153,6 +157,12 @@ test("Activity template contains one static control per scalar Persistent Zone p
   const duplicates = Array.from(new Set(names.filter((name, index) => names.indexOf(name) !== index)));
   assert.deepEqual(duplicates, [], `duplicate scalar field names: ${duplicates.join(", ")}`);
   assert.equal(names.filter((name) => name === "persistentZone.geometry.radius").length, 1);
+  assert.ok(names.includes("persistentZone.triggers.{{triggerRow.timing}}.targeting.mode"));
+  assert.ok(names.includes("persistentZone.triggers.{{triggerRow.timing}}.targeting.distance"));
+  assert.ok(names.includes("persistentZone.controlledMovement.enabled"));
+  assert.ok(names.includes("persistentZone.controlledMovement.maxDistance"));
+  assert.ok(names.includes("persistentZone.controlledMovement.physicalRadius"));
+  assert.match(template, /data-pz-ensure-controlled-movement/);
 });
 
 test("Difficult Terrain and trigger summary copy is localized in EN and FR", () => {
@@ -162,6 +172,71 @@ test("Difficult Terrain and trigger summary copy is localized in EN and FR", () 
   assert.equal(fr.PERSISTENT_ZONES.Activity.Fields.DifficultTerrain, "Terrain difficile");
   assert.equal(en.PERSISTENT_ZONES.Activity.TriggerSummary.None, "None");
   assert.equal(fr.PERSISTENT_ZONES.Activity.TriggerSummary.None, "Aucun");
+  assert.equal(en.PERSISTENT_ZONES.Activity.TriggerTargeting.PhysicalContact, "Physical Contact");
+  assert.equal(fr.PERSISTENT_ZONES.Activity.TriggerTargeting.Proximity, "Proximité");
+});
+
+test("trigger targeting and controlled movement round-trip without changing legacy membership", () => {
+  const legacy = normalizePersistentZoneActivitySubmitData({
+    enabled: true,
+    geometry: { type: "circle", radius: 3, units: "m" },
+    triggers: { move: { enabled: true, mode: "simple-effect" } }
+  });
+  assert.deepEqual(legacy.triggers.move.targeting, { mode: "membership", distance: null });
+  assert.deepEqual(legacy.controlledMovement, {
+    enabled: false, activationActivityId: null, utilityName: null, maxDistance: 0, physicalRadius: 0, units: "scene"
+  });
+
+  const configured = normalizePersistentZoneActivitySubmitData(mergePersistentZoneActivitySubmitData(legacy, {
+    controlledMovement: { enabled: true, maxDistance: 9, physicalRadius: 0.75, units: "m", activationActivityId: "move-utility" },
+    triggers: {
+      move: { targeting: { mode: "physical-contact" } },
+      turnEnd: { targeting: { mode: "proximity", distance: 1.5 } }
+    }
+  }));
+  assert.deepEqual(configured.triggers.move.targeting, { mode: "physical-contact", distance: null });
+  assert.deepEqual(configured.triggers.turnEnd.targeting, { mode: "proximity", distance: 1.5 });
+  assert.deepEqual(configured.controlledMovement, {
+    enabled: true, activationActivityId: "move-utility", utilityName: null, maxDistance: 9, physicalRadius: 0.75, units: "m"
+  });
+});
+
+test("a freshly persisted controlled-movement preset exposes physical contact in the Move trigger", () => {
+  const persisted = {
+    enabled: true,
+    geometry: { type: "circle", radius: 3, units: "m" },
+    controlledMovement: { enabled: true, maxDistance: 9, physicalRadius: 0.75, units: "m" },
+    triggers: { move: { enabled: true, mode: "simple-effect" } }
+  };
+  // This reproduces the post-preset render: the in-memory Activity proxy may
+  // still contain its former definition while _source has the saved update.
+  const sheet = new PersistentZoneActivitySheet();
+  sheet.activity = {
+    persistentZone: { enabled: true, geometry: { type: "circle", radius: 3, units: "m" }, triggers: persisted.triggers },
+    _source: { persistentZone: persisted }
+  };
+  const context = sheet._preparePersistentZoneContext({ tabs: { persistentZone: {} } });
+  const move = context.persistentZoneTriggerRows.find((row) => row.timing === "move");
+  const physical = move.targetingOptions.find((option) => option.value === "physical-contact");
+  assert.equal(context.persistentZoneControlledMovement.enabled, true);
+  assert.ok(physical, "Move targeting includes Physical Contact when Controlled Movement is enabled");
+  assert.equal(physical.unavailable, false);
+});
+
+test("Flaming Sphere survives the Activity UI normalization without losing controlled targeting", () => {
+  const source = structuredClone(getPersistentZonePreset("srd-5.2.1.flaming-sphere").persistentZone);
+  source.controlledMovement.activationActivityId = "move-sphere";
+  const saved = normalizePersistentZoneActivitySubmitData(source);
+  assert.deepEqual(saved.controlledMovement, {
+    enabled: true,
+    activationActivityId: "move-sphere",
+    utilityName: "PERSISTENT_ZONES.Activity.Presets.Builtins.FlamingSphere.MoveActivityName",
+    maxDistance: 30,
+    physicalRadius: 2.5,
+    units: "ft"
+  });
+  assert.deepEqual(saved.triggers.move.targeting, { mode: "physical-contact", distance: null });
+  assert.deepEqual(saved.triggers.turnEnd.targeting, { mode: "proximity", distance: 5 });
 });
 
 test("realistic radius 3 to 6 then elevation edit never creates an array", () => {

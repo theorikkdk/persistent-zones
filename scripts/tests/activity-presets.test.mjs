@@ -7,6 +7,7 @@ import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../pre
 import {
   PRESET_SCHEMA_VERSION,
   applyPresetToActivity,
+  ensureControlledMovementCompanionActivity,
   extractPresetDataFromActivity,
   normalizePreset,
   resolvePresetPersistentZoneForScene
@@ -420,6 +421,28 @@ test("controlled movement debug preset creates one linked Bonus Action utility w
   assert.equal(definition.controlledMovement.physicalRadius, 0, "no override means use the visible Region geometry");
   assert.equal(definition.controlledMovement.activationActivityId, "utility-1");
   assert.ok(updates.some(({ update }) => update.persistentZone?.controlledMovement?.activationActivityId === "utility-1"));
+});
+
+test("updating a linked controlled movement Utility preserves player activation choices", async () => {
+  const existing = {
+    id: "move-utility",
+    type: "utility",
+    flags: { "persistent-zones": { controlledZoneMovement: { enabled: true, primaryActivityId: "pz-zone" } } },
+    _source: { flags: { "persistent-zones": { controlledZoneMovement: { enabled: true, primaryActivityId: "pz-zone" } } } }
+  };
+  const updates = [];
+  const item = {
+    system: { activities: new Map([[existing.id, existing]]) },
+    async createActivity() { throw new Error("existing Utility should be updated, not recreated"); },
+    async updateActivity(id, update) { updates.push({ id, update: structuredClone(update) }); }
+  };
+  const result = await ensureControlledMovementCompanionActivity(item, "pz-zone", { enabled: true, utilityName: "Custom" });
+  assert.equal(result, existing);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].id, "move-utility");
+  assert.equal(Object.hasOwn(updates[0].update, "activation"), false);
+  assert.equal(updates[0].update.duration.concentration, false);
+  assert.equal(updates[0].update.consumption.spellSlot, false);
 });
 
 test("debug movement-cost presets apply their explicit terrain and obstacle configuration", async () => {

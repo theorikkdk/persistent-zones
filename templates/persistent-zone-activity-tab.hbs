@@ -349,6 +349,19 @@
             </select>
           </div>
           <div class="form-group">
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerTargeting"}}</label>
+            <select name="persistentZone.triggers.{{triggerRow.timing}}.targeting.mode" data-pz-trigger-targeting>
+              {{#each triggerRow.targetingOptions as |option|}}
+                <option value="{{option.value}}" {{#if option.selected}}selected{{/if}} {{#if option.requiresControlledMovement}}data-pz-requires-controlled-movement{{/if}} {{#if option.unavailable}}disabled hidden{{/if}}>{{localize option.label}}</option>
+              {{/each}}
+            </select>
+            {{#if (eq triggerRow.timing "move")}}<p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.TriggerTargetingMove"}}</p>{{/if}}
+          </div>
+          <div class="form-group" data-pz-proximity-distance>
+            <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ProximityDistance"}} ({{../persistentZoneControlledMovement.unitLabel}})</label>
+            <input type="number" min="0" step="any" name="persistentZone.triggers.{{triggerRow.timing}}.targeting.distance" value="{{triggerRow.state.targeting.distance}}">
+          </div>
+          <div class="form-group">
             <label>{{localize "PERSISTENT_ZONES.Activity.Fields.TriggerFrequency"}}</label>
             <select name="persistentZone.triggers.{{triggerRow.timing}}.frequency" data-pz-frequency-source="{{triggerRow.timing}}">
               {{selectOptions ../persistentZoneChoices.triggerFrequencies selected=triggerRow.state.frequency localize=true}}
@@ -681,6 +694,36 @@
   </fieldset>
   {{/unless}}
   {{/if}}
+
+  <fieldset class="persistent-zone-activity__section" data-pz-attached-unsupported>
+    <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.ControlledMovement"}}</legend>
+    <div class="form-group">
+      <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ControlledMovementEnabled"}}</label>
+      <input type="checkbox" name="persistentZone.controlledMovement.enabled" data-pz-toggle-source="controlled-movement" {{#if persistentZoneControlledMovement.enabled}}checked{{/if}}>
+    </div>
+    <div data-pz-toggle-target="controlled-movement">
+      <p class="hint persistent-zone-activity__section-hint">{{localize "PERSISTENT_ZONES.Activity.Help.ControlledMovement"}}</p>
+      <input type="hidden" name="persistentZone.controlledMovement.units" value="{{persistentZoneControlledMovement.units}}">
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ControlledMovementMaxDistance"}} ({{persistentZoneControlledMovement.unitLabel}})</label>
+        <input type="number" min="0" step="any" name="persistentZone.controlledMovement.maxDistance" value="{{persistentZoneControlledMovement.maxDistance}}">
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ControlledMovementPhysicalRadius"}} ({{persistentZoneControlledMovement.unitLabel}})</label>
+        <input type="number" min="0" step="any" name="persistentZone.controlledMovement.physicalRadius" value="{{persistentZoneControlledMovement.physicalRadius}}">
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.ControlledMovementPhysicalBody"}}</p>
+      </div>
+      <div class="form-group">
+        <label>{{localize "PERSISTENT_ZONES.Activity.Fields.ControlledMovementLinkedActivity"}}</label>
+        <div class="form-fields">
+          <input type="text" disabled value="{{#if persistentZoneControlledMovement.activationActivityId}}{{persistentZoneControlledMovement.activationActivityId}}{{else}}{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.NoLinkedActivity"}}{{/if}}">
+          <button type="button" data-pz-ensure-controlled-movement>{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.Ensure"}}</button>
+          {{#if persistentZoneControlledMovement.activationActivityId}}<button type="button" data-pz-open-controlled-movement>{{localize "PERSISTENT_ZONES.Activity.ControlledMovement.Open"}}</button>{{/if}}
+        </div>
+        <p class="hint">{{localize "PERSISTENT_ZONES.Activity.Help.ControlledMovementLinkedActivity"}}</p>
+      </div>
+    </div>
+  </fieldset>
 
   <fieldset class="persistent-zone-activity__section">
     <legend>{{localize "PERSISTENT_ZONES.Activity.Sections.Movement"}}</legend>

@@ -152,6 +152,7 @@
         "TriggerExit": "Occurs when a token crosses from inside to outside the zone.",
         "TriggerTurnStart": "Occurs at the start of a token's turn while it is inside the zone.",
         "TriggerTurnEnd": "Occurs at the end of a token's turn while it is inside the zone.",
+        "TriggerTargetingMove": "Physical contact is available only while controlled movement is enabled.",
         "Save": "If enabled, the configured saving throw is resolved before the simple effect.",
         "SaveResult": "Choose whether a successful save halves damage or prevents the simple effect.",
         "Statuses": "Applies the selected status and controls whether it remains after the token leaves the zone.",
@@ -164,6 +165,9 @@
         "TerrainRuntimePending": "Stores a terrain request for legacy activity data without enabling runtime difficult terrain.",
         "TerrainZone": "Applies the configured movement-cost multiplier in this zone. ×2 is standard difficult terrain.",
         "TerrainPart": "Applies the configured movement-cost multiplier in this zone part. ×2 is standard difficult terrain."
+        ,"ControlledMovement": "Allows this zone to move using a linked Utility Activity. Distance and radius use the scene unit."
+        ,"ControlledMovementPhysicalBody": "The physical body is currently modeled as a circle."
+        ,"ControlledMovementLinkedActivity": "Persistent Zones maintains the link, no concentration, and no consumption. Other Activity settings remain editable on its native sheet."
       },
       "Sections": {
         "Configuration": "Usage",
@@ -184,6 +188,7 @@
         "LinkedDocuments": "Walls and Lights",
         "LinkedWalls": "Linked Walls",
         "LinkedLights": "Linked Lights"
+        ,"ControlledMovement": "Controlled Movement"
       },
       "Tabs": {
         "PersistentZone": "Persistent Zone"
@@ -211,6 +216,8 @@
         "AccumulateMovementRemainder": "Accumulate partial distance",
         "TriggerFrequency": "Frequency",
         "TriggerTargets": "Targets",
+        "TriggerTargeting": "Trigger Targeting",
+        "ProximityDistance": "Proximity Distance",
         "TriggerFrequencyGroup": "Shared frequency group",
         "DamageEnabled": "Apply damage",
         "DamageScaling": "Slot scaling",
@@ -262,6 +269,10 @@
         "CreateLights": "Create linked lights",
         "LightColor": "Light color",
         "LinkedLightMax": "Maximum linked lights"
+        ,"ControlledMovementEnabled": "Enable Controlled Movement"
+        ,"ControlledMovementMaxDistance": "Maximum Distance"
+        ,"ControlledMovementPhysicalRadius": "Physical Body Radius"
+        ,"ControlledMovementLinkedActivity": "Linked Movement Activity"
       },
       "Geometry": {
         "Circle": "Circle",
@@ -269,6 +280,18 @@
         "Rectangle": "Rectangle",
         "Ring": "Ring",
         "Wall": "Wall"
+      },
+      "TriggerTargeting": {
+        "Membership": "Inside Zone",
+        "PhysicalContact": "Physical Contact",
+        "Proximity": "Proximity"
+      },
+      "ControlledMovement": {
+        "Ensure": "Create / Update Movement Activity",
+        "Open": "Open Activity",
+        "NoLinkedActivity": "No linked Activity",
+        "Linked": "The movement Activity is linked.",
+        "LinkFailed": "The movement Activity could not be created or updated."
       },
       "PlacementModes": { "Fixed": "Fixed", "AttachedSource": "Attached to caster" },
       "DistanceUnits": { "Scene": "Scene units", "Feet": "Feet", "Meters": "Meters" },

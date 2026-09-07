@@ -6,7 +6,7 @@ import {
 import { normalizeStatusRecovery } from "../runtime/status-recovery.mjs";
 import { normalizeStatusEscape } from "../runtime/status-escape.mjs";
 import { getBuiltinPersistentZonePresets, getPersistentZonePreset } from "../presets/preset-library.mjs";
-import { applyPresetToActivity } from "../presets/preset-utils.mjs";
+import { applyPresetToActivity, ensureControlledMovementCompanionActivity } from "../presets/preset-utils.mjs";
 import { convertCanonicalDistanceToSceneUnits, normalizeCanonicalDistanceUnit } from "./activity-distance.mjs";
 
 export class PersistentZoneActivitySheet extends dnd5e.applications.activity.ActivitySheet {
@@ -61,12 +61,19 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
 
   _preparePersistentZoneContext(context) {
     context.tab = context.tabs.persistentZone;
-    const config = this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
+    // `_source` is the persisted Activity payload after Item.updateActivity.
+    // Prefer it so a preset applied while this sheet remains open cannot leave
+    // the trigger option context one render behind.
+    const config = this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
+      this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
     const activitySchemaVersion = resolveStoredActivitySchemaVersion(this.activity, config);
     context.persistentZone = normalizePersistentZoneActivitySubmitData(duplicateData(config));
     context.persistentZone.elevation = prepareElevationForScene(context.persistentZone.elevation);
     context.persistentZoneChoices = buildActivityChoices();
-    context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity);
+    context.persistentZoneControlledMovement = prepareControlledMovementForScene(context.persistentZone?.controlledMovement);
+    context.persistentZoneTriggerRows = buildTriggerRows(context.persistentZone?.triggers ?? {}, this.activity, {
+      controlledMovementEnabled: context.persistentZoneControlledMovement.enabled
+    });
     context.persistentZoneDamageTypes = buildDamageTypeOptions(config?.damage?.type);
     context.persistentZoneAbilities = buildAbilityOptions(config?.save?.ability);
     context.persistentZoneSkills = buildSkillOptions();
@@ -199,6 +206,35 @@ export class PersistentZoneActivitySheet extends dnd5e.applications.activity.Act
           preset: localize(preset.name)
         }) ?? localize("PERSISTENT_ZONES.Activity.Presets.Applied"));
         await this.render({ force: true });
+      });
+      root.querySelector("[data-pz-ensure-controlled-movement]")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const config = readControlledMovementFromSheet(root, this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
+          this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY]);
+        if (!config.enabled) return;
+        const item = this.activity?.item ?? this.activity?.parent ?? null;
+        try {
+          const companion = await ensureControlledMovementCompanionActivity(item, this.activity?.id, config);
+          const definition = foundry.utils.deepClone(this.activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ??
+            this.activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {});
+          definition.controlledMovement = {
+            ...(definition.controlledMovement ?? {}),
+            ...config,
+            activationActivityId: companion.id
+          };
+          await item.updateActivity(this.activity.id, { [ACTIVITY_DEFINITION_FIELD_KEY]: definition });
+          ui.notifications?.info?.(localize("PERSISTENT_ZONES.Activity.ControlledMovement.Linked"));
+          await this.render({ force: true });
+        } catch (error) {
+          console.error(`[${MODULE_ID}] Could not create the controlled movement Utility Activity.`, error);
+          ui.notifications?.error?.(localize("PERSISTENT_ZONES.Activity.ControlledMovement.LinkFailed"));
+        }
+      });
+      root.querySelector("[data-pz-open-controlled-movement]")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const companion = findControlledMovementCompanion(this.activity);
+        if (!companion?.sheet?.render) return;
+        await companion.sheet.render({ force: true });
       });
     });
     restorePersistentZoneViewportState(this.element, this.#persistentZoneViewportState);
@@ -902,6 +938,7 @@ export function normalizePersistentZoneActivitySubmitData(value) {
   config.movement.units = normalizeCanonicalDistanceUnit(config.movement.units);
   config.movement.accumulateRemainder = Boolean(config.movement.accumulateRemainder);
   config.movement.aggregateApplications = config.movement.aggregateApplications !== false;
+  config.controlledMovement = normalizeUiControlledMovement(config.controlledMovement);
   config.terrain ??= {};
   config.terrain.enabled = Boolean(config.terrain.enabled);
   config.terrain.multiplier = normalizeMovementCostMultiplier(config.terrain.multiplier);
@@ -1134,6 +1171,7 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
     enabled: trigger.enabled ?? enabledDefault,
     mode,
     targetFilter: { mode: normalizeTriggerTargetFilterMode(trigger.targetFilter?.mode) },
+    targeting: normalizeUiTriggerTargeting(trigger.targeting),
     frequency: String(trigger.frequency ?? "unlimited").trim().toLowerCase() === "once-per-turn" ? "once-per-turn" : "unlimited",
     frequencyGroup: String(trigger.frequencyGroup ?? ""),
     requiredAbsentStatuses: normalizeStatusIdList(trigger.requiredAbsentStatuses ?? trigger.excludedStatuses),
@@ -1194,6 +1232,34 @@ function normalizeActivityTrigger(trigger = {}, triggerId, {
 function normalizeTriggerTargetFilterMode(value) {
   const mode = String(value ?? "all").trim().toLowerCase();
   return ["all", "allies", "enemies", "self", "others"].includes(mode) ? mode : "all";
+}
+
+function normalizeUiTriggerTargeting(value = {}) {
+  const mode = ["physical-contact", "proximity"].includes(String(value?.mode ?? "").trim())
+    ? String(value.mode).trim()
+    : "membership";
+  const distance = Number(value?.distance);
+  return {
+    mode,
+    distance: mode === "proximity" && Number.isFinite(distance) ? Math.max(0, distance) : null
+  };
+}
+
+function normalizeUiControlledMovement(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const numberOrZero = (candidate) => {
+    const numeric = Number(candidate);
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+  };
+  return {
+    ...foundry.utils.deepClone(source),
+    enabled: Boolean(source.enabled),
+    activationActivityId: String(source.activationActivityId ?? "").trim() || null,
+    utilityName: String(source.utilityName ?? "").trim() || null,
+    maxDistance: numberOrZero(source.maxDistance),
+    physicalRadius: numberOrZero(source.physicalRadius),
+    units: normalizeCanonicalDistanceUnit(source.units)
+  };
 }
 
 function normalizeUiTriggerMode(value, fallback = "none") {
@@ -1439,7 +1505,7 @@ function buildActivityChoices() {
   };
 }
 
-function buildTriggerRows(triggers = {}, activity = null) {
+function buildTriggerRows(triggers = {}, activity = null, { controlledMovementEnabled = false } = {}) {
   return [
     ["onCreate", "PERSISTENT_ZONES.Activity.Triggers.onCreate"],
     ["enter", "PERSISTENT_ZONES.Activity.Triggers.enter"],
@@ -1447,13 +1513,72 @@ function buildTriggerRows(triggers = {}, activity = null) {
     ["exit", "PERSISTENT_ZONES.Activity.Triggers.exit"],
     ["turnStart", "PERSISTENT_ZONES.Activity.Triggers.turnStart"],
     ["turnEnd", "PERSISTENT_ZONES.Activity.Triggers.turnEnd"]
-  ].map(([timing, label]) => ({
-    timing,
-    label: localize(label),
-    state: triggers?.[timing] ?? {},
-    allowsWhileInside: timing !== "exit",
-    linkedActivityOptions: buildLinkedActivityOptions(activity, triggers?.[timing]?.linkedActivity?.id)
-  }));
+  ].map(([timing, label]) => {
+    const state = triggers?.[timing] ?? {};
+    const targeting = normalizeUiTriggerTargeting(state.targeting);
+    return {
+      timing,
+      label: localize(label),
+      state: { ...state, targeting },
+      allowsWhileInside: timing !== "exit",
+      targetingOptions: buildTriggerTargetingOptions(timing, targeting.mode, { controlledMovementEnabled }),
+      linkedActivityOptions: buildLinkedActivityOptions(activity, state.linkedActivity?.id)
+    };
+  });
+}
+
+function buildTriggerTargetingOptions(timing, selectedMode, { controlledMovementEnabled = false } = {}) {
+  const options = [{ value: "membership", label: "PERSISTENT_ZONES.Activity.TriggerTargeting.Membership" }];
+  if (timing === "move") {
+    options.push({
+      value: "physical-contact",
+      label: "PERSISTENT_ZONES.Activity.TriggerTargeting.PhysicalContact",
+      requiresControlledMovement: true,
+      unavailable: !controlledMovementEnabled && selectedMode !== "physical-contact"
+    });
+  }
+  if (["turnStart", "turnEnd"].includes(timing)) {
+    options.push({ value: "proximity", label: "PERSISTENT_ZONES.Activity.TriggerTargeting.Proximity" });
+  }
+  // Retain a legacy selection rather than silently changing saved behavior.
+  if (!options.some((option) => option.value === selectedMode)) {
+    options.push({ value: selectedMode, label: `PERSISTENT_ZONES.Activity.TriggerTargeting.${selectedMode === "physical-contact" ? "PhysicalContact" : "Proximity"}`, unavailable: true });
+  }
+  return options.map((option) => ({ ...option, selected: option.value === selectedMode }));
+}
+
+function prepareControlledMovementForScene(value, scene = globalThis.canvas?.scene ?? null) {
+  const config = normalizeUiControlledMovement(value);
+  const sceneUnits = normalizeCanonicalDistanceUnit(scene?.grid?.units ?? scene?.grid?.unit);
+  const sourceUnits = normalizeCanonicalDistanceUnit(config.units);
+  return {
+    ...config,
+    maxDistance: convertCanonicalDistanceToSceneUnits(config.maxDistance, sourceUnits, scene),
+    physicalRadius: convertCanonicalDistanceToSceneUnits(config.physicalRadius, sourceUnits, scene),
+    units: sceneUnits,
+    unitLabel: sceneUnits === "m" ? "m" : sceneUnits === "ft" ? "ft" : String(scene?.grid?.units ?? "")
+  };
+}
+
+function readControlledMovementFromSheet(root, existingDefinition = {}) {
+  const previous = normalizeUiControlledMovement(existingDefinition?.controlledMovement);
+  const value = (name) => root.querySelector(`[name='${name}']`)?.value;
+  const checked = (name) => root.querySelector(`[name='${name}']`)?.checked === true;
+  return normalizeUiControlledMovement({
+    ...previous,
+    enabled: checked("persistentZone.controlledMovement.enabled"),
+    maxDistance: value("persistentZone.controlledMovement.maxDistance"),
+    physicalRadius: value("persistentZone.controlledMovement.physicalRadius"),
+    units: value("persistentZone.controlledMovement.units") ?? previous.units
+  });
+}
+
+function findControlledMovementCompanion(activity) {
+  const item = activity?.item ?? activity?.parent ?? null;
+  const config = activity?._source?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? activity?.[ACTIVITY_DEFINITION_FIELD_KEY] ?? {};
+  const id = String(config?.controlledMovement?.activationActivityId ?? "").trim();
+  if (!id) return null;
+  return item?.system?.activities?.get?.(id) ?? null;
 }
 
 function buildDamageTypeOptions(selectedType) {
@@ -1601,6 +1726,11 @@ function updateConditionalVisibility(root) {
     element.querySelectorAll("[data-pz-mode]").forEach((details) => {
       details.hidden = !enabled || mode === "none" || details.dataset.pzMode !== mode;
     });
+    const targeting = element.querySelector("[data-pz-trigger-targeting]");
+    const targetingMode = targeting?.value ?? "membership";
+    element.querySelectorAll("[data-pz-proximity-distance]").forEach((field) => {
+      setConditionalControls(field, enabled && targetingMode === "proximity");
+    });
   });
 
   root.querySelectorAll("[data-pz-toggle-source]").forEach((input) => {
@@ -1616,6 +1746,19 @@ function updateConditionalVisibility(root) {
     if (hiddenUuid) {
       hiddenUuid.value = selectedOption?.dataset?.uuid ?? "";
     }
+  });
+
+  const controlledMovementEnabled = root.querySelector("[name='persistentZone.controlledMovement.enabled']")?.checked === true;
+  root.querySelectorAll("option[data-pz-requires-controlled-movement]").forEach((option) => {
+    const selected = option.selected;
+    const unavailable = !controlledMovementEnabled && !selected;
+    // Mutate both the properties and attributes.  Foundry preserves the
+    // original option attributes across partial sheet renders, so properties
+    // alone can leave a freshly enabled physical-contact option invisible.
+    option.hidden = unavailable;
+    option.disabled = unavailable;
+    option.toggleAttribute("hidden", unavailable);
+    option.toggleAttribute("disabled", unavailable);
   });
 
   root.querySelectorAll("[data-pz-frequency-source]").forEach((select) => {
